@@ -16,6 +16,7 @@ import { resolveCodexProfileDir, ensureSharedConfigSymlink } from '../index';
 import { decodeAccountIdentity } from '../codex-account-identity';
 import { detectCodexCli } from '../../targets/codex-detector';
 import { parseArgs, rejectUnsupportedOptions, getProfileNameError } from './types';
+import type { CodexProfileMetadata } from '../types';
 import type { CodexCommandContext } from './types';
 
 const logger = createLogger('codex-auth:cmd:login');
@@ -98,12 +99,11 @@ export async function handleLoginCodex(ctx: CodexCommandContext, args: string[])
   if (exitCode === 0 && fs.existsSync(authJsonPath)) {
     const identity = decodeAccountIdentity(authJsonPath);
     const now = new Date().toISOString();
-    registry.updateProfile(profileName, {
-      last_used: now,
-      email: identity.email,
-      plan_type: identity.plan_type ?? null,
-      account_id: identity.account_id,
-    });
+    const metadataUpdate: Partial<CodexProfileMetadata> = { last_used: now };
+    if (identity.email !== undefined) metadataUpdate.email = identity.email;
+    if (identity.plan_type !== undefined) metadataUpdate.plan_type = identity.plan_type;
+    if (identity.account_id !== undefined) metadataUpdate.account_id = identity.account_id;
+    registry.updateProfile(profileName, metadataUpdate);
     const emailStr = identity.email ?? '<unknown>';
     const planStr = identity.plan_type ? ` (plan: ${identity.plan_type})` : '';
     console.log(ok(`Logged in as ${emailStr}${planStr}`));

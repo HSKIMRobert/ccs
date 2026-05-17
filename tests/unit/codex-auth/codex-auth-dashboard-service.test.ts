@@ -363,6 +363,23 @@ describe('getCodexAuthProfilesSummary', () => {
     expect(result.active?.name).toBe('work');
   });
 
+  it('active resolution: ignores stale CCS_CODEX_PROFILE values missing from registry', async () => {
+    const { getCodexAuthProfilesSummary, invalidateCodexAuthProfilesCache } = await importService();
+    invalidateCodexAuthProfilesCache();
+
+    process.env.CCS_CODEX_PROFILE = 'ghost';
+
+    const registryPath = path.join(ccsDir, 'codex-profiles.yaml');
+    fs.writeFileSync(
+      registryPath,
+      `version: "1.0"\ndefault: null\nprofiles:\n  work:\n    type: codex\n    created: "2026-01-01T00:00:00Z"\n    last_used: null\n`,
+      { mode: 0o600 }
+    );
+
+    const result = await getCodexAuthProfilesSummary();
+    expect(result.active).toBeNull();
+  });
+
   it('active resolution: registry default set -> source=default', async () => {
     const { getCodexAuthProfilesSummary, invalidateCodexAuthProfilesCache } = await importService();
     invalidateCodexAuthProfilesCache();

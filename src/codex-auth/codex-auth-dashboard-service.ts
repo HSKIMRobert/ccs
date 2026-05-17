@@ -193,6 +193,14 @@ function resolveActive(registry: CodexProfileData): CodexAuthActiveProfile | nul
   // Precedence 2: $CCS_CODEX_PROFILE env var
   const profileEnv = (process.env.CCS_CODEX_PROFILE ?? '').trim();
   if (profileEnv) {
+    if (!Object.prototype.hasOwnProperty.call(registry.profiles, profileEnv)) {
+      logger.warn(
+        'codex-auth.dashboard.stale-env-profile',
+        'Ignoring CCS_CODEX_PROFILE because it is not registered',
+        { profileName: profileEnv }
+      );
+      return null;
+    }
     return {
       name: profileEnv,
       source: 'env',

@@ -217,6 +217,36 @@ describe('handleLoginCodex — clean exit updates registry', () => {
     expect(meta.last_used).toBeTruthy();
   });
 
+  it('preserves cached identity metadata when a re-login token is sparse', async () => {
+    const detectorMod = await import('../../../../src/targets/codex-detector');
+    spyOn(detectorMod, 'detectCodexCli').mockReturnValue('/usr/bin/codex');
+    spawnReturnsCode(0, true); // writes auth.json with a valid but sparse JWT payload
+
+    const { handleLoginCodex } = await import('../../../../src/codex-auth/commands/login-command');
+    const ctx = await makeCtx();
+    ctx.registry.createProfile('preservemeta', {
+      created: new Date().toISOString(),
+      last_used: null,
+      email: 'cached@example.com',
+      plan_type: 'pro',
+      account_id: 'acct-cached',
+    });
+
+    const origLog = console.log;
+    console.log = () => {};
+    try {
+      await handleLoginCodex(ctx, ['preservemeta']);
+    } finally {
+      console.log = origLog;
+    }
+
+    const meta = ctx.registry.getProfile('preservemeta');
+    expect(meta.last_used).toBeTruthy();
+    expect(meta.email).toBe('cached@example.com');
+    expect(meta.plan_type).toBe('pro');
+    expect(meta.account_id).toBe('acct-cached');
+  });
+
   it('persists account_id when login token has account_id only', async () => {
     const detectorMod = await import('../../../../src/targets/codex-detector');
     spyOn(detectorMod, 'detectCodexCli').mockReturnValue('/usr/bin/codex');
