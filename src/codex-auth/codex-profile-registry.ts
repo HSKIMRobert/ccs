@@ -4,7 +4,8 @@ import * as yaml from 'js-yaml';
 import * as lockfile from 'proper-lockfile';
 import { createLogger } from '../services/logging';
 import { getCodexAuthRegistryPath } from './codex-profile-paths';
-import { CODEX_PROFILE_SCHEMA_VERSION } from './types';
+import { getCcsDirSource } from '../utils/config-manager';
+import { CODEX_PROFILE_SCHEMA_VERSION, getCodexProfileNameError } from './types';
 import type { CodexProfileData, CodexProfileMetadata } from './types';
 
 const logger = createLogger('codex-auth:registry');
@@ -35,12 +36,93 @@ function validateRegistryData(parsed: unknown): CodexProfileData {
   if (data.default !== undefined && data.default !== null && typeof data.default !== 'string') {
     throw new Error('registry YAML default must be a string or null');
   }
+  if (typeof data.default === 'string') {
+    assertValidProfileName(data.default);
+  }
+
+  const profiles: Record<string, CodexProfileMetadata> = {};
+  for (const [name, profile] of Object.entries(data.profiles)) {
+    assertValidProfileName(name);
+    profiles[name] = validateProfileMetadata(name, profile);
+  }
+  if (
+    typeof data.default === 'string' &&
+    !Object.prototype.hasOwnProperty.call(profiles, data.default)
+  ) {
+    throw new Error('registry YAML default profile is missing from profiles map');
+  }
 
   return {
     version: typeof data.version === 'string' ? data.version : CODEX_PROFILE_SCHEMA_VERSION,
     default: data.default ?? null,
-    profiles: data.profiles as Record<string, CodexProfileMetadata>,
+    profiles,
   };
+}
+
+function assertValidProfileName(name: string): void {
+  const nameError = getCodexProfileNameError(name);
+  if (nameError) {
+    throw new Error(`registry YAML contains invalid profile name "${name}": ${nameError}`);
+  }
+}
+
+function validateProfileMetadata(name: string, profile: unknown): CodexProfileMetadata {
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
+    throw new Error(`registry YAML profile "${name}" must be an object`);
+  }
+  const meta = profile as Partial<CodexProfileMetadata>;
+  if (meta.type !== 'codex') {
+    throw new Error(`registry YAML profile "${name}" must have type "codex"`);
+  }
+  if (typeof meta.created !== 'string') {
+    throw new Error(`registry YAML profile "${name}" must have a string created timestamp`);
+  }
+  if (meta.last_used !== null && typeof meta.last_used !== 'string') {
+    throw new Error(
+      `registry YAML profile "${name}" must have a string or null last_used timestamp`
+    );
+  }
+  if (meta.email !== undefined && typeof meta.email !== 'string') {
+    throw new Error(`registry YAML profile "${name}" email must be a string`);
+  }
+  if (
+    meta.plan_type !== undefined &&
+    meta.plan_type !== null &&
+    typeof meta.plan_type !== 'string'
+  ) {
+    throw new Error(`registry YAML profile "${name}" plan_type must be a string or null`);
+  }
+  if (meta.account_id !== undefined && typeof meta.account_id !== 'string') {
+    throw new Error(`registry YAML profile "${name}" account_id must be a string`);
+  }
+  return meta as CodexProfileMetadata;
+}
+
+function registryDisplayPath(registryPath: string): string {
+  const [source] = getCcsDirSource();
+  const defaultRegistryPath = path.resolve(getCodexAuthRegistryPath());
+  if (path.resolve(registryPath) !== defaultRegistryPath) {
+    return path.basename(registryPath);
+  }
+  if (source === 'default') {
+    return process.platform === 'win32'
+      ? '%USERPROFILE%\\.ccs\\codex-profiles.yaml'
+      : '~/.ccs/codex-profiles.yaml';
+  }
+  if (source === 'CCS_HOME' || source === 'scoped:CCS_HOME') {
+    return '$CCS_HOME/.ccs/codex-profiles.yaml';
+  }
+  if (source === 'CCS_DIR' || source === 'scoped:CCS_DIR') {
+    return '$CCS_DIR/codex-profiles.yaml';
+  }
+  return 'codex-profiles.yaml';
+}
+
+function safeRegistryReadMessage(err: unknown): string {
+  if ((err as { name?: unknown } | undefined)?.name === 'YAMLException') {
+    return 'registry YAML could not be parsed';
+  }
+  return err instanceof Error ? err.message : String(err);
 }
 
 function sleepSync(ms: number): void {
@@ -84,13 +166,14 @@ export class CodexProfileRegistry {
       const raw = fs.readFileSync(this.registryPath, 'utf8');
       return validateRegistryData(yaml.load(raw));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = safeRegistryReadMessage(err);
+      const displayPath = registryDisplayPath(this.registryPath);
       logger.warn(
         'codex-auth.registry.read-failed',
-        `Registry at ${this.registryPath} could not be read safely; refusing empty-state rewrite: ${msg}`
+        `Registry at ${displayPath} could not be read safely; refusing empty-state rewrite: ${msg}`
       );
       throw new CodexProfileRegistryReadError(
-        `Codex profile registry at ${this.registryPath} could not be read safely: ${msg}. Refusing to rewrite it.`
+        `Codex profile registry at ${displayPath} could not be read safely: ${msg}. Refusing to rewrite it.`
       );
     }
   }
@@ -187,6 +270,7 @@ export class CodexProfileRegistry {
   // ── CRUD ────────────────────────────────────────────────────────────────
 
   createProfile(name: string, meta: Partial<CodexProfileMetadata> = {}): void {
+    assertValidProfileName(name);
     this._withRegistryWriteLock(() => {
       const data = this._read();
       if (data.profiles[name]) {
@@ -204,6 +288,7 @@ export class CodexProfileRegistry {
   }
 
   getProfile(name: string): CodexProfileMetadata {
+    assertValidProfileName(name);
     const data = this._read();
     const profile = data.profiles[name];
     if (!profile) {
@@ -213,6 +298,7 @@ export class CodexProfileRegistry {
   }
 
   updateProfile(name: string, partial: Partial<CodexProfileMetadata>): void {
+    assertValidProfileName(name);
     this._withRegistryWriteLock(() => {
       const data = this._read();
       if (!data.profiles[name]) {
@@ -224,6 +310,7 @@ export class CodexProfileRegistry {
   }
 
   removeProfile(name: string): void {
+    assertValidProfileName(name);
     this._withRegistryWriteLock(() => {
       const data = this._read();
       if (!data.profiles[name]) {
@@ -244,6 +331,7 @@ export class CodexProfileRegistry {
   }
 
   hasProfile(name: string): boolean {
+    if (getCodexProfileNameError(name)) return false;
     return Object.prototype.hasOwnProperty.call(this._read().profiles, name);
   }
 
@@ -254,6 +342,7 @@ export class CodexProfileRegistry {
   }
 
   setDefault(name: string): void {
+    assertValidProfileName(name);
     this._withRegistryWriteLock(() => {
       const data = this._read();
       if (!data.profiles[name]) {

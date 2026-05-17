@@ -36,7 +36,9 @@ const VALID_SHELLS = new Set<string>(['bash', 'zsh', 'fish', 'pwsh', 'cmd']);
 
 export async function handleUseCodex(ctx: CodexCommandContext, args: string[]): Promise<void> {
   const parsed = parseArgs(args);
-  rejectUnsupportedOptions(parsed, 'ccsx auth use <name> [--shell <bash|zsh|fish|pwsh|cmd>]');
+  rejectUnsupportedOptions(parsed, 'ccsx auth use <name> [--shell <bash|zsh|fish|pwsh|cmd>]', {
+    shell: true,
+  });
 
   const { profileName, shell: shellOverride } = parsed;
 

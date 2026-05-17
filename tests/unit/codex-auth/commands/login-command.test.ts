@@ -104,6 +104,67 @@ describe('handleLoginCodex — missing profile auto-creates', () => {
     expect(ctx.registry.hasProfile('newprofile')).toBe(true);
     expect(out.some((l) => l.includes('Auto-creating'))).toBe(true);
   });
+
+  it('does not create an orphan registry entry when profile dir setup fails', async () => {
+    const detectorMod = await import('../../../../src/targets/codex-detector');
+    spyOn(detectorMod, 'detectCodexCli').mockReturnValue('/usr/bin/codex');
+
+    const originalMkdirSync = fs.mkdirSync;
+    spyOn(fs, 'mkdirSync').mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (target: fs.PathLike, options?: any): string | undefined => {
+        if (String(target).includes('codex-instances')) {
+          throw Object.assign(new Error('simulated mkdir failure'), { code: 'EACCES' });
+        }
+        return originalMkdirSync(target, options);
+      }
+    );
+
+    const { handleLoginCodex } = await import('../../../../src/codex-auth/commands/login-command');
+    const ctx = await makeCtx();
+
+    let exitCode = -1;
+    const origExit = process.exit;
+    process.exit = (code?: number) => {
+      exitCode = code ?? 0;
+      throw new Error('exit');
+    };
+    const origLog = console.log;
+    console.log = () => {};
+    try {
+      await handleLoginCodex(ctx, ['orphan']);
+    } catch {
+      /* expected */
+    } finally {
+      console.log = origLog;
+      process.exit = origExit;
+    }
+
+    expect(exitCode).toBe(2);
+    expect(ctx.registry.hasProfile('orphan')).toBe(false);
+  });
+
+  it('rejects command-specific flags that login does not support', async () => {
+    const { handleLoginCodex } = await import('../../../../src/codex-auth/commands/login-command');
+    const ctx = await makeCtx();
+
+    let exitCalled = false;
+    const origExit = process.exit;
+    process.exit = () => {
+      exitCalled = true;
+      throw new Error('exit');
+    };
+    try {
+      await handleLoginCodex(ctx, ['flagleak', '--json']);
+    } catch {
+      /* expected */
+    } finally {
+      process.exit = origExit;
+    }
+
+    expect(exitCalled).toBe(true);
+    expect(ctx.registry.hasProfile('flagleak')).toBe(false);
+  });
 });
 
 describe('handleLoginCodex — spawn called with CODEX_HOME pinned', () => {

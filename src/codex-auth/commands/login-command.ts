@@ -40,21 +40,16 @@ export async function handleLoginCodex(ctx: CodexCommandContext, args: string[])
   }
 
   const { registry } = ctx;
+  const profileDir = resolveCodexProfileDir(profileName);
 
   // Auto-create profile if missing
   if (!registry.hasProfile(profileName)) {
     console.log(info(`Auto-creating profile ${profileName}`));
+    ensureProfileDirReady(profileDir);
     registry.createProfile(profileName, {
       created: new Date().toISOString(),
       last_used: null,
     });
-    const profileDir = resolveCodexProfileDir(profileName);
-    fs.mkdirSync(profileDir, { recursive: true, mode: 0o700 });
-    try {
-      ensureSharedConfigSymlink(profileDir);
-    } catch {
-      process.stderr.write(`[!] Symlink creation failed; continuing without shared config.\n`);
-    }
   }
 
   const codexCli = detectCodexCli();
@@ -70,16 +65,9 @@ export async function handleLoginCodex(ctx: CodexCommandContext, args: string[])
     return;
   }
 
-  const profileDir = resolveCodexProfileDir(profileName);
-
   // Ensure profile dir exists (may have been deleted)
   if (!fs.existsSync(profileDir)) {
-    fs.mkdirSync(profileDir, { recursive: true, mode: 0o700 });
-    try {
-      ensureSharedConfigSymlink(profileDir);
-    } catch {
-      process.stderr.write(`[!] Symlink creation failed; continuing.\n`);
-    }
+    ensureProfileDirReady(profileDir);
   }
 
   const authJsonPath = path.join(profileDir, 'auth.json');
@@ -134,5 +122,19 @@ export async function handleLoginCodex(ctx: CodexCommandContext, args: string[])
       process.stderr.write('[!] Login failed. Previous credentials may still be valid.\n');
     }
     process.exit(ExitCode.AUTH_ERROR);
+  }
+}
+
+function ensureProfileDirReady(profileDir: string): void {
+  try {
+    fs.mkdirSync(profileDir, { recursive: true, mode: 0o700 });
+    ensureSharedConfigSymlink(profileDir);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn('codex-auth.login.config-repair-failed', 'Config repair failed', {
+      profileDir,
+      error: msg,
+    });
+    exitWithError(`Failed to prepare profile config.toml: ${msg}`, ExitCode.CONFIG_ERROR);
   }
 }

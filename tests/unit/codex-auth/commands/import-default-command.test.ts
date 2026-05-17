@@ -108,7 +108,11 @@ function captureOutput(): { stderr: string[]; restore: () => void } {
   const stderr: string[] = [];
   const origStdErr = process.stderr.write.bind(process.stderr);
   const origLog = console.log;
+  const origErr = console.error;
   console.log = () => {};
+  console.error = (...args: unknown[]) => {
+    stderr.push(args.join(' '));
+  };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   process.stderr.write = (chunk: any) => {
     stderr.push(String(chunk));
@@ -118,6 +122,7 @@ function captureOutput(): { stderr: string[]; restore: () => void } {
     stderr,
     restore: () => {
       console.log = origLog;
+      console.error = origErr;
       process.stderr.write = origStdErr;
     },
   };
@@ -189,6 +194,56 @@ describe('import-default — missing legacy auth.json', () => {
 
     expect(exitCalled).toBe(true);
     expect(ctx.registry.hasProfile('myprofile')).toBe(false);
+  });
+});
+
+describe('import-default — option validation', () => {
+  it('rejects unsupported flags before importing legacy auth', async () => {
+    fs.writeFileSync(path.join(legacyCodexHome, 'auth.json'), VALID_AUTH_JSON);
+
+    const { handleImportDefaultCodex } = await import(
+      '../../../../src/codex-auth/commands/import-default-command'
+    );
+    const ctx = await makeCtx();
+
+    let exitCount = 0;
+    const origExit = process.exit;
+    process.exit = () => {
+      exitCount++;
+      throw new Error('exit');
+    };
+    const captured = captureOutput();
+    try {
+      await handleImportDefaultCodex(ctx, ['typo', '--with-historyy']);
+    } catch {
+      /* expected */
+    }
+    try {
+      await handleImportDefaultCodex(ctx, ['shellleak', '--shell', 'fish']);
+    } catch {
+      /* expected */
+    }
+    try {
+      await handleImportDefaultCodex(ctx, ['jsonleak', '--json']);
+    } catch {
+      /* expected */
+    }
+    try {
+      await handleImportDefaultCodex(ctx, ['yesleak', '--yes']);
+    } catch {
+      /* expected */
+    } finally {
+      captured.restore();
+      process.exit = origExit;
+    }
+
+    expect(exitCount).toBe(4);
+    expect(ctx.registry.hasProfile('typo')).toBe(false);
+    expect(ctx.registry.hasProfile('shellleak')).toBe(false);
+    expect(ctx.registry.hasProfile('jsonleak')).toBe(false);
+    expect(ctx.registry.hasProfile('yesleak')).toBe(false);
+    expect(captured.stderr.join('')).toContain('Usage:');
+    expect(captured.stderr.join('')).toContain('--shell');
   });
 });
 

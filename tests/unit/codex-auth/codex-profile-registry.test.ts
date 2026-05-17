@@ -97,6 +97,13 @@ describe('CodexProfileRegistry — create and get', () => {
     reg.createProfile('work');
     expect(reg.hasProfile('work')).toBe(true);
   });
+
+  it('rejects unsafe profile names before writing the registry', () => {
+    const reg = new CodexProfileRegistry(registryPath);
+    expect(() => reg.createProfile('../escape')).toThrow(/path separators/i);
+    expect(reg.hasProfile('../escape')).toBe(false);
+    expect(fs.existsSync(registryPath)).toBe(false);
+  });
 });
 
 describe('CodexProfileRegistry — remove', () => {
@@ -174,6 +181,45 @@ describe('CodexProfileRegistry — corrupt YAML safety', () => {
 
     expect(() => reg.createProfile('work')).toThrow(/profiles map/i);
     expect(fs.readFileSync(registryPath, 'utf8')).toBe(invalidShape);
+  });
+
+  it('refuses registry entries with unsafe profile names', () => {
+    fs.mkdirSync(path.dirname(registryPath), { recursive: true });
+    const unsafeRegistry =
+      'version: "1.0"\ndefault: null\nprofiles:\n  ../escape:\n    type: codex\n    created: "2026-01-01T00:00:00.000Z"\n    last_used: null\n';
+    fs.writeFileSync(registryPath, unsafeRegistry, { mode: 0o600 });
+    const reg = new CodexProfileRegistry(registryPath);
+
+    expect(() => reg.listProfiles()).toThrow(/invalid profile name/i);
+    expect(fs.readFileSync(registryPath, 'utf8')).toBe(unsafeRegistry);
+  });
+
+  it('refuses malformed profile entries instead of activating corrupt state', () => {
+    fs.mkdirSync(path.dirname(registryPath), { recursive: true });
+    const malformedRegistry = 'version: "1.0"\ndefault: work\nprofiles:\n  work: 1\n';
+    fs.writeFileSync(registryPath, malformedRegistry, { mode: 0o600 });
+    const reg = new CodexProfileRegistry(registryPath);
+
+    expect(() => reg.getDefault()).toThrow(/must be an object/i);
+    expect(fs.readFileSync(registryPath, 'utf8')).toBe(malformedRegistry);
+  });
+
+  it('redacts absolute registry paths and raw YAML parser details in read errors', () => {
+    fs.mkdirSync(path.dirname(registryPath), { recursive: true });
+    const corrupt = '{ invalid yaml: [[[ sensitive-local-fragment';
+    fs.writeFileSync(registryPath, corrupt, { mode: 0o600 });
+    const reg = new CodexProfileRegistry(registryPath);
+
+    let message = '';
+    try {
+      reg.listProfiles();
+    } catch (err) {
+      message = String(err);
+    }
+
+    expect(message).toContain('$CCS_HOME/.ccs/codex-profiles.yaml');
+    expect(message).not.toContain(registryPath);
+    expect(message).not.toContain('sensitive-local-fragment');
   });
 });
 

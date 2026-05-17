@@ -8,6 +8,7 @@ import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { getCodexAuthRegistryPath, resolveCodexProfileDir } from './codex-profile-paths';
 import { getCcsDirSource } from '../utils/config-manager';
+import { getCodexProfileNameError } from './types';
 
 export interface ResolvedProfile {
   name: string;
@@ -58,6 +59,47 @@ function resolutionFailure(message: string, envName: string, displayEnvName: str
   );
 }
 
+function assertValidProfileNameForResolution(
+  name: string,
+  envName: string,
+  displayEnvName: string
+): void {
+  const nameError = getCodexProfileNameError(name);
+  if (nameError) {
+    resolutionFailure(
+      `profile name ${quoteDiagnosticValue(name)} is invalid: ${nameError}`,
+      envName,
+      displayEnvName
+    );
+  }
+}
+
+function assertValidProfileEntry(
+  name: string,
+  profiles: Record<string, unknown>,
+  envName: string,
+  displayEnvName: string,
+  displayRegistryPath: string
+): void {
+  assertValidProfileNameForResolution(name, envName, displayEnvName);
+  const profile = profiles[name];
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
+    resolutionFailure(
+      `registry profile ${quoteDiagnosticValue(name)} at ${displayRegistryPath} is not a valid object`,
+      envName,
+      displayEnvName
+    );
+  }
+  const type = (profile as { type?: unknown }).type;
+  if (type !== 'codex') {
+    resolutionFailure(
+      `registry profile ${quoteDiagnosticValue(name)} at ${displayRegistryPath} is not a Codex profile`,
+      envName,
+      displayEnvName
+    );
+  }
+}
+
 /** @param env - Process env map; defaults to process.env. Injectable for tests. */
 export function resolveActiveProfile(env: NodeJS.ProcessEnv = process.env): ResolvedProfile | null {
   const registryPath = getCodexAuthRegistryPath();
@@ -98,14 +140,19 @@ export function resolveActiveProfile(env: NodeJS.ProcessEnv = process.env): Reso
       displayEnvName
     );
   }
+  for (const profileName of Object.keys(profiles)) {
+    assertValidProfileEntry(profileName, profiles, envName, displayEnvName, displayRegistryPath);
+  }
 
   // F2: explicit env override
   if (envName) {
+    assertValidProfileNameForResolution(envName, envName, displayEnvName);
     if (!Object.prototype.hasOwnProperty.call(profiles, envName)) {
       throw new CodexAuthProfileResolutionError(
         `CCS_CODEX_PROFILE=${displayEnvName} not found in registry. Refusing to fall back to ~/.codex.`
       );
     }
+    assertValidProfileEntry(envName, profiles, envName, displayEnvName, displayRegistryPath);
     return {
       name: envName,
       dir: path.resolve(resolveCodexProfileDir(envName)),
@@ -115,7 +162,23 @@ export function resolveActiveProfile(env: NodeJS.ProcessEnv = process.env): Reso
 
   // F3: registry default
   const defaultName = registry.default ?? null;
-  if (defaultName && Object.prototype.hasOwnProperty.call(profiles, defaultName)) {
+  if (defaultName) {
+    if (typeof defaultName !== 'string') {
+      resolutionFailure(
+        `registry default at ${displayRegistryPath} is not a valid profile name`,
+        envName,
+        displayEnvName
+      );
+    }
+    assertValidProfileNameForResolution(defaultName, envName, displayEnvName);
+    if (!Object.prototype.hasOwnProperty.call(profiles, defaultName)) {
+      resolutionFailure(
+        `registry default ${quoteDiagnosticValue(defaultName)} is missing from profiles map`,
+        envName,
+        displayEnvName
+      );
+    }
+    assertValidProfileEntry(defaultName, profiles, envName, displayEnvName, displayRegistryPath);
     return {
       name: defaultName,
       dir: path.resolve(resolveCodexProfileDir(defaultName)),

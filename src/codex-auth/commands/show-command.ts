@@ -19,7 +19,7 @@ import type { CodexAccountIdentity } from '../types';
 export async function handleShowCodex(ctx: CodexCommandContext, args: string[]): Promise<void> {
   await initUI();
   const parsed = parseArgs(args);
-  rejectUnsupportedOptions(parsed, 'ccsx auth show [name] [--json]');
+  rejectUnsupportedOptions(parsed, 'ccsx auth show [name] [--json]', { json: true });
 
   const { profileName, json } = parsed;
 

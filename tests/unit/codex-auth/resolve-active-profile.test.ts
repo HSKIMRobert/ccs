@@ -98,6 +98,52 @@ describe('resolveActiveProfile', () => {
     expect(() => resolveActiveProfile({})).toThrow(/valid profiles map/);
   });
 
+  it('throws when CCS_CODEX_PROFILE contains an unsafe profile name', () => {
+    writeRegistry({
+      version: '1.0',
+      default: null,
+      profiles: {},
+    });
+
+    expect(() => resolveActiveProfile({ CCS_CODEX_PROFILE: '../escape' })).toThrow(
+      /invalid.*path separators/i
+    );
+  });
+
+  it('throws when registry default contains an unsafe profile name', () => {
+    writeRegistry({
+      version: '1.0',
+      default: '../escape',
+      profiles: {
+        '../escape': { type: 'codex', created: '2026-01-01T00:00:00.000Z', last_used: null },
+      },
+    });
+
+    expect(() => resolveActiveProfile({})).toThrow(/invalid.*path separators/i);
+  });
+
+  it('throws when registry default points to a missing profile', () => {
+    writeRegistry({
+      version: '1.0',
+      default: 'ghost',
+      profiles: {},
+    });
+
+    expect(() => resolveActiveProfile({})).toThrow(/default 'ghost' is missing/i);
+  });
+
+  it('throws when matched registry profile entry is malformed', () => {
+    writeRegistry({
+      version: '1.0',
+      default: 'work',
+      profiles: {
+        work: 1,
+      },
+    });
+
+    expect(() => resolveActiveProfile({})).toThrow(/not a valid object/i);
+  });
+
   it('returns source=env when CCS_CODEX_PROFILE matches a registry entry', () => {
     const profileDir = makeProfileDir('work');
     writeRegistry({

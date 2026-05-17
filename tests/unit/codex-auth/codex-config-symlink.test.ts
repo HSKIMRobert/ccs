@@ -66,9 +66,10 @@ describe('ensureSharedConfigSymlink', () => {
     expect(fs.readlinkSync(linkPath)).toBe(sharedConfigPath);
   });
 
-  it('replaces a regular file at link path with symlink (with warning)', () => {
+  it('preserves an edited regular file at link path by default', () => {
     fs.mkdirSync(profileDir, { recursive: true, mode: 0o700 });
     const linkPath = path.join(profileDir, 'config.toml');
+    fs.writeFileSync(sharedConfigPath, '[shared]\ndata = true', { mode: 0o600 });
     fs.writeFileSync(linkPath, '[existing]\ndata = true', { mode: 0o600 });
 
     // Capture stderr to verify warning was written
@@ -85,10 +86,21 @@ describe('ensureSharedConfigSymlink', () => {
       process.stderr.write = origWrite;
     }
 
+    expect(fs.lstatSync(linkPath).isFile()).toBe(true);
+    expect(fs.readFileSync(linkPath, 'utf8')).toBe('[existing]\ndata = true');
+    // A warning should have been emitted
+    expect(stderrChunks.join('')).toMatch(/preserving existing regular config/i);
+  });
+
+  it('replaces a regular file when explicit overwrite repair is requested', () => {
+    fs.mkdirSync(profileDir, { recursive: true, mode: 0o700 });
+    const linkPath = path.join(profileDir, 'config.toml');
+    fs.writeFileSync(linkPath, '[existing]\ndata = true', { mode: 0o600 });
+
+    ensureSharedConfigSymlink(profileDir, sharedConfigPath, { overwriteRegularFile: true });
+
     expect(fs.lstatSync(linkPath).isSymbolicLink()).toBe(true);
     expect(fs.readlinkSync(linkPath)).toBe(sharedConfigPath);
-    // A warning should have been emitted
-    expect(stderrChunks.join('')).toMatch(/overwr|replaced|regular file/i);
   });
 
   it('replaces a broken symlink (dangling) with correct symlink', () => {
@@ -129,5 +141,27 @@ describe('ensureSharedConfigSymlink', () => {
     expect(fs.lstatSync(linkPath).isFile()).toBe(true);
     expect(fs.readFileSync(linkPath, 'utf8')).toBe('model = "gpt-5.5"\n');
     expect(stderrChunks.join('')).toContain('symlink unavailable');
+  });
+
+  it('preserves edited fallback copies on later repair attempts', () => {
+    fs.writeFileSync(sharedConfigPath, 'model = "gpt-5.5"\n', { mode: 0o600 });
+    const linkPath = path.join(profileDir, 'config.toml');
+    const symlinkSpy = spyOn(fs, 'symlinkSync').mockImplementation(() => {
+      throw Object.assign(new Error('simulated symlink failure'), { code: 'EPERM' });
+    });
+    const origWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = () => true;
+
+    try {
+      ensureSharedConfigSymlink(profileDir, sharedConfigPath);
+      fs.writeFileSync(linkPath, 'model = "local-edit"\n', { mode: 0o600 });
+      ensureSharedConfigSymlink(profileDir, sharedConfigPath);
+    } finally {
+      process.stderr.write = origWrite;
+      symlinkSpy.mockRestore();
+    }
+
+    expect(fs.lstatSync(linkPath).isFile()).toBe(true);
+    expect(fs.readFileSync(linkPath, 'utf8')).toBe('model = "local-edit"\n');
   });
 });

@@ -91,7 +91,7 @@ describe('handleCreateCodex — happy path', () => {
 });
 
 describe('handleCreateCodex — idempotent re-run', () => {
-  it('no-op when profile already exists (no --force)', async () => {
+  it('repairs config.toml and preserves auth.json when profile already exists (no --force)', async () => {
     const detectorMod = await import('../../../../src/targets/codex-detector');
     spyOn(detectorMod, 'detectCodexCli').mockReturnValue(null);
 
@@ -103,12 +103,28 @@ describe('handleCreateCodex — idempotent re-run', () => {
     const restore = silenceConsole();
     try {
       await handleCreateCodex(ctx, ['dupprofile']);
-      await handleCreateCodex(ctx, ['dupprofile']); // second call is idempotent
     } finally {
       restore();
     }
+
+    const profileDir = path.join(ccsHome, '.ccs', 'codex-instances', 'dupprofile');
+    const configPath = path.join(profileDir, 'config.toml');
+    const authJsonPath = path.join(profileDir, 'auth.json');
+    const authJson = JSON.stringify({ tokens: { id_token: buildToken({ email: 'idempotent@test' }) } });
+    fs.writeFileSync(authJsonPath, authJson);
+    fs.rmSync(configPath, { force: true });
+
+    const restore2 = silenceConsole();
+    try {
+      await handleCreateCodex(ctx, ['dupprofile']); // second call is idempotent and self-healing
+    } finally {
+      restore2();
+    }
+
     // Profile still has exactly one entry
     expect(ctx.registry.listProfiles().filter((n) => n === 'dupprofile').length).toBe(1);
+    expect(fs.existsSync(configPath)).toBe(true);
+    expect(fs.readFileSync(authJsonPath, 'utf8')).toBe(authJson);
   });
 });
 
@@ -233,6 +249,35 @@ describe('handleCreateCodex — validation', () => {
 
     expect(exitCalled).toBe(true);
   });
+
+  it('rejects command-specific flags that create does not support', async () => {
+    const detectorMod = await import('../../../../src/targets/codex-detector');
+    spyOn(detectorMod, 'detectCodexCli').mockReturnValue(null);
+
+    const { handleCreateCodex } = await import(
+      '../../../../src/codex-auth/commands/create-command'
+    );
+    const ctx = await makeCtx();
+
+    let exitCalled = false;
+    const origExit = process.exit;
+    process.exit = () => {
+      exitCalled = true;
+      throw new Error('exit');
+    };
+    const restore = silenceConsole();
+    try {
+      await handleCreateCodex(ctx, ['flagleak', '--shell', 'fish']);
+    } catch {
+      /* expected */
+    } finally {
+      restore();
+      process.exit = origExit;
+    }
+
+    expect(exitCalled).toBe(true);
+    expect(ctx.registry.hasProfile('flagleak')).toBe(false);
+  });
 });
 
 describe('handleCreateCodex — auto-spawn login (D11)', () => {
@@ -300,17 +345,27 @@ describe('handleCreateCodex — auto-spawn login (D11)', () => {
       '../../../../src/codex-auth/commands/create-command'
     );
     const ctx = await makeCtx();
+    let exitCode = -1;
+    const origExit = process.exit;
+    process.exit = (code?: number) => {
+      exitCode = code ?? 0;
+      throw new Error('exit');
+    };
 
     const restore = silenceConsole();
     try {
       await handleCreateCodex(ctx, ['faillogin']);
+    } catch {
+      /* expected */
     } finally {
       restore();
+      process.exit = origExit;
     }
 
     const profileDir = path.join(ccsHome, '.ccs', 'codex-instances', 'faillogin');
     expect(fs.existsSync(profileDir)).toBe(true);
     expect(ctx.registry.hasProfile('faillogin')).toBe(true);
+    expect(exitCode).toBe(4);
   });
 
   it('persists last_used and account_id when login token has account_id only', async () => {

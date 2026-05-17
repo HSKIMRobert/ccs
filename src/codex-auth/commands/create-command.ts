@@ -23,7 +23,7 @@ const logger = createLogger('codex-auth:cmd:create');
 export async function handleCreateCodex(ctx: CodexCommandContext, args: string[]): Promise<void> {
   await initUI();
   const parsed = parseArgs(args);
-  rejectUnsupportedOptions(parsed, 'ccsx auth create <name> [--force]');
+  rejectUnsupportedOptions(parsed, 'ccsx auth create <name> [--force]', { force: true });
 
   const { profileName, force } = parsed;
 
@@ -47,11 +47,13 @@ export async function handleCreateCodex(ctx: CodexCommandContext, args: string[]
     if (force) {
       // --force: only re-link config.toml, preserve auth.json
       console.log(info(`Profile already exists: ${profileName} (re-linking config.toml)`));
-      _ensureSymlinkSafe(profileDir);
+      _ensureSymlinkSafe(profileDir, true);
       console.log(ok(`Profile config.toml re-linked.`));
       console.log(`  Profile dir: ${profileDir}`);
     } else {
+      _ensureSymlinkSafe(profileDir);
       console.log(info(`Profile already exists: ${profileName}`));
+      console.log(ok(`Profile config.toml is ready.`));
       console.log(`  Profile dir: ${profileDir}`);
       console.log(`  Run: ccsx auth login ${profileName}`);
     }
@@ -106,18 +108,16 @@ export async function handleCreateCodex(ctx: CodexCommandContext, args: string[]
   await _spawnLogin(profileName, profileDir, ctx);
 }
 
-function _ensureSymlinkSafe(profileDir: string): void {
+function _ensureSymlinkSafe(profileDir: string, overwriteRegularFile = false): void {
   try {
-    ensureSharedConfigSymlink(profileDir);
+    ensureSharedConfigSymlink(profileDir, undefined, { overwriteRegularFile });
   } catch (err) {
-    // Symlink creation failure — warn + continue (Windows fallback documented)
-    process.stderr.write(
-      `[!] Symlinks unavailable; using copy. config.toml edits won't propagate.\n`
-    );
-    logger.warn('codex-auth.create.symlink-failed', 'Symlink creation failed', {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn('codex-auth.create.config-repair-failed', 'Config repair failed', {
       profileDir,
-      error: err instanceof Error ? err.message : String(err),
+      error: msg,
     });
+    exitWithError(`Failed to prepare profile config.toml: ${msg}`, ExitCode.CONFIG_ERROR);
   }
 }
 
@@ -139,7 +139,7 @@ async function _spawnLogin(
   console.log(`  CODEX_HOME=${profileDir}`);
   console.log('');
 
-  await new Promise<void>((resolve) => {
+  const loginResult = await new Promise<{ code: number; error?: string }>((resolve) => {
     const child = childProcess.spawn(codexCli, ['login'], {
       stdio: 'inherit',
       env: { ...process.env, CODEX_HOME: profileDir },
@@ -148,33 +148,41 @@ async function _spawnLogin(
 
     child.on('error', (err) => {
       process.stderr.write(`[X] Failed to execute codex: ${err.message}\n`);
-      resolve();
+      resolve({ code: ExitCode.BINARY_ERROR, error: err.message });
     });
 
     child.on('exit', (code) => {
-      const authJsonPath = path.join(profileDir, 'auth.json');
-      if (code === 0 && fs.existsSync(authJsonPath)) {
-        const identity = decodeAccountIdentity(authJsonPath);
-        ctx.registry.updateProfile(profileName, {
-          last_used: new Date().toISOString(),
-          email: identity.email,
-          plan_type: identity.plan_type ?? null,
-          account_id: identity.account_id,
-        });
-        const emailStr = identity.email ? ` as ${identity.email}` : '';
-        const planStr = identity.plan_type ? ` (plan: ${identity.plan_type})` : '';
-        console.log(ok(`Logged in${emailStr}${planStr}`));
-      } else if (code === 0) {
-        process.stderr.write(
-          `[!] codex login exited cleanly but no auth.json. Skipping registry update.\n`
-        );
-      } else {
-        process.stderr.write(
-          `[!] Login cancelled or failed. Profile ${profileName} remains unauthenticated.\n`
-        );
-        process.stderr.write(`    Retry: ccsx auth login ${profileName}\n`);
-      }
-      resolve();
+      resolve({ code: code ?? 1 });
     });
   });
+
+  if (loginResult.error) {
+    exitWithError(`codex login failed to start: ${loginResult.error}`, ExitCode.BINARY_ERROR);
+    return;
+  }
+
+  const authJsonPath = path.join(profileDir, 'auth.json');
+  if (loginResult.code === 0 && fs.existsSync(authJsonPath)) {
+    const identity = decodeAccountIdentity(authJsonPath);
+    ctx.registry.updateProfile(profileName, {
+      last_used: new Date().toISOString(),
+      email: identity.email,
+      plan_type: identity.plan_type ?? null,
+      account_id: identity.account_id,
+    });
+    const emailStr = identity.email ? ` as ${identity.email}` : '';
+    const planStr = identity.plan_type ? ` (plan: ${identity.plan_type})` : '';
+    console.log(ok(`Logged in${emailStr}${planStr}`));
+  } else if (loginResult.code === 0) {
+    process.stderr.write(
+      `[!] codex login exited cleanly but no auth.json. Skipping registry update.\n`
+    );
+    exitWithError('codex login completed without auth.json', ExitCode.AUTH_ERROR);
+  } else {
+    process.stderr.write(
+      `[!] Login cancelled or failed. Profile ${profileName} remains unauthenticated.\n`
+    );
+    process.stderr.write(`    Retry: ccsx auth login ${profileName}\n`);
+    exitWithError('codex login failed', ExitCode.AUTH_ERROR);
+  }
 }

@@ -21,7 +21,10 @@ import type { CodexProfileMetadata } from '../types';
 export async function handleRemoveCodex(ctx: CodexCommandContext, args: string[]): Promise<void> {
   await initUI();
   const parsed = parseArgs(args);
-  rejectUnsupportedOptions(parsed, 'ccsx auth remove <name> [--yes|-y] [--force]');
+  rejectUnsupportedOptions(parsed, 'ccsx auth remove <name> [--yes|-y] [--force]', {
+    yes: true,
+    force: true,
+  });
 
   const { profileName, yes, force } = parsed;
 

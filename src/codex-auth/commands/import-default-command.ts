@@ -19,7 +19,7 @@ import { exitWithError } from '../../errors';
 import { ExitCode } from '../../errors/exit-codes';
 import { resolveCodexProfileDir, ensureSharedConfigSymlink, decodeIdToken } from '../index';
 import { hasStructurallyValidIdToken } from '../decode-id-token';
-import { parseArgs, getProfileNameError } from './types';
+import { parseArgs, rejectUnsupportedOptions, getProfileNameError } from './types';
 import type { CodexCommandContext } from './types';
 
 const logger = createLogger('codex-auth:cmd:import-default');
@@ -30,6 +30,8 @@ const RETRY_DELAY_MS = 100;
 
 // CLIProxy format marker (reject these with a clear message)
 const CLIPROXY_TYPE_MARKER = 'type';
+const IMPORT_DEFAULT_USAGE =
+  'ccsx auth import-default <name> [--with-history] [--force] [--force-while-running]';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -249,6 +251,11 @@ export interface ImportDefaultArgs {
 function parseImportDefaultArgs(rawArgs: string[]): ImportDefaultArgs | null {
   // --with-history, --force, --force-while-running are distinct flags
   const parsed = parseArgs(rawArgs);
+  const unknownFlags = parsed.unknownFlags?.filter(
+    (flag) => flag !== '--with-history' && flag !== '--force-while-running'
+  );
+  rejectUnsupportedOptions({ ...parsed, unknownFlags }, IMPORT_DEFAULT_USAGE, { force: true });
+
   const withHistory = rawArgs.includes('--with-history');
   const forceWhileRunning = rawArgs.includes('--force-while-running');
 
@@ -270,9 +277,7 @@ export async function handleImportDefaultCodex(
 
   const args = parseImportDefaultArgs(rawArgs);
   if (!args) {
-    console.log(
-      `Usage: ccsx auth import-default <name> [--with-history] [--force] [--force-while-running]`
-    );
+    console.log(`Usage: ${IMPORT_DEFAULT_USAGE}`);
     exitWithError('Profile name required', ExitCode.PROFILE_ERROR);
     return;
   }
@@ -379,11 +384,13 @@ export async function handleImportDefaultCodex(
   try {
     ensureSharedConfigSymlink(profileDir);
   } catch (err) {
-    process.stderr.write(`[!] Symlinks unavailable; config.toml edits won't propagate.\n`);
+    const msg = err instanceof Error ? err.message : String(err);
     logger.warn('codex-auth.import-default.symlink-failed', 'Symlink creation failed', {
       profileDir,
-      error: err instanceof Error ? err.message : String(err),
+      error: msg,
     });
+    exitWithError(`Failed to prepare profile config.toml: ${msg}`, ExitCode.CONFIG_ERROR);
+    return;
   }
 
   // Decode email for display (best-effort)

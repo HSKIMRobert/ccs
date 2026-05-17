@@ -50,7 +50,7 @@ codex                         # runs with CODEX_HOME=~/.ccs/codex-instances/pers
 |---------|-------------|
 | `ccsx auth create <name>` | Create profile dir + auto-login |
 | `ccsx auth login <name>` | (Re-)authenticate an existing profile |
-| `ccsx auth switch <name>` | Set the persistent default profile (all new shells) |
+| `ccsx auth switch <name>` | Set the persistent default profile for future `ccsx` launches |
 | `ccsx auth use <name>` | Emit shell exports for this shell only (use with `eval`) |
 | `ccsx auth show [name]` | List all profiles or show details for one |
 | `ccsx auth remove <name>` | Delete profile dir + registry entry |
@@ -60,8 +60,11 @@ codex                         # runs with CODEX_HOME=~/.ccs/codex-instances/pers
 
 | Method | Scope | How |
 |--------|-------|-----|
-| `ccsx auth switch <name>` | All future shells | Writes to `~/.ccs/codex-profiles.yaml` |
+| `ccsx auth switch <name>` | Future `ccsx` launches | Writes to `~/.ccs/codex-profiles.yaml` |
 | `eval "$(ccsx auth use <name>)"` | Current shell only | Sets `CODEX_HOME` + `CCS_CODEX_PROFILE` in your shell |
+
+Native `codex` shells only see the persistent default when launched through the `ccsx`
+Codex runtime. For an already-open shell or a plain native `codex` binary, use `auth use`.
 
 Shell syntax for `use`:
 

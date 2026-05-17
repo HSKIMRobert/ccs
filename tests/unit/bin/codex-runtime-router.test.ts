@@ -318,6 +318,31 @@ describe('codex-runtime router — non-auth profile resolution', () => {
     expect(process.env.CODEX_HOME).toBe(explicitHome);
   });
 
+  it('lets CCS_CODEX_PROFILE override a stale explicit CODEX_HOME', async () => {
+    const explicitHome = path.join(tempDir, 'stale-codex-home');
+    const profileDir = makeProfileDir('work');
+    fs.mkdirSync(explicitHome, { recursive: true });
+    process.env.CODEX_HOME = explicitHome;
+    process.env.CCS_CODEX_PROFILE = 'work';
+    writeRegistry({
+      version: '1.0',
+      default: null,
+      profiles: { work: { type: 'codex', created: '2026-01-01T00:00:00.000Z', last_used: null } },
+    });
+
+    const { stderr } = await withCapturedStderr(async () => {
+      require.cache[ccsPath] = { exports: {} } as NodeJS.Module;
+      flushRouterCache();
+      require.cache[ccsPath] = { exports: {} } as NodeJS.Module;
+
+      const { main } = require(routerPath) as { main: (argv: string[]) => Promise<number> };
+      return main(['node', 'codex-runtime', 'chat']);
+    });
+
+    expect(process.env.CODEX_HOME).toBe(profileDir);
+    expect(stderr).toContain('overrides existing CODEX_HOME');
+  });
+
   it('sets CODEX_HOME from registry default when no CCS_CODEX_PROFILE is set', async () => {
     const profileDir = makeProfileDir('personal');
     writeRegistry({

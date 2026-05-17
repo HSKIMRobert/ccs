@@ -54,9 +54,10 @@ export async function main(argv: string[]): Promise<number> {
 
   // ── non-auth branch: profile resolution ─────────────────────────────────
 
-  // F1: respect an explicit CODEX_HOME — ccsxp, user export, CI override, etc.
+  // F1: respect explicit CODEX_HOME unless CCS_CODEX_PROFILE asks for a managed profile.
   const explicit = (process.env.CODEX_HOME ?? '').trim();
-  if (!explicit) {
+  const profileOverride = (process.env.CCS_CODEX_PROFILE ?? '').trim();
+  if (!explicit || profileOverride) {
     try {
       const { resolveActiveProfile } = require('../codex-auth/resolve-active-profile') as {
         resolveActiveProfile: (
@@ -65,6 +66,11 @@ export async function main(argv: string[]): Promise<number> {
       };
       const resolved = resolveActiveProfile(process.env);
       if (resolved) {
+        if (explicit && explicit !== resolved.dir) {
+          process.stderr.write(
+            `[!] codex-auth: CCS_CODEX_PROFILE=${profileOverride} overrides existing CODEX_HOME.\n`
+          );
+        }
         process.env.CODEX_HOME = resolved.dir;
 
         try {

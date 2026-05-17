@@ -6,6 +6,7 @@ import { color } from '../../utils/ui';
 import { exitWithError } from '../../errors';
 import { ExitCode } from '../../errors/exit-codes';
 import type { CodexProfileRegistry } from '../codex-profile-registry';
+import { getCodexProfileNameError, isValidCodexProfileName } from '../types';
 
 // Re-export for convenience in command modules
 export { formatRelativeTime } from '../../utils/time';
@@ -26,6 +27,7 @@ export interface CodexAuthArgs {
   force?: boolean;
   shell?: string;
   unknownFlags?: string[];
+  seenOptions?: string[];
 }
 
 // ── Profile output shape (JSON mode) ─────────────────────────────────────────
@@ -47,47 +49,32 @@ export interface CodexProfileOutput {
 
 // ── Name validation ───────────────────────────────────────────────────────────
 
-const RESERVED = new Set(['default', 'current']);
-
-/**
- * Profile name must match /^[a-z0-9][a-z0-9_-]{0,63}$/ and not be reserved.
- * Rejects uppercase, path separators, leading dash/underscore, length >64.
- */
-export function isValidCodexProfileName(name: string): boolean {
-  if (!name || name.length > 64) return false;
-  if (RESERVED.has(name)) return false;
-  if (name.includes('/') || name.includes('\\')) return false;
-  return /^[a-z0-9][a-z0-9_-]{0,63}$/.test(name);
-}
-
-export function getProfileNameError(name: string): string | null {
-  if (!name) return 'Profile name is required.';
-  if (RESERVED.has(name)) return `Profile name "${name}" is reserved.`;
-  if (name.includes('/') || name.includes('\\'))
-    return 'Profile name must not contain path separators.';
-  if (name.length > 64) return 'Profile name must be 64 characters or fewer.';
-  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(name))
-    return 'Profile name must match [a-z0-9][a-z0-9_-]{0,63}.';
-  return null;
-}
+export { isValidCodexProfileName };
+export const getProfileNameError = getCodexProfileNameError;
 
 // ── Arg parsing ───────────────────────────────────────────────────────────────
 
 export function parseArgs(args: string[]): CodexAuthArgs {
-  const result: CodexAuthArgs = { unknownFlags: [] };
+  const result: CodexAuthArgs = { unknownFlags: [], seenOptions: [] };
   const positional: string[] = [];
+  const markSeen = (flag: string) => result.seenOptions?.push(flag);
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--yes' || arg === '-y') {
+      markSeen('--yes');
       result.yes = true;
     } else if (arg === '--json') {
+      markSeen('--json');
       result.json = true;
     } else if (arg === '--force') {
+      markSeen('--force');
       result.force = true;
     } else if (arg === '--shell') {
-      result.shell = args[++i];
+      markSeen('--shell');
+      result.shell = args[++i] ?? '';
     } else if (arg.startsWith('--shell=')) {
+      markSeen('--shell');
       result.shell = arg.slice('--shell='.length);
     } else if (arg.startsWith('-') && arg !== '--') {
       if (result.unknownFlags) result.unknownFlags.push(arg);
@@ -103,9 +90,28 @@ export function parseArgs(args: string[]): CodexAuthArgs {
   return result;
 }
 
-export function rejectUnsupportedOptions(parsed: CodexAuthArgs, usage: string): void {
-  if (parsed.unknownFlags && parsed.unknownFlags.length > 0) {
+export interface AllowedCodexAuthOptions {
+  yes?: boolean;
+  json?: boolean;
+  force?: boolean;
+  shell?: boolean;
+}
+
+export function rejectUnsupportedOptions(
+  parsed: CodexAuthArgs,
+  usage: string,
+  allowed: AllowedCodexAuthOptions = {}
+): void {
+  const unsupported = new Set(parsed.unknownFlags ?? []);
+  const seen = new Set(parsed.seenOptions ?? []);
+  if (seen.has('--yes') && !allowed.yes) unsupported.add('--yes');
+  if (seen.has('--json') && !allowed.json) unsupported.add('--json');
+  if (seen.has('--force') && !allowed.force) unsupported.add('--force');
+  if (seen.has('--shell') && !allowed.shell) unsupported.add('--shell');
+
+  if (unsupported.size > 0) {
+    const flags = [...unsupported].join(', ');
     process.stderr.write(`Usage: ${color(usage, 'command')}\n`);
-    exitWithError('Unknown options', ExitCode.GENERAL_ERROR);
+    exitWithError(`Unknown options: ${flags}`, ExitCode.GENERAL_ERROR);
   }
 }

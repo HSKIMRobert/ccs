@@ -5,6 +5,10 @@ import { getSharedCodexConfigPath } from './codex-profile-paths';
 
 const logger = createLogger('codex-auth:symlink');
 
+export interface EnsureSharedConfigSymlinkOptions {
+  overwriteRegularFile?: boolean;
+}
+
 /**
  * Ensure <profileDir>/config.toml points at the shared ~/.codex/config.toml.
  * Self-healing: recreates stale or missing symlinks. If symlink creation is
@@ -14,7 +18,11 @@ const logger = createLogger('codex-auth:symlink');
  * @param sharedConfigPath - Override for the shared target path (used in tests
  *   to avoid touching real ~/.codex/config.toml). Defaults to getSharedCodexConfigPath().
  */
-export function ensureSharedConfigSymlink(profileDir: string, sharedConfigPath?: string): void {
+export function ensureSharedConfigSymlink(
+  profileDir: string,
+  sharedConfigPath?: string,
+  options: EnsureSharedConfigSymlinkOptions = {}
+): void {
   const targetPath = sharedConfigPath ?? getSharedCodexConfigPath();
   const linkPath = path.join(profileDir, 'config.toml');
 
@@ -57,12 +65,25 @@ export function ensureSharedConfigSymlink(profileDir: string, sharedConfigPath?:
         was: currentTarget,
         now: targetPath,
       });
-    } else {
-      // Regular file or other non-symlink entry — overwrite with warning
+    } else if (
+      options.overwriteRegularFile ||
+      isRegularConfigCopyUnmodified(linkPath, targetPath)
+    ) {
+      // Explicit repair or unchanged fallback copy — replace with a shared symlink when possible.
       process.stderr.write(
         `[!] codex-auth: overwriting regular file at ${linkPath} with symlink to shared config.toml\n`
       );
       fs.unlinkSync(linkPath);
+    } else {
+      process.stderr.write(
+        `[!] codex-auth: preserving existing regular config.toml at ${linkPath}; ` +
+          `use ccsx auth create <name> --force to refresh it.\n`
+      );
+      logger.warn('codex-auth.symlink-regular-file-preserved', 'Preserved regular config.toml', {
+        link: linkPath,
+        target: targetPath,
+      });
+      return;
     }
   }
 
@@ -74,6 +95,14 @@ export function ensureSharedConfigSymlink(profileDir: string, sharedConfigPath?:
     });
   } catch (err) {
     copySharedConfigFallback(targetPath, linkPath, err);
+  }
+}
+
+function isRegularConfigCopyUnmodified(linkPath: string, targetPath: string): boolean {
+  try {
+    return fs.readFileSync(linkPath, 'utf8') === fs.readFileSync(targetPath, 'utf8');
+  } catch {
+    return false;
   }
 }
 
