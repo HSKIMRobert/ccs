@@ -218,6 +218,18 @@ supports_websockets = false
     const rawText = fs.readFileSync(configPath, 'utf8');
     expect(rawText).toContain('model = "gpt-5.5"');
     expect(rawText).toContain('model_reasoning_effort = "xhigh"');
+  });
+
+  it('normalizes a native Codex minimal effort alias when adding the missing provider', async () => {
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(configPath, 'model = "gpt-5.5-minimal"\n', 'utf8');
+
+    const result = await ensureCodexCliproxyProviderConfig(8317, env);
+
+    expect(result.changed).toBe(true);
+    const rawText = fs.readFileSync(configPath, 'utf8');
+    expect(rawText).toContain('model = "gpt-5.5"');
+    expect(rawText).toContain('model_reasoning_effort = "minimal"');
     expect(rawText).toContain('[model_providers.cliproxy]');
   });
 

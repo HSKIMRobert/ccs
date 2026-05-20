@@ -123,7 +123,10 @@ describe('model-id-normalizer', () => {
     it('normalizes legacy codex aliases to the current supported model IDs', () => {
       expect(normalizeCodexLegacyModelAliases('gpt-5-codex')).toBe('gpt-5.4');
       expect(normalizeCodexLegacyModelAliases('gpt-5-codex-mini[1m]')).toBe('gpt-5.4-mini[1m]');
+      expect(normalizeCodexLegacyModelAliases('gpt-5-codex-minimal')).toBe('gpt-5.4-minimal');
+      expect(normalizeCodexLegacyModelAliases('gpt-5-codex-low')).toBe('gpt-5.4-low');
       expect(normalizeCodexLegacyModelAliases('gpt-5-codex-high')).toBe('gpt-5.4-high');
+      expect(normalizeCodexLegacyModelAliases('gpt-5-codex-fast-low')).toBe('gpt-5.4-low-fast');
       expect(normalizeCodexLegacyModelAliases('gpt-5-codex-fast-high')).toBe('gpt-5.4-high-fast');
       expect(normalizeCodexLegacyModelAliases('gpt-5-codex-high[1m]')).toBe('gpt-5.4-high[1m]');
       expect(normalizeCodexLegacyModelAliases('gpt-5-codex-high-fast[1m]')).toBe(
@@ -138,6 +141,16 @@ describe('model-id-normalizer', () => {
     });
 
     it('parses codex model tuning suffixes', () => {
+      expect(parseCodexModelTuningAlias('gpt-5.5-minimal')).toEqual({
+        baseModel: 'gpt-5.5',
+        effort: 'minimal',
+        serviceTier: null,
+      });
+      expect(parseCodexModelTuningAlias('gpt-5.5-low-fast')).toEqual({
+        baseModel: 'gpt-5.5',
+        effort: 'low',
+        serviceTier: 'fast',
+      });
       expect(parseCodexModelTuningAlias('gpt-5.5-high')).toEqual({
         baseModel: 'gpt-5.5',
         effort: 'high',

@@ -819,6 +819,32 @@ process.exit(0);
     expect(codexConfig).not.toContain('gpt-5.5-high-fast');
   });
 
+  it('normalizes ccsxp native low Codex tuning aliases in config.toml', () => {
+    if (process.platform === 'win32') return;
+
+    const codexHome = path.join(tmpHome, '.codex');
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, 'config.toml'), 'model = "gpt-5.5-low-fast"\n');
+
+    const result = runCcsxpAlias(['fix failing tests'], {
+      ...process.env,
+      CI: '1',
+      NO_COLOR: '1',
+      HOME: tmpHome,
+      CCS_HOME: tmpHome,
+      CCS_CODEX_PATH: fakeCodexPath,
+      CCS_TEST_CODEX_ARGS_OUT: codexArgsLogPath,
+      CCS_TEST_CODEX_ENV_OUT: codexEnvLogPath,
+    });
+
+    expect(result.status).toBe(0);
+    const codexConfig = fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8');
+    expect(codexConfig).toContain('model = "gpt-5.5"');
+    expect(codexConfig).toContain('model_reasoning_effort = "low"');
+    expect(codexConfig).toContain('service_tier = "priority"');
+    expect(codexConfig).not.toContain('gpt-5.5-low-fast');
+  });
+
   it('loads the configured cliproxy provider env_key for ccsxp launches', () => {
     if (process.platform === 'win32') return;
 

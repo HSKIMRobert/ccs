@@ -225,6 +225,8 @@ const resources = {
         pinnedRouteStatus: 'Pinned route status:',
         pinnedModelNotAdvertised:
           'Pinned model is not currently advertised by the proxy: {{model}}',
+        codexReasoningVariants: 'Reasoning variants',
+        codexFastVariants: 'Fast variants',
       },
       createAuthProfileDialog: {
         title: 'Create New Account',
@@ -2929,6 +2931,8 @@ const resources = {
         preferredPinnedModel: '偏好的固定模型：',
         pinnedRouteStatus: '固定路由状态：',
         pinnedModelNotAdvertised: '固定模型当前未被代理广播：{{model}}',
+        codexReasoningVariants: '推理变体',
+        codexFastVariants: '快速变体',
       },
       createAuthProfileDialog: {
         title: '创建新账号',
@@ -5517,6 +5521,8 @@ const resources = {
         preferredPinnedModel: 'Mô hình ghim ưu tiên:',
         pinnedRouteStatus: 'Trạng thái tuyến ghim:',
         pinnedModelNotAdvertised: 'Mô hình ghim hiện không được proxy quảng bá: {{model}}',
+        codexReasoningVariants: 'Biến thể lý luận',
+        codexFastVariants: 'Biến thể nhanh',
       },
       createAuthProfileDialog: {
         title: 'Tạo tài khoản mới',
@@ -8220,6 +8226,8 @@ const resources = {
         preferredPinnedModel: '優先ピンモデル:',
         pinnedRouteStatus: 'ピンルートの状態:',
         pinnedModelNotAdvertised: 'ピンモデルは現在プロキシから通知されていません: {{model}}',
+        codexReasoningVariants: '推論バリアント',
+        codexFastVariants: '高速バリアント',
       },
       createAuthProfileDialog: {
         title: '新しいアカウントを作成',
@@ -10946,6 +10954,8 @@ const resources = {
         preferredPinnedModel: '선호하는 고정 모델:',
         pinnedRouteStatus: '고정된 라우트 상태:',
         pinnedModelNotAdvertised: '고정된 모델이 현재 프록시에서 알리지 않고 있습니다: {{model}}',
+        codexReasoningVariants: '추론 변형',
+        codexFastVariants: '빠른 변형',
       },
       createAuthProfileDialog: {
         title: '새 계정 생성',
