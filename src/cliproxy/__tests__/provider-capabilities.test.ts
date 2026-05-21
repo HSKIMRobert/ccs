@@ -46,6 +46,7 @@ describe('provider-capabilities', () => {
       'gitlab',
       'codebuddy',
       'kilo',
+      'qoder',
     ]);
   });
 
@@ -66,6 +67,7 @@ describe('provider-capabilities', () => {
       'cursor',
       'codebuddy',
       'kilo',
+      'qoder',
     ]);
     expect(getProvidersByOAuthFlow('authorization_code')).toEqual([
       'gemini',
@@ -85,6 +87,7 @@ describe('provider-capabilities', () => {
       'kimi',
       'codebuddy',
       'kilo',
+      'qoder',
     ]);
   });
 
