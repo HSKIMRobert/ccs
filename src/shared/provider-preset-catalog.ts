@@ -12,6 +12,7 @@ export const PROVIDER_PRESET_IDS = [
   'openrouter',
   'alibaba-coding-plan',
   'huggingface',
+  'tuningengines',
   'ollama',
   'llamacpp',
   'anthropic',
@@ -61,6 +62,8 @@ export const PROVIDER_PRESET_ALIASES: Readonly<Record<string, ProviderPresetId>>
   alibaba: 'alibaba-coding-plan',
   acp: 'alibaba-coding-plan',
   hf: 'huggingface',
+  te: 'tuningengines',
+  tuning: 'tuningengines',
 });
 
 const RAW_PROVIDER_PRESET_DEFINITIONS: readonly ProviderPresetDefinition[] = [
@@ -152,6 +155,20 @@ const RAW_PROVIDER_PRESET_DEFINITIONS: readonly ProviderPresetDefinition[] = [
     requiresApiKey: true,
     defaultTarget: 'droid',
     badge: 'Router',
+  },
+  {
+    id: 'tuningengines',
+    name: 'Tuning Engines',
+    description: 'Governed OpenAI-compatible gateway for routed intelligence',
+    baseUrl: 'https://api.tuningengines.com/v1',
+    defaultProfileName: 'te',
+    defaultModel: 'llama-3.3-70b-fp8',
+    apiKeyPlaceholder: 'sk-te-...',
+    apiKeyHint: 'Create an inference key at app.tuningengines.com/inference/keys',
+    category: 'alternative',
+    requiresApiKey: true,
+    defaultTarget: 'droid',
+    badge: 'Governed gateway',
   },
   {
     id: 'glm',

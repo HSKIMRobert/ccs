@@ -6,6 +6,7 @@ your API profile points at an OpenAI-compatible chat completions endpoint.
 This is useful for providers such as:
 
 - Hugging Face Inference Providers
+- Tuning Engines
 - OpenRouter
 - Ollama
 - llama.cpp servers
@@ -48,10 +49,18 @@ Create or reuse an API profile that points at an OpenAI-compatible endpoint:
 ccs api create --preset hf
 ```
 
+For Tuning Engines:
+
+```bash
+ccs api create --preset te
+```
+
 Then you can use the profile directly:
 
 ```bash
 ccs hf
+# or
+ccs te
 ```
 
 CCS detects that the profile is OpenAI-compatible and auto-routes Claude Code
