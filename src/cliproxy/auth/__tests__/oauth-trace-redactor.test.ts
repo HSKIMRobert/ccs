@@ -53,10 +53,19 @@ describe('redactString', () => {
   });
 
   test('redacts JSON-style token payloads in plain strings', () => {
-    const out = redactString('{"access_token":"AT_SECRET","refresh_token":"RT_SECRET"}');
+    const out = redactString(
+      '{"access_token":"AT_SECRET","refresh_token":"RT_SECRET","token":"TOKEN_SECRET"}'
+    );
     expect(out).not.toContain('AT_SECRET');
     expect(out).not.toContain('RT_SECRET');
+    expect(out).not.toContain('TOKEN_SECRET');
     expect(out).toContain(REDACTED_PLACEHOLDER);
+  });
+
+  test('preserves JSON-style separator spacing while redacting token payloads', () => {
+    const out = redactString('{"access_token" : "AT_SECRET"}');
+    expect(out).not.toContain('AT_SECRET');
+    expect(out).toContain(`"access_token" : "${REDACTED_PLACEHOLDER}"`);
   });
 
   test('redacts line-leading key/value formats', () => {
@@ -68,7 +77,13 @@ describe('redactString', () => {
     expect(out).not.toContain('CS_SECRET');
     expect(out).toContain(`access_token=${REDACTED_PLACEHOLDER}`);
     expect(out).toContain(`refresh_token=${REDACTED_PLACEHOLDER}`);
-    expect(out).toContain(`client_secret=${REDACTED_PLACEHOLDER}`);
+    expect(out).toContain(`client_secret: ${REDACTED_PLACEHOLDER}`);
+  });
+
+  test('preserves URL-style suffixes in line-leading key/value snippets', () => {
+    const out = redactString('access_token=AT_SECRET&keep=1');
+    expect(out).not.toContain('AT_SECRET');
+    expect(out).toBe(`access_token=${REDACTED_PLACEHOLDER}&keep=1`);
   });
 });
 
