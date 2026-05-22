@@ -1095,6 +1095,62 @@ supports_websockets = false
     expect(readLoggedCodexCalls(codexArgsLogPath)).toEqual([]);
   });
 
+  it('launches a ccsx auth profile even when a Claude account has the same name', () => {
+    if (process.platform === 'win32') return;
+
+    const codexProfileDir = path.join(ccsDir, 'codex-instances', 'ck');
+    fs.mkdirSync(codexProfileDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.yaml'),
+      [
+        'version: 2',
+        'accounts:',
+        '  ck:',
+        '    created: "2026-01-01"',
+        '    last_used: "2026-01-01"',
+      ].join('\n')
+    );
+    fs.writeFileSync(
+      path.join(ccsDir, 'codex-profiles.yaml'),
+      [
+        'version: "1.0"',
+        'default: null',
+        'profiles:',
+        '  ck:',
+        '    type: codex',
+        '    created: "2026-01-01T00:00:00.000Z"',
+        '    last_used: null',
+      ].join('\n')
+    );
+
+    const result = runCodexAlias(['ck', 'fix failing tests'], {
+      ...process.env,
+      CI: '1',
+      NO_COLOR: '1',
+      HOME: tmpHome,
+      CCS_HOME: tmpHome,
+      CCS_CODEX_PATH: fakeCodexPath,
+      CCS_TEST_CODEX_ARGS_OUT: codexArgsLogPath,
+      CCS_TEST_CODEX_ENV_OUT: codexEnvLogPath,
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain('Codex CLI does not support Claude account-based profiles.');
+    expect(readLoggedCodexCalls(codexArgsLogPath)).toEqual([['fix failing tests']]);
+    expect(readLoggedCodexEnv(codexEnvLogPath)).toEqual([
+      {
+        CODEX_HOME: codexProfileDir,
+        CODEX_CI: undefined,
+        CODEX_MANAGED_BY_BUN: undefined,
+        CODEX_THREAD_ID: undefined,
+        ANTHROPIC_BASE_URL: undefined,
+        CCS_BROWSER_USER_DATA_DIR: undefined,
+        CCS_BROWSER_PROFILE_DIR: undefined,
+        CCS_BROWSER_DEVTOOLS_WS_URL: undefined,
+      },
+    ]);
+  });
+
   it('rejects conflicting native provider config overrides for ccsxp', () => {
     if (process.platform === 'win32') return;
 

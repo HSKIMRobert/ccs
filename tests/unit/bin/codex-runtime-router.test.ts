@@ -146,6 +146,28 @@ describe('codex-runtime router — non-auth profile resolution', () => {
     expect(process.env.CODEX_HOME).toBe(profileDir);
   });
 
+  it('resolves a first positional ccsx arg from the Codex auth registry before CCS profiles', async () => {
+    const profileDir = makeProfileDir('ck');
+    writeRegistry({
+      version: '1.0',
+      default: null,
+      profiles: { ck: { type: 'codex', created: '2026-01-01T00:00:00.000Z', last_used: null } },
+    });
+
+    require.cache[ccsPath] = { exports: {} } as NodeJS.Module;
+    flushRouterCache();
+    require.cache[ccsPath] = { exports: {} } as NodeJS.Module;
+
+    const argv = ['node', 'codex-runtime', 'ck', 'fix failing tests'];
+    const { main } = require(routerPath) as { main: (argv: string[]) => Promise<number> };
+    const code = await main(argv);
+
+    expect(code).toBe(-1);
+    expect(process.env.CCS_CODEX_PROFILE).toBe('ck');
+    expect(process.env.CODEX_HOME).toBe(profileDir);
+    expect(argv).toEqual(['node', 'codex-runtime', 'default', 'fix failing tests']);
+  });
+
   it('leaves CODEX_HOME unset when no registry exists and no env profile set', async () => {
     // No registry file, no CCS_CODEX_PROFILE
     require.cache[ccsPath] = { exports: {} } as NodeJS.Module;

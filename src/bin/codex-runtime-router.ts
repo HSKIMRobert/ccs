@@ -35,6 +35,31 @@ function errorMessage(err: unknown): string {
   return String(err);
 }
 
+function maybeSelectPositionalCodexProfile(argv: string[]): void {
+  const candidate = (argv[2] ?? '').trim();
+  if (!candidate || candidate.startsWith('-') || candidate === 'auth') {
+    return;
+  }
+
+  const { getNativeCodexPassthroughArgs } = require('../dispatcher/cli-argument-parser') as {
+    getNativeCodexPassthroughArgs: (args: string[]) => string[] | null;
+  };
+  if (getNativeCodexPassthroughArgs(argv.slice(2)) !== null) {
+    return;
+  }
+
+  const { CodexProfileRegistry } = require('../codex-auth/codex-profile-registry') as {
+    CodexProfileRegistry: new () => { hasProfile: (name: string) => boolean };
+  };
+  const registry = new CodexProfileRegistry();
+  if (!registry.hasProfile(candidate)) {
+    return;
+  }
+
+  process.env.CCS_CODEX_PROFILE = candidate;
+  argv[2] = 'default';
+}
+
 /**
  * Main entry-point for the ccsx / codex-runtime binary.
  *
@@ -54,11 +79,13 @@ export async function main(argv: string[]): Promise<number> {
 
   // ── non-auth branch: profile resolution ─────────────────────────────────
 
-  // F1: respect explicit CODEX_HOME unless CCS_CODEX_PROFILE asks for a managed profile.
-  const explicit = (process.env.CODEX_HOME ?? '').trim();
-  const profileOverride = (process.env.CCS_CODEX_PROFILE ?? '').trim();
-  if (!explicit || profileOverride) {
-    try {
+  try {
+    maybeSelectPositionalCodexProfile(argv);
+
+    // F1: respect explicit CODEX_HOME unless CCS_CODEX_PROFILE asks for a managed profile.
+    const explicit = (process.env.CODEX_HOME ?? '').trim();
+    const profileOverride = (process.env.CCS_CODEX_PROFILE ?? '').trim();
+    if (!explicit || profileOverride) {
       const { resolveActiveProfile } = require('../codex-auth/resolve-active-profile') as {
         resolveActiveProfile: (
           env: NodeJS.ProcessEnv
@@ -85,15 +112,15 @@ export async function main(argv: string[]): Promise<number> {
           );
         }
       }
-    } catch (resolverErr) {
-      const msg = errorMessage(resolverErr);
-      if (isCodexAuthProfileResolutionError(resolverErr)) {
-        process.stderr.write(`[X] codex-auth: ${msg}\n`);
-        return 1;
-      }
-      process.stderr.write(`[X] codex-auth: profile resolution failed (${msg})\n`);
+    }
+  } catch (resolverErr) {
+    const msg = errorMessage(resolverErr);
+    if (isCodexAuthProfileResolutionError(resolverErr)) {
+      process.stderr.write(`[X] codex-auth: ${msg}\n`);
       return 1;
     }
+    process.stderr.write(`[X] codex-auth: profile resolution failed (${msg})\n`);
+    return 1;
   }
 
   // ── delegate to CCS ─────────────────────────────────────────────────────

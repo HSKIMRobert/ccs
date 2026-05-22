@@ -28,6 +28,9 @@ codex
 # Terminal B:
 eval "$(ccsx auth use personal)"
 codex
+
+# Or launch a named profile directly through ccsx
+ccsx work
 ```
 
 ## Two-terminal example
@@ -49,6 +52,7 @@ codex                         # runs with CODEX_HOME=~/.ccs/codex-instances/pers
 | Command | Description |
 |---------|-------------|
 | `ccsx auth create <name>` | Create profile dir + auto-login |
+| `ccsx <name>` | Launch a named Codex auth profile |
 | `ccsx auth login <name>` | (Re-)authenticate an existing profile |
 | `ccsx auth switch <name>` | Set the persistent default profile for future `ccsx` launches |
 | `ccsx auth use <name>` | Emit shell exports for this shell only (use with `eval`) |
@@ -60,6 +64,7 @@ codex                         # runs with CODEX_HOME=~/.ccs/codex-instances/pers
 
 | Method | Scope | How |
 |--------|-------|-----|
+| `ccsx <name>` | One launch | Resolves `<name>` from the Codex profile registry |
 | `ccsx auth switch <name>` | Future `ccsx` launches | Writes to `~/.ccs/codex-profiles.yaml` |
 | `eval "$(ccsx auth use <name>)"` | Current shell only | Sets `CODEX_HOME` + `CCS_CODEX_PROFILE` in your shell |
 
