@@ -40,6 +40,10 @@ jobs:
       contents: read
       packages: write
 
+    env:
+      DEPRECATION_BASELINE_VERSION: "7.80.0"
+      STABLE_RELEASE_WINDOW: "2"
+
     steps:
       - name: Resolve target tag
         id: target
@@ -69,18 +73,26 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.target.outputs.tag }}
+          fetch-depth: 0
           persist-credentials: false
 
-      - name: Set up QEMU
+      - name: Check legacy dashboard sunset
         if: steps.tag.outputs.publish == 'true'
+        id: sunset
+        env:
+          TARGET_TAG: ${{ steps.target.outputs.tag }}
+        run: node scripts/docker-dashboard-sunset-guard.js
+
+      - name: Set up QEMU
+        if: steps.tag.outputs.publish == 'true' && steps.sunset.outputs.publish == 'true'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        if: steps.tag.outputs.publish == 'true'
+        if: steps.tag.outputs.publish == 'true' && steps.sunset.outputs.publish == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Derive image metadata
-        if: steps.tag.outputs.publish == 'true'
+        if: steps.tag.outputs.publish == 'true' && steps.sunset.outputs.publish == 'true'
         id: meta
         run: |
           VERSION="${{ steps.target.outputs.tag }}"
@@ -111,7 +123,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
-        if: steps.tag.outputs.publish == 'true'
+        if: steps.tag.outputs.publish == 'true' && steps.sunset.outputs.publish == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -119,7 +131,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push legacy dashboard image
-        if: steps.tag.outputs.publish == 'true'
+        if: steps.tag.outputs.publish == 'true' && steps.sunset.outputs.publish == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
