@@ -34,6 +34,7 @@ const CLAUDE_SUBCOMMANDS = new Set<string>([
   'plugin',
   'plugins',
   'project',
+  'remote-control',
   'setup-token',
   'ultrareview',
   'update',

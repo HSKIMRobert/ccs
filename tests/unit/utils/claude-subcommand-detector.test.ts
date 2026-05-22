@@ -26,6 +26,7 @@ describe('isClaudeSubcommandInvocation', () => {
       'plugin',
       'plugins',
       'project',
+      'remote-control',
       'setup-token',
       'ultrareview',
       'update',
@@ -117,6 +118,9 @@ describe('stripClaudeSubcommandSessionArgs', () => {
     expect(stripClaudeSubcommandSessionArgs(['doctor', '--permission-mode=acceptEdits'])).toEqual([
       'doctor',
     ]);
+    expect(
+      stripClaudeSubcommandSessionArgs(['remote-control', '--permission-mode', 'bypassPermissions'])
+    ).toEqual(['remote-control']);
   });
 
   it('preserves --permission-mode for the agents subcommand (after)', () => {
@@ -152,11 +156,7 @@ describe('stripClaudeSubcommandSessionArgs', () => {
         '--allow-dangerously-skip-permissions',
         'agents',
       ])
-    ).toEqual([
-      '--dangerously-skip-permissions',
-      '--allow-dangerously-skip-permissions',
-      'agents',
-    ]);
+    ).toEqual(['--dangerously-skip-permissions', '--allow-dangerously-skip-permissions', 'agents']);
   });
 
   it('still strips --teammate-mode for the agents subcommand (not accepted by upstream)', () => {
@@ -188,14 +188,17 @@ describe('subcommand passthrough — injectors short-circuit', () => {
     expect(appendThirdPartyWebSearchToolArgs(['agents'])).toEqual(['agents']);
     expect(appendThirdPartyWebSearchToolArgs(['doctor'])).toEqual(['doctor']);
     expect(appendThirdPartyWebSearchToolArgs(['mcp', 'list'])).toEqual(['mcp', 'list']);
+    expect(appendThirdPartyWebSearchToolArgs(['remote-control'])).toEqual(['remote-control']);
   });
 
   it('appendThirdPartyImageAnalysisToolArgs returns args unchanged for subcommand invocations', () => {
     expect(appendThirdPartyImageAnalysisToolArgs(['agents'])).toEqual(['agents']);
+    expect(appendThirdPartyImageAnalysisToolArgs(['remote-control'])).toEqual(['remote-control']);
   });
 
   it('appendBrowserToolArgs returns args unchanged for subcommand invocations', () => {
     expect(appendBrowserToolArgs(['agents'])).toEqual(['agents']);
+    expect(appendBrowserToolArgs(['remote-control'])).toEqual(['remote-control']);
   });
 
   it('injectors still inject for non-subcommand interactive launches', () => {
