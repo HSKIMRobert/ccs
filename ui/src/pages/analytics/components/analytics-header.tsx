@@ -54,10 +54,12 @@ export function AnalyticsHeader({
         <p className="text-sm text-muted-foreground">{t('analytics.subtitle')}</p>
       </div>
       <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-        <div className="flex items-center gap-1">
+        <div className="inline-flex items-center gap-1 shrink-0">
           <Select value={selectedProfile} onValueChange={onProfileChange}>
-            <SelectTrigger className="h-8 w-[190px]" aria-label="Analytics profile">
-              <SelectValue placeholder="All profiles" />
+            <SelectTrigger className="h-8 w-[170px]" aria-label="Analytics profile">
+              <SelectValue placeholder="All profiles">
+                {profileOptions.find((o) => o.value === selectedProfile)?.label ?? 'All profiles'}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {profileOptions.map((option) => (
@@ -114,8 +116,11 @@ export function AnalyticsHeader({
         />
 
         {lastUpdatedText && (
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            {t('analytics.updated', { value: lastUpdatedText })}
+          <span
+            className="text-xs text-muted-foreground whitespace-nowrap font-mono"
+            title={t('analytics.updated', { value: lastUpdatedText })}
+          >
+            {lastUpdatedText}
           </span>
         )}
         <Button
