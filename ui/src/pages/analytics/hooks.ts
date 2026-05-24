@@ -6,7 +6,18 @@
 
 import { useState, useMemo, useCallback } from 'react';
 import type { DateRange } from 'react-day-picker';
-import { subDays, formatDistanceToNow } from 'date-fns';
+import { subDays } from 'date-fns';
+
+function formatCompactRelativeTime(date: Date): string {
+  const seconds = Math.max(1, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 import {
   useUsageSummary,
   useUsageTrends,
@@ -151,10 +162,10 @@ export function useAnalyticsPage() {
     persistSelectedProfile(profile);
   }, []);
 
-  // Format "Last updated" text
+  // Compact "Last updated" text (e.g. "1m ago", "2h ago")
   const lastUpdatedText = useMemo(() => {
     if (!status?.lastFetch) return null;
-    return formatDistanceToNow(new Date(status.lastFetch), { addSuffix: true });
+    return formatCompactRelativeTime(new Date(status.lastFetch));
   }, [status?.lastFetch]);
 
   // Handle model click for popover
