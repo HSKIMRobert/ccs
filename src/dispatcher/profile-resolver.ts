@@ -29,6 +29,7 @@ import { resolveTargetType, stripTargetFlag } from '../targets/target-resolver';
 import { DroidReasoningFlagError } from '../targets/droid-reasoning-runtime';
 import { DroidCommandRouterError, routeDroidCommandArgs } from '../targets/droid-command-router';
 import { resolveCliproxyBridgeMetadata } from '../api/services/cliproxy-profile-bridge';
+import { getClaudeSubcommandName } from '../utils/claude-subcommand-detector';
 import { resolveCodexRuntimeConfigOverrides } from './environment-builder';
 import {
   detectProfile,
@@ -83,6 +84,31 @@ function usesImplicitDefaultProfile(cleanArgs: string[]): boolean {
   return cleanArgs.length === 0 || cleanArgs[0]?.startsWith('-') === true;
 }
 
+/**
+ * Decide whether a first token that has no matching profile is actually a bare
+ * Claude subcommand that should be forwarded through the default profile.
+ *
+ * Claude Code exposes subcommands like `claude agents`, `claude mcp`,
+ * `claude plugin`, `claude setup-token`. Invoked through CCS as `ccs agents`,
+ * `ccs mcp`, ... the first token is treated as a profile name, so profile
+ * resolution throws "profile not found". Instead, forward such tokens to
+ * `claude <subcommand>` under the default profile (matching `ccs default
+ * agents`), where the launcher already strips interactive-session args.
+ *
+ * Gated to the claude target — codex/droid run their own subcommand routing —
+ * and only reached on the profile-not-found path, so a real configured profile
+ * of the same name always wins.
+ */
+export function isBareClaudeSubcommandPassthrough(profile: string, args: string[]): boolean {
+  if (profile === 'default') return false;
+  if (getClaudeSubcommandName([profile]) === null) return false;
+  try {
+    return resolveTargetType(args) === 'claude';
+  } catch {
+    return false;
+  }
+}
+
 function buildNativeCodexDefaultProfile(): ProfileDetectionResult {
   return {
     type: 'default',
@@ -123,8 +149,23 @@ export async function resolveProfileAndTarget(
 
   // Detect profile (strip --target flags before profile detection)
   const cleanArgs = stripTargetFlag(args);
-  const { profile, remainingArgs } = detectProfile(cleanArgs);
-  let profileInfo: ProfileDetectionResult = detector.detectProfileType(profile);
+  const detected = detectProfile(cleanArgs);
+  let profile = detected.profile;
+  let remainingArgs = detected.remainingArgs;
+  let profileInfo: ProfileDetectionResult;
+  try {
+    profileInfo = detector.detectProfileType(profile);
+  } catch (profileError) {
+    // Bare Claude subcommand passthrough: forward `ccs agents`, `ccs mcp`, ...
+    // through the default profile instead of failing as an unknown profile.
+    if (isBareClaudeSubcommandPassthrough(profile, args)) {
+      remainingArgs = [profile, ...remainingArgs];
+      profile = 'default';
+      profileInfo = detector.detectProfileType(profile);
+    } else {
+      throw profileError;
+    }
+  }
 
   let resolvedTarget: ReturnType<typeof resolveTargetType>;
   try {
