@@ -40,6 +40,7 @@ describe('generateConnectionEvents()', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -76,6 +77,33 @@ describe('generateConnectionEvents()', () => {
     expect(emails.size).toBeGreaterThan(1);
     expect(emails.has('recent@example.com')).toBe(true);
     expect(emails.has('older@example.com')).toBe(true);
+  });
+
+  it('bases shared timelines on the latest actual lastUsedAt instead of current time', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-29T00:00:00.000Z'));
+
+    const latestActualLastUsedAt = new Date('2021-01-01T00:00:00.000Z').getTime();
+    const accounts: AccountData[] = [
+      makeAccount({
+        id: 'old2020',
+        email: 'old2020@example.com',
+        successCount: 1,
+        lastUsedAt: '2020-01-01T00:00:00.000Z',
+      }),
+      makeAccount({
+        id: 'old2021',
+        email: 'old2021@example.com',
+        successCount: 1,
+        lastUsedAt: '2021-01-01T00:00:00.000Z',
+      }),
+    ];
+
+    const events = generateConnectionEvents(accounts);
+    const mostRecentTimestamp = Math.max(...events.map((event) => event.timestamp.getTime()));
+
+    expect(mostRecentTimestamp).toBe(latestActualLastUsedAt);
+    expect(mostRecentTimestamp).toBeLessThan(Date.now() - 365 * 24 * 60 * 60 * 1000);
   });
 
   it('returns at most MAX_TIMELINE_EVENTS events (cap respected by caller slice)', () => {

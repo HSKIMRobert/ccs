@@ -47,10 +47,15 @@ export function generateConnectionEvents(accounts: AccountData[]): ConnectionEve
   // Use a shared base time so events from all accounts interleave in the timeline.
   // Without this, accounts with more recent lastUsedAt dominate the sorted output.
   const now = Date.now();
-  const sharedBaseTime = accounts.reduce((latest, a) => {
-    const t = a.lastUsedAt ? new Date(a.lastUsedAt).getTime() : now;
-    return Math.max(latest, isNaN(t) ? now : t);
-  }, now);
+  const latestLastUsedAt = accounts.reduce<number | undefined>((latest, account) => {
+    if (!account.lastUsedAt) return latest;
+
+    const timestamp = new Date(account.lastUsedAt).getTime();
+    if (Number.isNaN(timestamp)) return latest;
+
+    return latest === undefined ? timestamp : Math.max(latest, timestamp);
+  }, undefined);
+  const sharedBaseTime = latestLastUsedAt ?? now;
 
   accounts.forEach((account) => {
     const lastUsed = new Date(sharedBaseTime);
