@@ -3,12 +3,20 @@ import {
   DEFAULT_IMAGE_ANALYSIS_CONFIG,
   type ImageAnalysisConfig,
 } from '../../../../src/config/unified-config-types';
+import { findModel } from '../../../../src/cliproxy/model-catalog';
 import {
   canonicalizeImageAnalysisConfig,
   resolveImageAnalysisStatus,
 } from '../../../../src/utils/hooks/image-analysis-backend-resolver';
 
 describe('image-analysis-backend-resolver', () => {
+  it('uses a catalog-backed Claude image analysis default model', () => {
+    const defaultModel = DEFAULT_IMAGE_ANALYSIS_CONFIG.provider_models.claude;
+
+    expect(defaultModel).toBe('claude-haiku-4-5-20251001');
+    expect(findModel('claude', defaultModel)?.id).toBe(defaultModel);
+  });
+
   it('canonicalizes provider aliases in config', () => {
     const config = canonicalizeImageAnalysisConfig({
       enabled: true,
