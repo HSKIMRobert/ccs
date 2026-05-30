@@ -53,6 +53,7 @@ export function AccountStep({
                         variant="outline"
                         className={cn(
                           'text-[10px] h-4 px-1.5 border-transparent',
+                          privacyMode && PRIVACY_BLUR_CLASS,
                           codexBadge.audience === 'business'
                             ? 'bg-sky-500/12 text-sky-700 dark:text-sky-300'
                             : codexBadge.audience === 'free'
@@ -67,6 +68,7 @@ export function AccountStep({
                         variant="outline"
                         className={cn(
                           'text-[10px] h-4 px-1.5 border-transparent',
+                          privacyMode && PRIVACY_BLUR_CLASS,
                           identity.audience === 'business'
                             ? 'bg-sky-500/12 text-sky-700 dark:text-sky-300'
                             : identity.audience === 'free'
@@ -78,7 +80,10 @@ export function AccountStep({
                       </Badge>
                     ) : null}
                     {!codexBadge?.label && identity.detailLabel && (
-                      <Badge variant="outline" className="text-[10px] h-4 px-1.5">
+                      <Badge
+                        variant="outline"
+                        className={cn('text-[10px] h-4 px-1.5', privacyMode && PRIVACY_BLUR_CLASS)}
+                      >
                         {identity.detailLabel}
                       </Badge>
                     )}
