@@ -146,4 +146,42 @@ describe('AccountSurfaceCard', () => {
     expect(screen.queryByText('Pers')).not.toBeInTheDocument();
     expect(screen.queryByTitle('Free')).not.toBeInTheDocument();
   });
+
+  it('blurs detailed account identity metadata when privacy mode is enabled', () => {
+    render(
+      <AccountSurfaceCard
+        mode="detailed"
+        provider="gemini"
+        accountId="victim@example.com#04a0f049-team"
+        email="victim@example.com"
+        displayEmail="victim@example.com"
+        tokenFile="gemini-victim@example.com-04a0f049-team.json"
+        privacyMode={true}
+        showQuota={false}
+      />
+    );
+
+    expect(screen.getByText('victim@example.com')).toHaveClass('blur-[4px]');
+    expect(screen.getByText('Business')).toHaveClass('blur-[4px]');
+    expect(screen.getByText('Workspace 04a0f049')).toHaveClass('blur-[4px]');
+  });
+
+  it('blurs compact account identity metadata when privacy mode is enabled', () => {
+    render(
+      <AccountSurfaceCard
+        mode="compact"
+        provider="gemini"
+        accountId="victim@example.com#04a0f049-team"
+        email="victim@example.com"
+        displayEmail="victim@example.com"
+        tokenFile="gemini-victim@example.com-04a0f049-team.json"
+        privacyMode={true}
+        showQuota={false}
+      />
+    );
+
+    expect(screen.getByText('victim@example.com')).toHaveClass('blur-[4px]');
+    expect(screen.getByText('Biz')).toHaveClass('blur-[4px]');
+    expect(screen.getByText('04a0f049')).toHaveClass('blur-[4px]');
+  });
 });

@@ -89,6 +89,7 @@ export function VariantStep({
                     variant="outline"
                     className={cn(
                       'text-[10px] h-4 px-1.5 border-transparent',
+                      privacyMode && PRIVACY_BLUR_CLASS,
                       selectedCodexBadge.audience === 'business'
                         ? 'bg-sky-500/12 text-sky-700 dark:text-sky-300'
                         : selectedCodexBadge.audience === 'free'
@@ -103,6 +104,7 @@ export function VariantStep({
                     variant="outline"
                     className={cn(
                       'text-[10px] h-4 px-1.5 border-transparent',
+                      privacyMode && PRIVACY_BLUR_CLASS,
                       selectedAccountIdentity.audience === 'business'
                         ? 'bg-sky-500/12 text-sky-700 dark:text-sky-300'
                         : selectedAccountIdentity.audience === 'free'
@@ -114,7 +116,10 @@ export function VariantStep({
                   </Badge>
                 ) : null}
                 {!selectedCodexBadge?.label && selectedAccountIdentity?.detailLabel && (
-                  <Badge variant="outline" className="text-[10px] h-4 px-1.5">
+                  <Badge
+                    variant="outline"
+                    className={cn('text-[10px] h-4 px-1.5', privacyMode && PRIVACY_BLUR_CLASS)}
+                  >
                     {selectedAccountIdentity.detailLabel}
                   </Badge>
                 )}
