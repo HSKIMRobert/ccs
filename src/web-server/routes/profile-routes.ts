@@ -6,6 +6,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { requireLocalAccessWhenAuthDisabled } from '../middleware/auth-middleware';
 import { isReservedName, RESERVED_PROFILE_NAMES } from '../../config/reserved-names';
 import {
   createApiProfile,
@@ -29,6 +30,9 @@ import { isCLIProxyProvider } from '../../cliproxy/provider-capabilities';
 import { isAnthropicDirectProfile, updateSettingsFile, parseTarget } from './route-helpers';
 
 const router = Router();
+
+const LOCAL_RUNTIME_READINESS_LOCAL_ACCESS_ERROR =
+  'Local runtime readiness requires localhost access when dashboard auth is disabled.';
 
 function isDenylistError(message: string | undefined): boolean {
   return typeof message === 'string' && message.toLowerCase().includes('denylist');
@@ -87,7 +91,11 @@ router.get('/cliproxy-bridge/providers', (_req: Request, res: Response): void =>
   }
 });
 
-router.get('/local-runtime-readiness', async (_req: Request, res: Response): Promise<void> => {
+router.get('/local-runtime-readiness', async (req: Request, res: Response): Promise<void> => {
+  if (!requireLocalAccessWhenAuthDisabled(req, res, LOCAL_RUNTIME_READINESS_LOCAL_ACCESS_ERROR)) {
+    return;
+  }
+
   try {
     res.json({ runtimes: await getLocalRuntimeReadiness() });
   } catch (error) {

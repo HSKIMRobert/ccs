@@ -6,11 +6,20 @@ import profileRoutes from '../../../src/web-server/routes/profile-routes';
 describe('profile-routes local runtime readiness', () => {
   let server: Server;
   let baseUrl = '';
+  let forcedRemoteAddress = '127.0.0.1';
+  let originalDashboardAuthEnabled: string | undefined;
   const originalFetch = globalThis.fetch;
 
   beforeAll(async () => {
     const app = express();
     app.use(express.json());
+    app.use((req, _res, next) => {
+      Object.defineProperty(req.socket, 'remoteAddress', {
+        value: forcedRemoteAddress,
+        configurable: true,
+      });
+      next();
+    });
     app.use('/api/profiles', profileRoutes);
 
     await new Promise<void>((resolve, reject) => {
@@ -36,6 +45,10 @@ describe('profile-routes local runtime readiness', () => {
   });
 
   beforeEach(() => {
+    originalDashboardAuthEnabled = process.env.CCS_DASHBOARD_AUTH_ENABLED;
+    process.env.CCS_DASHBOARD_AUTH_ENABLED = 'false';
+    forcedRemoteAddress = '127.0.0.1';
+
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
 
@@ -73,6 +86,12 @@ describe('profile-routes local runtime readiness', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+
+    if (originalDashboardAuthEnabled !== undefined) {
+      process.env.CCS_DASHBOARD_AUTH_ENABLED = originalDashboardAuthEnabled;
+    } else {
+      delete process.env.CCS_DASHBOARD_AUTH_ENABLED;
+    }
   });
 
   it('reports local runtimes as ready when their endpoints respond with models', async () => {
@@ -101,6 +120,30 @@ describe('profile-routes local runtime readiness', () => {
         status: 'ready',
       })
     );
+  });
+
+  it('blocks remote readiness probes when dashboard auth is disabled', async () => {
+    let probeCount = 0;
+    forcedRemoteAddress = '10.10.0.24';
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith(baseUrl)) {
+        return originalFetch(input);
+      }
+      probeCount += 1;
+      return new Response(JSON.stringify({ models: [{ name: 'gemma4:e4b' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    const response = await fetch(`${baseUrl}/api/profiles/local-runtime-readiness`);
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: 'Local runtime readiness requires localhost access when dashboard auth is disabled.',
+    });
+    expect(probeCount).toBe(0);
   });
 
   it('reports setup guidance when local endpoints are unavailable', async () => {
