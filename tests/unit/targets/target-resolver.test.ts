@@ -68,9 +68,9 @@ describe('resolveTargetType', () => {
     expect(resolveTargetType([], { target: 'invalid-target' as never })).toBe('claude');
   });
 
-  it('should ignore runtime-only codex target when it appears in persisted profile config', () => {
+  it('should use codex from persisted profile config', () => {
     process.argv = ['node', 'ccs'];
-    expect(resolveTargetType([], { target: 'codex' })).toBe('claude');
+    expect(resolveTargetType([], { target: 'codex' })).toBe('codex');
   });
 
   it('should prioritize --target flag over profile config', () => {

@@ -265,6 +265,68 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
       },
     ],
   },
+  qoder: {
+    provider: 'qoder',
+    displayName: 'Qoder',
+    defaultModel: 'qoder/auto',
+    models: [
+      {
+        id: 'qoder/auto',
+        name: 'Qoder Auto',
+        description: 'Auto selects the best Qoder model for your prompt',
+      },
+      {
+        id: 'qoder/ultimate',
+        name: 'Qoder Ultimate',
+        description: 'Highest quality Qoder tier',
+      },
+      {
+        id: 'qoder/performance',
+        name: 'Qoder Performance',
+        description: 'Balanced quality and speed',
+      },
+      {
+        id: 'qoder/efficient',
+        name: 'Qoder Efficient',
+        description: 'Cost-efficient Qoder tier',
+      },
+      {
+        id: 'qoder/lite',
+        name: 'Qoder Lite',
+        description: 'Fastest and most affordable Qoder tier',
+      },
+      {
+        id: 'qoder/qmodel',
+        name: 'Qwen 3.6 Plus (via Qoder)',
+        description: 'Qwen 3.6 Plus frontier model',
+      },
+      {
+        id: 'qoder/dmodel',
+        name: 'DeepSeek V4 Pro (via Qoder)',
+        description: 'DeepSeek V4 Pro frontier model',
+      },
+      {
+        id: 'qoder/dfmodel',
+        name: 'DeepSeek V4 Flash (via Qoder)',
+        description: 'DeepSeek V4 Flash frontier model',
+      },
+      {
+        id: 'qoder/gm51model',
+        name: 'GLM 5.1 (via Qoder)',
+        description: 'GLM 5.1 frontier model',
+      },
+      {
+        id: 'qoder/kmodel',
+        name: 'Kimi K2.6 (via Qoder)',
+        description: 'Kimi K2.6 frontier model',
+      },
+      {
+        id: 'qoder/mmodel',
+        name: 'MiniMax M2.7 (via Qoder)',
+        description: 'MiniMax M2.7 frontier model',
+      },
+    ],
+  },
   kimi: {
     provider: 'kimi',
     displayName: 'Kimi (Moonshot)',
@@ -308,9 +370,24 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
     defaultModel: 'claude-sonnet-4-6',
     models: [
       {
+        id: 'claude-opus-4-8',
+        name: 'Claude Opus 4.8',
+        description: 'Latest flagship model',
+        nativeImageInput: true,
+        // Mirrors 4.7: Anthropic accepts only adaptive thinking levels on the
+        // current Opus generation; manual budget_tokens is rejected with 400.
+        thinking: {
+          type: 'levels',
+          levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+          maxLevel: 'max',
+          dynamicAllowed: true,
+        },
+        extendedContext: true,
+      },
+      {
         id: 'claude-opus-4-7',
         name: 'Claude Opus 4.7',
-        description: 'Latest flagship model',
+        description: 'Previous flagship model',
         nativeImageInput: true,
         // Opus 4.7 only supports adaptive thinking on the Anthropic API; manual
         // thinking.type: "enabled" with budget_tokens is rejected with 400.
@@ -327,7 +404,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
       {
         id: 'claude-opus-4-6',
         name: 'Claude Opus 4.6',
-        description: 'Previous flagship model',
+        description: 'Older flagship model',
         nativeImageInput: true,
         thinking: {
           type: 'budget',

@@ -8,7 +8,9 @@
  *   - parseExecutorFlags() — flag extraction block (lines ~411-639 in original)
  *   - validateFlagCombinations() — cross-flag guard block (lines ~531-585)
  *
- * IMPORTANT: process.exit semantics are kept identical to original index.ts.
+ * IMPORTANT: process.exit semantics are kept identical to original index.ts,
+ * with explicit parseFailed/validation return state for callers that must not
+ * depend on ambient process.exitCode.
  * All console.error messages are byte-identical.
  */
 
@@ -153,6 +155,7 @@ export function filterCcsFlags(args: string[]): string[] {
 
 /** Result of parsing CCS executor flags from args. */
 export interface ParsedExecutorFlags {
+  parseFailed?: boolean;
   forceAuth: boolean;
   pasteCallback: boolean;
   portForward: boolean;
@@ -181,7 +184,7 @@ export interface ParsedExecutorFlags {
 /**
  * Parse all CCS executor flags from args.
  *
- * Exits with code 1 (process.exitCode = 1 + return) on invalid flag values.
+ * Exits with code 1 (process.exitCode = 1 + parseFailed return) on invalid flag values.
  * Exits with process.exit(1) on conflicting flag combinations — identical to
  * the original index.ts behavior.
  *
@@ -247,7 +250,7 @@ export function parseExecutorFlags(
       console.error(fail('--kiro-auth-method requires a value'));
       console.error('    Supported values: aws, aws-authcode, google, github, idc');
       process.exitCode = 1;
-      // Caller must check process.exitCode = 1 and bail — matching original return behavior
+      // Caller must check parseFailed and bail — matching original return behavior
       return buildPartialFlags({
         forceAuth,
         pasteCallback,
@@ -272,6 +275,7 @@ export function parseExecutorFlags(
         gitlabBaseUrl: undefined,
         extendedContextOverride: undefined,
         thinkingParse: parseThinkingOverride(args),
+        parseFailed: true,
       });
     }
     const normalized = rawMethod.trim().toLowerCase();
@@ -303,6 +307,7 @@ export function parseExecutorFlags(
         gitlabBaseUrl: undefined,
         extendedContextOverride: undefined,
         thinkingParse: parseThinkingOverride(args),
+        parseFailed: true,
       });
     }
     kiroAuthMethod = normalizeKiroAuthMethod(normalized);
@@ -339,6 +344,7 @@ export function parseExecutorFlags(
       gitlabBaseUrl: undefined,
       extendedContextOverride: undefined,
       thinkingParse: parseThinkingOverride(args),
+      parseFailed: true,
     });
   }
 
@@ -373,6 +379,7 @@ export function parseExecutorFlags(
       gitlabBaseUrl: undefined,
       extendedContextOverride: undefined,
       thinkingParse: parseThinkingOverride(args),
+      parseFailed: true,
     });
   }
 
@@ -408,6 +415,7 @@ export function parseExecutorFlags(
         gitlabBaseUrl: undefined,
         extendedContextOverride: undefined,
         thinkingParse: parseThinkingOverride(args),
+        parseFailed: true,
       });
     }
     const normalized = rawFlow.trim().toLowerCase();
@@ -439,6 +447,7 @@ export function parseExecutorFlags(
         gitlabBaseUrl: undefined,
         extendedContextOverride: undefined,
         thinkingParse: parseThinkingOverride(args),
+        parseFailed: true,
       });
     }
     kiroIDCFlow = normalizeKiroIDCFlow(normalized);
@@ -475,6 +484,7 @@ export function parseExecutorFlags(
       gitlabBaseUrl: undefined,
       extendedContextOverride: undefined,
       thinkingParse: parseThinkingOverride(args),
+      parseFailed: true,
     });
   }
 
@@ -538,6 +548,7 @@ export function parseExecutorFlags(
     gitlabBaseUrl,
     extendedContextOverride,
     thinkingParse,
+    parseFailed: false,
   };
 }
 
@@ -550,8 +561,8 @@ function buildPartialFlags(fields: ParsedExecutorFlags): ParsedExecutorFlags {
 
 /**
  * Validate flag combinations that are mutually exclusive or provider-scoped.
- * Calls process.exit(1) on any violation — identical to original index.ts.
- * Call AFTER parseExecutorFlags() and only if process.exitCode is still 0.
+ * Sets process.exitCode=1 and returns false on any violation.
+ * Call AFTER parseExecutorFlags() and only if parseFailed is false.
  *
  * @param parsed   Result of parseExecutorFlags()
  * @param context  Provider context (provider string + compositeProviders list)
@@ -561,7 +572,7 @@ export function validateFlagCombinations(
   parsed: ParsedExecutorFlags,
   context: { provider: string; compositeProviders: string[] },
   args: string[]
-): void {
+): boolean {
   const { provider, compositeProviders } = context;
   const {
     kiroAuthMethod,
@@ -575,7 +586,7 @@ export function validateFlagCombinations(
   if (kiroAuthMethod && provider !== 'kiro' && !compositeProviders.includes('kiro')) {
     console.error(fail('--kiro-auth-method is only valid for ccs kiro'));
     process.exitCode = 1;
-    return;
+    return false;
   }
 
   if (
@@ -589,7 +600,7 @@ export function validateFlagCombinations(
       )
     );
     process.exitCode = 1;
-    return;
+    return false;
   }
 
   if (kiroAuthMethod === 'idc' && !kiroIDCStartUrl) {
@@ -598,7 +609,7 @@ export function validateFlagCombinations(
       '    Example: ccs kiro --auth --kiro-auth-method idc --kiro-idc-start-url https://d-xxx.awsapps.com/start'
     );
     process.exitCode = 1;
-    return;
+    return false;
   }
 
   if (
@@ -612,13 +623,15 @@ export function validateFlagCombinations(
       )
     );
     process.exitCode = 1;
-    return;
+    return false;
   }
 
   if ((gitlabTokenLogin || gitlabBaseUrl) && provider !== 'gitlab') {
     const flagName = gitlabTokenLogin ? getGitLabTokenLoginFlagName(args) : '--gitlab-url';
     console.error(fail(`${flagName} is only valid for ccs gitlab`));
     process.exitCode = 1;
-    return;
+    return false;
   }
+
+  return true;
 }

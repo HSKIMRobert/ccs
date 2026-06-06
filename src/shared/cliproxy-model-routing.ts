@@ -57,6 +57,7 @@ const PROVIDER_OWNER_HINTS: Record<string, string[]> = {
   kimi: ['kimi', 'moonshot'],
   kiro: ['kiro', 'aws'],
   ghcp: ['github', 'copilot'],
+  qoder: ['qoder'],
 };
 
 function normalize(value: string | null | undefined): string {

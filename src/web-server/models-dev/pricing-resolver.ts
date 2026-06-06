@@ -18,19 +18,19 @@ export interface ModelsDevPricingLookupOptions {
   provider?: string;
 }
 
-const PROVIDER_ALIASES: Record<string, string> = {
-  agy: 'google',
-  antigravity: 'google',
-  claude: 'anthropic',
-  codex: 'openai',
-  copilot: 'github-copilot',
-  gemini: 'google',
-  ghcp: 'github-copilot',
-  github: 'github-copilot',
-  kimi: 'moonshotai',
-  moonshot: 'moonshotai',
-  qwen: 'alibaba',
-};
+const PROVIDER_ALIASES = new Map<string, string>([
+  ['agy', 'google'],
+  ['antigravity', 'google'],
+  ['claude', 'anthropic'],
+  ['codex', 'openai'],
+  ['copilot', 'github-copilot'],
+  ['gemini', 'google'],
+  ['ghcp', 'github-copilot'],
+  ['github', 'github-copilot'],
+  ['kimi', 'moonshotai'],
+  ['moonshot', 'moonshotai'],
+  ['qwen', 'alibaba'],
+]);
 
 function normalizeId(value: string): string {
   return value.trim().toLowerCase();
@@ -45,7 +45,7 @@ export function normalizeModelsDevProviderId(
 ): string | undefined {
   if (!provider) return undefined;
   const normalized = normalizeId(provider);
-  return PROVIDER_ALIASES[normalized] ?? normalized;
+  return PROVIDER_ALIASES.get(normalized) ?? normalized;
 }
 
 function splitProviderPrefix(model: string): { provider?: string; model: string } {

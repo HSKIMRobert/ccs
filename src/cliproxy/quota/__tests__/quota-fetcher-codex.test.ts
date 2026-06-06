@@ -382,6 +382,44 @@ describe('Codex Quota Fetcher', () => {
       expect(windows[0].featureLabel).toBe('Custom-Feature');
       expect(windows[0].usedPercent).toBe(50);
     });
+
+    it('should remove terminal control characters from additional limit labels', () => {
+      const response = {
+        additional_rate_limits: [
+          {
+            limit_name: '\u001b[2JGPT-5.3-Codex-Spark\u001b]52;c;payload\u0007',
+            rate_limit: {
+              primary_window: { used_percent: 25, reset_after_seconds: 3600 },
+            },
+          },
+        ],
+      };
+
+      const windows = buildCodexQuotaWindows(response);
+
+      expect(windows).toHaveLength(1);
+      expect(windows[0].featureLabel).toBe('GPT-5.3-Codex-Spark');
+      expect(windows[0].label).toBe('GPT-5.3-Codex-Spark (Primary)');
+    });
+
+    it('should bound additional limit labels before storing them', () => {
+      const response = {
+        additional_rate_limits: [
+          {
+            limit_name: `Feature-${'x'.repeat(120)}`,
+            rate_limit: {
+              primary_window: { used_percent: 25, reset_after_seconds: 3600 },
+            },
+          },
+        ],
+      };
+
+      const windows = buildCodexQuotaWindows(response);
+
+      expect(windows).toHaveLength(1);
+      expect(windows[0].featureLabel).toHaveLength(80);
+      expect(windows[0].label).toBe(`${windows[0].featureLabel} (Primary)`);
+    });
   });
 
   describe('buildCodexCoreUsageSummary', () => {

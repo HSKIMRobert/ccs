@@ -21,6 +21,7 @@ import {
   restoreExpiredQuotaPauses,
 } from '../../accounts/account-safety';
 import { sanitizeEmail } from '../../auth/auth-utils';
+import { pauseAccount } from '../registry';
 
 // Setup test isolation
 let tmpDir: string;
@@ -1226,6 +1227,65 @@ describe('Quota Exhaustion Handlers', () => {
       expect(resumed).toBe(1);
       expect(getAccount('agy', 'cooldown@gmail.com')?.paused).not.toBe(true);
       expect(fs.existsSync(path.join(tmpDir, '.ccs', 'cliproxy', 'quota-paused.json'))).toBe(false);
+    });
+
+    it('does not auto-resume when a user manually re-pauses a quota-paused account', async () => {
+      writeRegistry({
+        agy: {
+          default: 'cooldown@gmail.com',
+          accounts: {
+            'cooldown@gmail.com': {
+              email: 'cooldown@gmail.com',
+              tokenFile: 'agy-cooldown.json',
+            },
+          },
+        },
+      });
+      writeAuthToken('agy-cooldown.json', {
+        type: 'agy',
+        email: 'cooldown@gmail.com',
+        access_token: 'token',
+      });
+
+      const now = Date.now();
+      expect(pauseAccountForQuotaCooldown('agy', 'cooldown@gmail.com', 5, now)).toBe(true);
+
+      const registryPath = path.join(tmpDir, '.ccs', 'cliproxy', 'accounts.json');
+      const quotaPausedPath = path.join(tmpDir, '.ccs', 'cliproxy', 'quota-paused.json');
+      const originalPausedAt = '2026-01-01T00:00:00.000Z';
+      const registry = JSON.parse(fs.readFileSync(registryPath, 'utf8')) as {
+        providers: {
+          agy: {
+            accounts: Record<string, { paused?: boolean; pausedAt?: string }>;
+          };
+        };
+      };
+      const quotaPaused = JSON.parse(fs.readFileSync(quotaPausedPath, 'utf8')) as {
+        entries: Array<{ pausedAt: string }>;
+      };
+      registry.providers.agy.accounts['cooldown@gmail.com'].pausedAt = originalPausedAt;
+      quotaPaused.entries[0].pausedAt = originalPausedAt;
+      fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2));
+      fs.writeFileSync(quotaPausedPath, JSON.stringify(quotaPaused, null, 2));
+
+      expect(pauseAccount('agy', 'cooldown@gmail.com')).toBe(true);
+
+      const refreshedRegistry = JSON.parse(
+        fs.readFileSync(registryPath, 'utf8')
+      ) as typeof registry;
+      expect(refreshedRegistry.providers.agy.accounts['cooldown@gmail.com'].pausedAt).not.toBe(
+        originalPausedAt
+      );
+
+      const resumed = restoreExpiredQuotaPauses(now + 6 * 60 * 1000);
+      const { getAccount } = await import('../account-manager');
+
+      expect(resumed).toBe(0);
+      expect(getAccount('agy', 'cooldown@gmail.com')?.paused).toBe(true);
+      expect(
+        fs.existsSync(path.join(tmpDir, '.ccs', 'cliproxy', 'auth-paused', 'agy-cooldown.json'))
+      ).toBe(true);
+      expect(fs.existsSync(quotaPausedPath)).toBe(false);
     });
 
     it('does not auto-resume quota-paused accounts when pausedAt metadata is missing', async () => {

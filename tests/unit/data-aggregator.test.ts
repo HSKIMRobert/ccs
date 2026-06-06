@@ -150,6 +150,40 @@ describe('aggregateDailyUsage', () => {
     expect(result[0].modelBreakdowns[0].provider).toBe('github-copilot');
     expect(result[0].modelBreakdowns[0].inputTokens).toBe(3000);
   });
+
+  test('handles provider names inherited from Object.prototype', () => {
+    const entries: RawUsageEntry[] = [
+      createEntry({ model: 'model-a', target: '__proto__' }),
+      createEntry({ model: 'model-b', target: 'constructor' }),
+      createEntry({ model: 'model-c', target: 'toString' }),
+    ];
+
+    const daily = aggregateDailyUsage(entries);
+    const hourly = aggregateHourlyUsage(entries);
+    const monthly = aggregateMonthlyUsage(entries);
+    const session = aggregateSessionUsage(entries);
+
+    expect(daily[0].modelBreakdowns.map((item) => item.provider)).toEqual([
+      '__proto__',
+      'constructor',
+      'tostring',
+    ]);
+    expect(hourly[0].modelBreakdowns.map((item) => item.provider)).toEqual([
+      '__proto__',
+      'constructor',
+      'tostring',
+    ]);
+    expect(monthly[0].modelBreakdowns.map((item) => item.provider)).toEqual([
+      '__proto__',
+      'constructor',
+      'tostring',
+    ]);
+    expect(session[0].modelBreakdowns.map((item) => item.provider)).toEqual([
+      '__proto__',
+      'constructor',
+      'tostring',
+    ]);
+  });
 });
 
 // ============================================================================

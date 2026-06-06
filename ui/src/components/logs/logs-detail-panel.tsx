@@ -9,6 +9,7 @@ import { LogLevelBadge } from './log-level-badge';
 import { LogsEmpty } from './logs-empty';
 import {
   formatJson,
+  formatLogTimestampIso,
   getDisplayLatency,
   getDisplayModule,
   getDisplayRequestId,
@@ -34,7 +35,7 @@ interface OverviewRow {
 function buildOverviewRows(entry: LogsEntry, sourceLabel?: string): OverviewRow[] {
   // Use shared accessors so this panel and the list row never diverge.
   return [
-    { label: 'Time', value: new Date(entry.timestamp).toISOString(), mono: true },
+    { label: 'Time', value: formatLogTimestampIso(entry.timestamp), mono: true },
     { label: 'Level', value: entry.level },
     { label: 'Module', value: getDisplayModule(entry, sourceLabel) },
     { label: 'Stage', value: getDisplayStage(entry) },

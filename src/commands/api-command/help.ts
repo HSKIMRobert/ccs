@@ -62,7 +62,7 @@ export async function showApiCommandHelp(writeLine: HelpWriter = console.log): P
     `  ${color('--1m / --no-1m', 'command')}         Write or clear [1m] on compatible Claude mappings`
   );
   writeLine(
-    `  ${color('--target <cli>', 'command')}       Default target: claude or droid (create)`
+    `  ${color('--target <cli>', 'command')}       Default target: claude, droid, or codex (create)`
   );
   writeLine(`  ${color('--register', 'command')}           Register discovered orphan settings`);
   writeLine(`  ${color('--json', 'command')}               JSON output for discover command`);

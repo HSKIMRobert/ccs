@@ -44,7 +44,7 @@ export interface LogsFiltersProps {
   onRequestIdChange?: (v: string) => void;
   timeWindow?: LogsTimeWindow;
   onTimeWindowChange?: (v: LogsTimeWindow) => void;
-  /** When true, hides entries from `web-server:*` sources. Default ON. */
+  /** When true, hides entries from `web-server:*` sources. Default OFF. */
   hideDashboardInternals?: boolean;
   onHideDashboardInternalsChange?: (next: boolean) => void;
   onClearAll?: () => void;
@@ -91,7 +91,7 @@ export function LogsFilters({
   onRequestIdChange,
   timeWindow = 'all',
   onTimeWindowChange,
-  hideDashboardInternals = true,
+  hideDashboardInternals = false,
   onHideDashboardInternalsChange,
   onClearAll,
 }: LogsFiltersProps) {
@@ -324,11 +324,10 @@ export function LogsFilters({
                   htmlFor="logs-hide-internals"
                   className="block text-[12px] font-medium text-foreground"
                 >
-                  Hide dashboard internals
+                  Hide dashboard web-server logs
                 </Label>
                 <p className="text-[11px] text-muted-foreground">
-                  Suppress <code className="rounded bg-background px-1">web-server:*</code>{' '}
-                  self-polling.
+                  Optional noise reduction. Audit entries are visible by default.
                 </p>
               </div>
               <input
@@ -338,7 +337,7 @@ export function LogsFilters({
                 checked={hideDashboardInternals}
                 onChange={(e) => onHideDashboardInternalsChange(e.target.checked)}
                 className={cn('mt-0.5 h-4 w-4 cursor-pointer accent-foreground', FOCUS_RING)}
-                aria-label="Hide dashboard internals"
+                aria-label="Hide dashboard web-server logs"
               />
             </div>
           ) : null}

@@ -280,6 +280,40 @@ describe('account registry integrity', () => {
     });
   });
 
+  it('strips alternate token file prefixes when inferring missing emails', async () => {
+    const cases = [
+      { provider: 'gemini', tokenFile: 'google-user@example.com.json', type: 'gemini' },
+      { provider: 'codex', tokenFile: 'openai-user@example.com.json', type: 'codex' },
+      { provider: 'agy', tokenFile: 'antigravity-user@example.com.json', type: 'antigravity' },
+      {
+        provider: 'ghcp',
+        tokenFile: 'github-copilot-user@example.com.json',
+        type: 'github-copilot',
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      await withIsolatedHome(async (homeDir) => {
+        const authDir = path.join(homeDir, '.ccs', 'cliproxy', 'auth');
+        fs.mkdirSync(authDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(authDir, testCase.tokenFile),
+          JSON.stringify({ type: testCase.type }),
+          'utf8'
+        );
+
+        const { discoverExistingAccounts, loadAccountsRegistry } = await loadRegistryModule();
+        discoverExistingAccounts();
+        const registry = loadAccountsRegistry();
+        const providerAccounts = registry.providers[testCase.provider];
+
+        expect(Object.keys(providerAccounts?.accounts ?? {})).toEqual(['user@example.com']);
+        expect(providerAccounts?.accounts['user@example.com']?.email).toBe('user@example.com');
+        expect(providerAccounts?.accounts['user@example.com']?.tokenFile).toBe(testCase.tokenFile);
+      });
+    }
+  });
+
   it('preserves the corrupted registry backup when recovery cannot rewrite accounts.json', async () => {
     await withIsolatedHome(async (homeDir) => {
       const authDir = path.join(homeDir, '.ccs', 'cliproxy', 'auth');

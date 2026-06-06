@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as lockfile from 'proper-lockfile';
 import { CLIProxyProvider } from '../types';
+import { PROVIDER_CAPABILITIES } from '../provider-capabilities';
 import { PROVIDER_TYPE_VALUES } from '../auth/auth-types';
 import { getAuthDir, getCliproxyDir } from '../config/config-generator';
 import { AccountsRegistry, AccountInfo, PROVIDERS_WITHOUT_EMAIL } from './types';
@@ -61,15 +62,21 @@ function resolveProviderFromTokenType(typeValue: string): CLIProxyProvider | und
 
 const EMAIL_FILE_NAME_PATTERN = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
 
+function stripTokenFileProviderPrefix(baseName: string, provider: CLIProxyProvider): string {
+  const knownPrefixes = [...PROVIDER_CAPABILITIES[provider].authFilePrefixes, `${provider}-`].sort(
+    (a, b) => b.length - a.length
+  );
+  const prefix = knownPrefixes.find((knownPrefix) => baseName.startsWith(knownPrefix));
+
+  return prefix ? baseName.slice(prefix.length) : baseName;
+}
+
 function inferEmailFromTokenFileName(
   tokenFile: string,
   provider: CLIProxyProvider
 ): string | undefined {
   const baseName = tokenFile.replace(/\.json$/i, '');
-  const providerPrefix = `${provider}-`;
-  const candidate = baseName.startsWith(providerPrefix)
-    ? baseName.slice(providerPrefix.length)
-    : baseName;
+  const candidate = stripTokenFileProviderPrefix(baseName, provider);
 
   if (PROVIDERS_WITHOUT_EMAIL.includes(provider)) {
     const scopedCandidate = candidate.slice(candidate.indexOf('-') + 1);
@@ -660,6 +667,10 @@ export function pauseAccount(provider: CLIProxyProvider, accountId: string): boo
 
     const accountMeta = providerAccounts.accounts[accountId];
     if (accountMeta.paused) {
+      // Treat an explicit pause request for an already paused account as a fresh
+      // manual decision. This changes the pause metadata so quota cooldown
+      // restore cannot later mistake the pause for its original auto-pause.
+      accountMeta.pausedAt = new Date().toISOString();
       return true;
     }
 

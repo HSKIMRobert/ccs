@@ -40,6 +40,8 @@ export async function fetchCliproxyRoutingResponse(
     }
   }
 
+  const requestUrl = new URL(url);
+
   return new Promise<Response>((resolve, reject) => {
     const agent = new https.Agent({ rejectUnauthorized: false });
     let settled = false;
@@ -51,57 +53,65 @@ export async function fetchCliproxyRoutingResponse(
       callback();
     };
 
+    let req: ReturnType<typeof https.request> | undefined;
     const timeoutId = setTimeout(() => {
       const error = new Error('Request timeout');
-      req.destroy(error);
+      req?.destroy(error);
       settle(() => reject(error));
     }, ROUTING_TIMEOUT_MS);
 
-    const req = https.request(
-      url,
-      {
-        method,
-        headers,
-        agent,
-        timeout: ROUTING_TIMEOUT_MS,
-      },
-      (res) => {
-        let payload = '';
-        res.setEncoding('utf8');
-        res.on('data', (chunk) => {
-          payload += chunk;
-        });
-        res.on('end', () => {
-          settle(() =>
-            resolve(
-              new Response(payload, {
-                status: res.statusCode || 500,
-                statusText: res.statusMessage ?? '',
-                headers:
-                  typeof res.headers['content-type'] === 'string'
-                    ? { 'Content-Type': res.headers['content-type'] }
-                    : undefined,
-              })
-            )
-          );
-        });
-      }
-    );
+    try {
+      req = https.request(
+        requestUrl,
+        {
+          method,
+          headers,
+          agent,
+          timeout: ROUTING_TIMEOUT_MS,
+        },
+        (res) => {
+          let payload = '';
+          res.setEncoding('utf8');
+          res.on('data', (chunk) => {
+            payload += chunk;
+          });
+          res.on('end', () => {
+            settle(() =>
+              resolve(
+                new Response(payload, {
+                  status: res.statusCode || 500,
+                  statusText: res.statusMessage ?? '',
+                  headers:
+                    typeof res.headers['content-type'] === 'string'
+                      ? { 'Content-Type': res.headers['content-type'] }
+                      : undefined,
+                })
+              )
+            );
+          });
+        }
+      );
+    } catch (error) {
+      settle(() => reject(error));
+      return;
+    }
 
-    req.on('error', (error) => {
+    const request = req;
+
+    request.on('error', (error) => {
       settle(() => reject(error));
     });
 
-    req.on('timeout', () => {
+    request.on('timeout', () => {
       const error = new Error('Request timeout');
-      req.destroy(error);
+      request.destroy(error);
       settle(() => reject(error));
     });
 
     if (body) {
-      req.write(JSON.stringify(body));
+      request.write(JSON.stringify(body));
     }
-    req.end();
+    request.end();
   });
 }
 

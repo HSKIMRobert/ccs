@@ -172,6 +172,8 @@ export function AccountSurfaceCard({
   const { t } = useTranslation();
   const identity = getAccountIdentityPresentation(accountId, email, tokenFile);
   const title = displayEmail || identity.email || accountId;
+  const sensitiveTitle = (value: string | null | undefined) =>
+    privacyMode ? undefined : (value ?? undefined);
   const normalizedProvider = provider.toLowerCase();
   const effectiveTier = resolveEffectiveTier(tier, quota);
   const effectiveCodexBadge =
@@ -192,6 +194,7 @@ export function AccountSurfaceCard({
         <span
           className={cn(
             'text-[8px] font-semibold px-1.5 py-0.5 rounded-md shrink-0',
+            privacyMode && PRIVACY_BLUR_CLASS,
             getTierBadgeClass(effectiveTier)
           )}
         >
@@ -201,9 +204,10 @@ export function AccountSurfaceCard({
       {normalizedProvider === 'codex'
         ? effectiveCodexBadge?.label && (
             <span
-              title={effectiveCodexBadge.label}
+              title={sensitiveTitle(effectiveCodexBadge.label)}
               className={cn(
                 'text-[8px] font-semibold px-1.5 py-0.5 rounded-md border shrink-0',
+                privacyMode && PRIVACY_BLUR_CLASS,
                 getCompactDetailBadgeClass(effectiveCodexBadge.audience)
               )}
             >
@@ -212,9 +216,10 @@ export function AccountSurfaceCard({
           )
         : identity.audienceLabel && (
             <span
-              title={identity.audienceLabel}
+              title={sensitiveTitle(identity.audienceLabel)}
               className={cn(
                 'text-[8px] font-semibold px-1.5 py-0.5 rounded-md shrink-0',
+                privacyMode && PRIVACY_BLUR_CLASS,
                 getAudienceBadgeClass(identity.audience)
               )}
             >
@@ -223,9 +228,10 @@ export function AccountSurfaceCard({
           )}
       {normalizedProvider !== 'codex' && identity.compactDetailLabel && (
         <span
-          title={identity.detailLabel ?? identity.compactDetailLabel}
+          title={sensitiveTitle(identity.detailLabel ?? identity.compactDetailLabel)}
           className={cn(
             'text-[8px] font-semibold px-1.5 py-0.5 rounded-md border shrink-0',
+            privacyMode && PRIVACY_BLUR_CLASS,
             getCompactDetailBadgeClass(identity.audience)
           )}
         >
@@ -260,6 +266,7 @@ export function AccountSurfaceCard({
                 <span
                   className={cn(
                     'absolute -bottom-0.5 -right-0.5 text-[7px] font-bold uppercase px-1 py-px rounded ring-1 ring-background',
+                    privacyMode && PRIVACY_BLUR_CLASS,
                     effectiveTier === 'ultra'
                       ? 'bg-violet-500/20 text-violet-600 dark:bg-violet-500/30 dark:text-violet-300'
                       : 'bg-yellow-500/20 text-yellow-700 dark:bg-yellow-500/25 dark:text-yellow-400'
@@ -276,7 +283,7 @@ export function AccountSurfaceCard({
               className={cn('flex items-center min-w-0', isCompact ? 'gap-1.5' : 'gap-2 flex-wrap')}
             >
               <span
-                title={title}
+                title={sensitiveTitle(title)}
                 className={cn(
                   isCompact
                     ? 'flex-1 min-w-0 text-xs font-semibold tracking-tight truncate leading-none'
@@ -292,6 +299,7 @@ export function AccountSurfaceCard({
                   variant="outline"
                   className={cn(
                     'text-[10px] h-4 px-1.5 border-transparent',
+                    privacyMode && PRIVACY_BLUR_CLASS,
                     getAudienceBadgeClass(effectiveCodexBadge.audience)
                   )}
                 >
@@ -303,6 +311,7 @@ export function AccountSurfaceCard({
                   variant="outline"
                   className={cn(
                     'text-[10px] h-4 px-1.5 border-transparent',
+                    privacyMode && PRIVACY_BLUR_CLASS,
                     getAudienceBadgeClass(identity.audience)
                   )}
                 >
@@ -310,7 +319,10 @@ export function AccountSurfaceCard({
                 </Badge>
               )}
               {!isCompact && normalizedProvider !== 'codex' && identity.detailLabel && (
-                <Badge variant="outline" className="text-[10px] h-4 px-1.5">
+                <Badge
+                  variant="outline"
+                  className={cn('text-[10px] h-4 px-1.5', privacyMode && PRIVACY_BLUR_CLASS)}
+                >
                   {identity.detailLabel}
                 </Badge>
               )}

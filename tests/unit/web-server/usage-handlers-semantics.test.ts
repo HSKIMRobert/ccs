@@ -83,11 +83,7 @@ function writeAssistantEntriesToDir(baseClaudeDir: string, entries: AssistantFix
       },
     });
 
-    fs.writeFileSync(
-      path.join(projectDir, `${entry.sessionId}.jsonl`),
-      `${line}\n`,
-      'utf-8'
-    );
+    fs.writeFileSync(path.join(projectDir, `${entry.sessionId}.jsonl`), `${line}\n`, 'utf-8');
   }
 }
 
@@ -222,7 +218,10 @@ describe('usage handlers semantics', () => {
       res as never
     );
 
-    const payload = res.payload as { success: boolean; data: Array<{ hour: string; requests: number }> };
+    const payload = res.payload as {
+      success: boolean;
+      data: Array<{ hour: string; requests: number }>;
+    };
     const targetHour = payload.data.find((row) => row.hour === '2026-03-02 10:00');
 
     expect(targetHour?.requests).toBe(3);
@@ -413,6 +412,19 @@ describe('usage handlers semantics', () => {
         sessions: [expect.objectContaining({ sessionId: 'session-default' })],
       },
     });
+  });
+
+  it('rejects non-string profile filters as validation errors', async () => {
+    for (const profile of [['work', 'default'], { name: 'work' }]) {
+      const res = createMockResponse();
+      await handlers.handleSummary({ query: { profile } } as never, res as never);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.payload).toMatchObject({
+        success: false,
+        error: 'Invalid profile filter',
+      });
+    }
   });
 
   it('rejects reversed date ranges before computing summary totals', async () => {

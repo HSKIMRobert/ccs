@@ -56,7 +56,7 @@ describe('profile reader target sanitization', () => {
     }
   });
 
-  it('normalizes legacy stored codex targets back to claude for profiles and variants', async () => {
+  it('normalizes legacy invalid stored targets back to claude for profiles and variants', async () => {
     const ccsDir = getScopedCcsDir();
     fs.mkdirSync(ccsDir, { recursive: true });
     fs.writeFileSync(
@@ -64,12 +64,12 @@ describe('profile reader target sanitization', () => {
       JSON.stringify(
         {
           profiles: { demo: '~/.ccs/demo.settings.json' },
-          profile_targets: { demo: 'codex' },
+          profile_targets: { demo: 'glm' },
           cliproxy: {
             routed: {
               provider: 'codex',
               settings: '~/.ccs/routed.settings.json',
-              target: 'codex',
+              target: 'glm',
             },
           },
         },
@@ -94,7 +94,7 @@ describe('profile reader target sanitization', () => {
     expect(result.variants[0]?.target).toBe('claude');
   });
 
-  it('normalizes unified stored codex targets back to claude for profiles and variants', async () => {
+  it('normalizes unified invalid stored targets back to claude for profiles and variants', async () => {
     const ccsDir = getScopedCcsDir();
     fs.mkdirSync(ccsDir, { recursive: true });
     process.env.CCS_UNIFIED_CONFIG = '1';
@@ -106,7 +106,7 @@ describe('profile reader target sanitization', () => {
         '  demo:',
         '    type: api',
         '    settings: ~/.ccs/demo.settings.json',
-        '    target: codex',
+        '    target: glm',
         'cliproxy:',
         '  oauth_accounts: {}',
         '  providers: []',
@@ -114,7 +114,7 @@ describe('profile reader target sanitization', () => {
         '    routed:',
         '      provider: codex',
         '      settings: ~/.ccs/routed.settings.json',
-        '      target: codex',
+        '      target: glm',
         '',
       ].join('\n'),
       'utf8'

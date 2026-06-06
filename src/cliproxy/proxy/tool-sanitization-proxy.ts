@@ -22,12 +22,17 @@ import {
   extractProviderFromPathname,
   getDeniedModelIdReasonForProvider,
   normalizeModelIdForRouting,
+  parseCodexModelTuningAlias,
   stripCodexEffortSuffix,
 } from '../ai-providers/model-id-normalizer';
 import { getModelMaxLevel } from '../model-catalog';
 
 import { createLogger } from '../../services/logging';
 import { getCcsDir } from '../../config/config-loader-facade';
+import {
+  attachUpstreamResponseTimeout,
+  writeForwardResponseHead,
+} from './upstream-response-timeout';
 
 export interface ToolSanitizationProxyConfig {
   /** Upstream CLIProxy URL */
@@ -59,6 +64,7 @@ const GEMINI_UNSUPPORTED_TOOL_FIELDS = new Set([
 ]);
 
 const CODEX_UNSUPPORTED_TOOL_FIELDS = new Set(['cache_control']);
+const CODEX_FAST_SERVICE_TIER = 'priority';
 const EXTENDED_CONTEXT_SUFFIX_REGEX = /\[1m\]$/i;
 const LEGACY_CODEX_MODEL_ID_REGEX = /^gpt-5(?:\.\d+)?-codex(?:-(?:mini|max))?$/i;
 
@@ -84,6 +90,118 @@ function isKnownCodexModelId(model: string | undefined): boolean {
     LEGACY_CODEX_MODEL_ID_REGEX.test(normalizedModel) ||
     getModelMaxLevel('codex', normalizedModel) !== undefined
   );
+}
+
+function isCodexRequest(providerFromPath: string | null, model: unknown): boolean {
+  return (
+    providerFromPath === 'codex' ||
+    (providerFromPath === null && typeof model === 'string' && isKnownCodexModelId(model))
+  );
+}
+
+function applyCodexModelTuningAlias(body: Record<string, unknown>): Record<string, unknown> {
+  if (typeof body.model !== 'string') {
+    return body;
+  }
+
+  const parsed = parseCodexModelTuningAlias(body.model);
+  if (!parsed || !isKnownCodexModelId(parsed.baseModel)) {
+    return body;
+  }
+
+  const tunedBody: Record<string, unknown> = { ...body, model: parsed.baseModel };
+
+  if (parsed.effort) {
+    const existingReasoning = isRecord(body.reasoning) ? body.reasoning : {};
+    tunedBody.reasoning = {
+      ...existingReasoning,
+      effort: parsed.effort,
+    };
+  }
+
+  if (parsed.serviceTier) {
+    tunedBody.service_tier = CODEX_FAST_SERVICE_TIER;
+  }
+
+  return tunedBody;
+}
+
+function extractSystemText(content: unknown): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (!Array.isArray(content)) {
+    return '';
+  }
+
+  return content
+    .filter((block): block is { type: unknown; text?: unknown } => isRecord(block))
+    .filter((block) => block.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text as string)
+    .join('\n\n');
+}
+
+function prependSystemTextToContent(content: unknown, systemText: string): unknown {
+  if (Array.isArray(content)) {
+    return [{ type: 'text', text: systemText }, ...content];
+  }
+  if (typeof content === 'string') {
+    return `${systemText}\n\n${content}`;
+  }
+  return systemText;
+}
+
+function foldCodexSystemMessages(body: Record<string, unknown>): Record<string, unknown> {
+  const systemTexts: string[] = [];
+  let removedSystem = false;
+  const nextBody = { ...body };
+
+  if (body.system !== undefined) {
+    removedSystem = true;
+    delete nextBody.system;
+    const systemText = extractSystemText(body.system).trim();
+    if (systemText) {
+      systemTexts.push(systemText);
+    }
+  }
+
+  const rawMessages = Array.isArray(body.messages) ? body.messages : [];
+  const messages = rawMessages.filter((message) => {
+    if (!isRecord(message) || message.role !== 'system') {
+      return true;
+    }
+    removedSystem = true;
+    const systemText = extractSystemText(message.content).trim();
+    if (systemText) {
+      systemTexts.push(systemText);
+    }
+    return false;
+  });
+
+  if (!removedSystem) {
+    return body;
+  }
+
+  if (systemTexts.length > 0) {
+    const systemPrefix = systemTexts.join('\n\n');
+    const firstUserIndex = messages.findIndex(
+      (message) => isRecord(message) && message.role === 'user'
+    );
+
+    if (firstUserIndex >= 0 && isRecord(messages[firstUserIndex])) {
+      const firstUserMessage = messages[firstUserIndex];
+      messages[firstUserIndex] = {
+        ...firstUserMessage,
+        content: prependSystemTextToContent(firstUserMessage.content, systemPrefix),
+      };
+    } else {
+      messages.unshift({ role: 'user', content: systemPrefix });
+    }
+  }
+
+  nextBody.messages = messages;
+  return nextBody;
 }
 
 function getUnsupportedToolFields(
@@ -348,6 +466,11 @@ export class ToolSanitizationProxy {
         }
       }
 
+      if (isRecord(modifiedBody) && isCodexRequest(providerFromPath, modifiedBody.model)) {
+        const tunedBody = applyCodexModelTuningAlias(modifiedBody);
+        modifiedBody = foldCodexSystemMessages(tunedBody);
+      }
+
       // Sanitize tools if present
       if (isRecord(modifiedBody) && Array.isArray(modifiedBody.tools)) {
         // Step 1: Sanitize input_schema properties (remove non-standard JSON Schema properties)
@@ -521,10 +644,38 @@ export class ToolSanitizationProxy {
         ),
         (upstreamRes) => {
           clearResponseTimeout();
-          clientRes.writeHead(upstreamRes.statusCode || 200, upstreamRes.headers);
-          upstreamRes.pipe(clientRes);
-          upstreamRes.on('end', () => resolve());
-          upstreamRes.on('error', reject);
+          const statusCode = upstreamRes.statusCode || 200;
+          let responseStarted = false;
+          const writeResponseHead = () => {
+            if (responseStarted) return;
+            responseStarted = true;
+            writeForwardResponseHead(clientRes, statusCode, upstreamRes.headers);
+          };
+          const clearUpstreamResponseTimeout = attachUpstreamResponseTimeout({
+            upstreamReq,
+            upstreamRes,
+            clientRes,
+            timeoutMs: this.config.timeoutMs,
+            onTimeout: () => resolve(),
+          });
+          upstreamRes.on('data', (chunk: Buffer) => {
+            writeResponseHead();
+            const canContinue = clientRes.write(chunk);
+            if (!canContinue) {
+              upstreamRes.pause();
+              clientRes.once('drain', () => upstreamRes.resume());
+            }
+          });
+          upstreamRes.on('end', () => {
+            clearUpstreamResponseTimeout();
+            writeResponseHead();
+            clientRes.end();
+            resolve();
+          });
+          upstreamRes.on('error', (error) => {
+            clearUpstreamResponseTimeout();
+            reject(error);
+          });
         }
       );
 
@@ -560,10 +711,18 @@ export class ToolSanitizationProxy {
         ),
         (upstreamRes) => {
           clearResponseTimeout();
+          const clearUpstreamResponseTimeout = attachUpstreamResponseTimeout({
+            upstreamReq,
+            upstreamRes,
+            clientRes,
+            timeoutMs: this.config.timeoutMs,
+            onTimeout: () => resolve(),
+          });
           const chunks: Buffer[] = [];
 
           upstreamRes.on('data', (chunk: Buffer) => chunks.push(chunk));
           upstreamRes.on('end', () => {
+            clearUpstreamResponseTimeout();
             try {
               const responseBody = Buffer.concat(chunks).toString('utf8');
               const contentType = upstreamRes.headers['content-type'] || '';
@@ -598,7 +757,10 @@ export class ToolSanitizationProxy {
               reject(err);
             }
           });
-          upstreamRes.on('error', reject);
+          upstreamRes.on('error', (error) => {
+            clearUpstreamResponseTimeout();
+            reject(error);
+          });
         }
       );
 
@@ -636,7 +798,14 @@ export class ToolSanitizationProxy {
         ),
         (upstreamRes) => {
           clearResponseTimeout();
-          clientRes.writeHead(upstreamRes.statusCode || 200, upstreamRes.headers);
+          const clearUpstreamResponseTimeout = attachUpstreamResponseTimeout({
+            upstreamReq,
+            upstreamRes,
+            clientRes,
+            timeoutMs: this.config.timeoutMs,
+            onTimeout: () => resolve(),
+          });
+          writeForwardResponseHead(clientRes, upstreamRes.statusCode || 200, upstreamRes.headers);
 
           // Track upstream SSE lifecycle events (guards against empty proxy responses)
           const lifecycle = {
@@ -673,6 +842,7 @@ export class ToolSanitizationProxy {
               }
             });
             upstreamRes.on('end', () => {
+              clearUpstreamResponseTimeout();
               try {
                 if (!lifecycle.hasContent && isSuccessResponse && lifecycle.hasData) {
                   this.writeLog(
@@ -693,7 +863,10 @@ export class ToolSanitizationProxy {
               }
               resolve();
             });
-            upstreamRes.on('error', reject);
+            upstreamRes.on('error', (error) => {
+              clearUpstreamResponseTimeout();
+              reject(error);
+            });
             return;
           }
 
@@ -719,6 +892,7 @@ export class ToolSanitizationProxy {
           });
 
           upstreamRes.on('end', () => {
+            clearUpstreamResponseTimeout();
             try {
               // Process any remaining buffer
               if (buffer.trim()) {
@@ -749,7 +923,10 @@ export class ToolSanitizationProxy {
             resolve();
           });
 
-          upstreamRes.on('error', reject);
+          upstreamRes.on('error', (error) => {
+            clearUpstreamResponseTimeout();
+            reject(error);
+          });
         }
       );
 

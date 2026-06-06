@@ -7,16 +7,16 @@ describe('route target parsing', () => {
   it('accepts valid target values', () => {
     expect(parseProfileTarget('claude')).toBe('claude');
     expect(parseProfileTarget('DROID')).toBe('droid');
+    expect(parseProfileTarget('codex')).toBe('codex');
     expect(parseVariantTarget(' claude ')).toBe('claude');
     expect(parseVariantTarget('droid')).toBe('droid');
+    expect(parseVariantTarget(' codex ')).toBe('codex');
   });
 
   it('returns null for invalid target values', () => {
     expect(parseProfileTarget('glm')).toBeNull();
-    expect(parseProfileTarget('codex')).toBeNull();
     expect(parseProfileTarget('')).toBeNull();
     expect(parseVariantTarget('factory')).toBeNull();
-    expect(parseVariantTarget('codex')).toBeNull();
     expect(parseVariantTarget('  ')).toBeNull();
   });
 

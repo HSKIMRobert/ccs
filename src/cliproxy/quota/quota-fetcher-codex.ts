@@ -11,6 +11,7 @@ import { getAuthDir } from '../config/config-generator';
 import { getAccount, getProviderAccounts, getPausedDir } from '../accounts/account-manager';
 import { sanitizeEmail, isTokenExpired } from '../auth/auth-utils';
 import type { CodexQuotaResult, CodexQuotaWindow, CodexCoreUsageSummary } from './quota-types';
+import { sanitizeCodexFeatureLabel } from './quota-label-sanitizer';
 import { extractCanonicalEmailFromAccountId } from '../accounts/email-account-identity';
 
 /** ChatGPT backend API base URL */
@@ -58,8 +59,8 @@ interface CodexRateLimitWindow {
  * Each entry surfaces its own primary/secondary windows under a feature-specific limit name.
  */
 interface CodexAdditionalRateLimit {
-  limit_name?: string;
-  limitName?: string;
+  limit_name?: unknown;
+  limitName?: unknown;
   metered_feature?: string;
   meteredFeature?: string;
   rate_limit?: CodexRateLimitWindow;
@@ -380,11 +381,7 @@ function buildCodexQuotaWindows(payload: CodexUsageResponse): CodexQuotaWindow[]
       const entryRateLimit = entry.rate_limit || entry.rateLimit;
       if (!entryRateLimit) continue;
 
-      const rawFeatureLabel = entry.limit_name ?? entry.limitName;
-      const featureLabel =
-        typeof rawFeatureLabel === 'string' && rawFeatureLabel.trim().length > 0
-          ? rawFeatureLabel.trim()
-          : 'Additional';
+      const featureLabel = sanitizeCodexFeatureLabel(entry.limit_name ?? entry.limitName);
       addWindow(
         `${featureLabel} (Primary)`,
         entryRateLimit.primary_window || entryRateLimit.primaryWindow,

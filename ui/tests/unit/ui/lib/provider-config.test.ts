@@ -68,6 +68,7 @@ describe('provider presentation metadata', () => {
       'gitlab',
       'codebuddy',
       'kilo',
+      'qoder',
     ]);
     expect(getProviderSection('gitlab')?.id).toBe('plus-extra');
     expect(getProviderSection('gemini')?.id).toBe('core');
@@ -128,6 +129,7 @@ describe('provider presentation metadata', () => {
       '/assets/providers/codebuddy.png',
     ],
     ['kilo', 'Kilo AI', 'Kilo AI coding assistant', '/assets/providers/kilo.png'],
+    ['qoder', 'Qoder', 'Qoder AI coding assistant', '/assets/providers/qoder.svg'],
   ])('recognizes %s across dashboard display helpers', (provider, name, description, asset) => {
     expect(getProviderDisplayName(provider)).toBe(name);
     expect(getProviderDescription(provider)).toBe(description);

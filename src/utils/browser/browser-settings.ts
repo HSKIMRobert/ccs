@@ -230,8 +230,11 @@ export function getEffectiveClaudeBrowserAttachConfig(
   const override = getBrowserAttachOverride(env);
   const configUserDataDir =
     resolveBrowserUserDataDir(config.claude.user_data_dir) ?? getRecommendedBrowserUserDataDir();
+  const configHasExplicitPort = config.claude.devtools_port !== undefined;
   const configPort = normalizeDevtoolsPort(config.claude.devtools_port);
   const configEvalMode = config.claude.eval_mode ?? 'readonly';
+  const envEvalMode = parseBrowserEvalMode(env.CCS_BROWSER_EVAL_MODE);
+  const effectiveEvalMode = envEvalMode ?? configEvalMode;
 
   if (override.userDataDir) {
     return {
@@ -241,7 +244,7 @@ export function getEffectiveClaudeBrowserAttachConfig(
       userDataDir: override.userDataDir,
       devtoolsPort: override.devtoolsPort ?? configPort,
       hasExplicitDevtoolsPort: override.devtoolsPort !== undefined,
-      evalMode: configEvalMode,
+      evalMode: effectiveEvalMode,
     };
   }
 
@@ -251,8 +254,8 @@ export function getEffectiveClaudeBrowserAttachConfig(
     overrideActive: false,
     userDataDir: configUserDataDir,
     devtoolsPort: configPort,
-    hasExplicitDevtoolsPort: true,
-    evalMode: configEvalMode,
+    hasExplicitDevtoolsPort: configHasExplicitPort,
+    evalMode: effectiveEvalMode,
   };
 }
 
@@ -302,6 +305,15 @@ function parseDevtoolsPort(value?: string): number | undefined {
   }
 
   return normalizeDevtoolsPort(Number.parseInt(value.trim(), 10));
+}
+
+function parseBrowserEvalMode(value?: string): BrowserEvalMode | undefined {
+  const trimmed = value?.trim();
+  if (trimmed === 'disabled' || trimmed === 'readonly' || trimmed === 'readwrite') {
+    return trimmed;
+  }
+
+  return undefined;
 }
 
 function normalizeDevtoolsPort(value: number | undefined): number {

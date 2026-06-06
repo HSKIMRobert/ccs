@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'bun:test';
+import * as https from 'https';
+import { describe, expect, it, mock, spyOn } from 'bun:test';
 import type { ProxyTarget } from '../../proxy/proxy-target-resolver';
 
 async function loadRoutingHttpModule() {
@@ -20,6 +21,73 @@ describe('routing-strategy-http', () => {
     expect(getCliproxyRoutingManagementUrl(target)).toBe(
       'http://127.0.0.1:8317/v0/management/routing/strategy'
     );
+  });
+
+  it('rejects malformed self-signed HTTPS URLs before arming the request timeout', async () => {
+    const { fetchCliproxyRoutingResponse } = await loadRoutingHttpModule();
+    const originalSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = mock(((handler: TimerHandler, timeout?: number) => {
+      void handler;
+      void timeout;
+      return 1 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout);
+
+    const target: ProxyTarget = {
+      host: 'bad host',
+      port: 443,
+      protocol: 'https',
+      allowSelfSigned: true,
+      isRemote: true,
+    };
+
+    try {
+      await expect(fetchCliproxyRoutingResponse(target, 'GET')).rejects.toThrow();
+      expect(globalThis.setTimeout).not.toHaveBeenCalled();
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+    }
+  });
+
+  it('clears the request timeout when https.request throws synchronously', async () => {
+    const { fetchCliproxyRoutingResponse } = await loadRoutingHttpModule();
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalClearTimeout = globalThis.clearTimeout;
+    const activeTimers = new Set<number>();
+
+    globalThis.setTimeout = mock(((handler: TimerHandler, timeout?: number) => {
+      void handler;
+      void timeout;
+      const timerId = activeTimers.size + 1;
+      activeTimers.add(timerId);
+      return timerId as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout);
+    globalThis.clearTimeout = mock(((timerId?: ReturnType<typeof setTimeout>) => {
+      activeTimers.delete(timerId as unknown as number);
+    }) as typeof clearTimeout);
+    const requestSpy = spyOn(https, 'request').mockImplementation(() => {
+      throw new Error('sync request failure');
+    });
+
+    const target: ProxyTarget = {
+      host: 'proxy.example.com',
+      port: 443,
+      protocol: 'https',
+      allowSelfSigned: true,
+      isRemote: true,
+    };
+
+    try {
+      await expect(fetchCliproxyRoutingResponse(target, 'GET')).rejects.toThrow(
+        'sync request failure'
+      );
+      expect(globalThis.setTimeout).toHaveBeenCalledTimes(1);
+      expect(globalThis.clearTimeout).toHaveBeenCalledTimes(1);
+      expect(activeTimers.size).toBe(0);
+    } finally {
+      requestSpy.mockRestore();
+      globalThis.setTimeout = originalSetTimeout;
+      globalThis.clearTimeout = originalClearTimeout;
+    }
   });
 
   it('builds the remote management URL for routing strategy writes', async () => {

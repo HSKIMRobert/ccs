@@ -42,6 +42,7 @@ export function ProviderEditor({
   defaultTarget,
   topNotice,
   onAddAccount,
+  onReauthAccount,
   onSetDefault,
   onRemoveAccount,
   onPauseToggle,
@@ -92,6 +93,7 @@ export function ProviderEditor({
       qwen: ['alibaba', 'qwen'],
       iflow: ['iflow'],
       kilo: ['kilo'],
+      qoder: ['qoder'],
       kiro: ['kiro', 'aws'],
       ghcp: ['github', 'copilot'],
       kimi: ['kimi', 'moonshot'],
@@ -282,6 +284,7 @@ export function ProviderEditor({
                     isDeletePending={deletePresetMutation.isPending}
                     accounts={accounts}
                     onAddAccount={onAddAccount}
+                    onReauthAccount={onReauthAccount}
                     onSetDefault={onSetDefault}
                     onRemoveAccount={onRemoveAccount}
                     onPauseToggle={onPauseToggle}

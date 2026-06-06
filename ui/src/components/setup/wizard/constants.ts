@@ -25,6 +25,7 @@ const WIZARD_PROVIDER_ORDER: CLIProxyProvider[] = [
   'iflow',
   'kilo',
   'kiro',
+  'qoder',
 ];
 
 export const PROVIDERS: ProviderOption[] = WIZARD_PROVIDER_ORDER.map((id) => ({

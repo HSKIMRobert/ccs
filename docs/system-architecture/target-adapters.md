@@ -136,7 +136,7 @@ export function resolveTargetType(
 
   // 4. Check profile config
   if (profileConfig?.target) {
-    // Persisted targets intentionally exclude runtime-only codex.
+    // Persisted targets are validated before profile configuration is saved.
     return profileConfig.target;
   }
 

@@ -63,7 +63,7 @@ import {
 } from './thinking-override-resolver';
 import { shouldStartHttpsTunnel } from './https-tunnel-policy';
 import { filterCcsFlags, parseExecutorFlags, validateFlagCombinations } from './arg-parser';
-import { resolveExecutorProxy } from './proxy-resolver';
+import { resolveExecutorProxy, resolveExecutorProxyConfig } from './proxy-resolver';
 import { buildProxyChain } from './proxy-chain-builder';
 import { warnBrokenModels } from './model-warnings';
 import { launchClaude } from './claude-launcher';
@@ -129,17 +129,29 @@ export async function execClaudeWithCLIProxy(
   // Collect all providers to validate (default + composite tiers)
   const allProviders = [provider, ...compositeProviders];
 
+  const proxyResolution = resolveExecutorProxyConfig(args, {
+    unifiedConfig,
+    allProviders,
+    verbose,
+    cfg,
+    log,
+  });
+
+  const {
+    browserLaunchOverride,
+    argsWithoutBrowserFlags,
+    parseFailed: browserLaunchParseFailed,
+  } = resolveBrowserLaunchFlags(proxyResolution.argsWithoutProxy);
+  if (browserLaunchParseFailed) return;
+
   const { proxyConfig, useRemoteProxy, localBackend, binaryPath, argsWithoutProxy } =
-    await resolveExecutorProxy(args, {
+    await resolveExecutorProxy(proxyResolution, {
       unifiedConfig,
       allProviders,
       verbose,
       cfg,
       log,
     });
-
-  const { browserLaunchOverride, argsWithoutBrowserFlags } =
-    resolveBrowserLaunchFlags(argsWithoutProxy);
 
   // Setup first-class CCS WebSearch runtime
   ensureWebSearchMcpOrThrow();
@@ -158,11 +170,15 @@ export async function execClaudeWithCLIProxy(
     compositeProviders,
     unifiedConfig,
   });
-  if (process.exitCode === 1) return;
+  if (parsedFlags.parseFailed) return;
 
-  // Validate cross-flag combinations (exits with code 1 on violation)
-  validateFlagCombinations(parsedFlags, { provider, compositeProviders }, argsWithoutProxy);
-  if (process.exitCode === 1) return;
+  // Validate cross-flag combinations (reports failure without relying on ambient exitCode)
+  const flagCombinationsValid = validateFlagCombinations(
+    parsedFlags,
+    { provider, compositeProviders },
+    argsWithoutProxy
+  );
+  if (!flagCombinationsValid) return;
 
   const {
     forceConfig,

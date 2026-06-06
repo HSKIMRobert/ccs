@@ -55,6 +55,18 @@ describe('model-catalog compatibility lookups', () => {
     expect(catalog?.models.map((model) => model.id)).toEqual(['gemini-2.5-pro']);
   });
 
+  it('falls back to a visible live model when the static default is absent', () => {
+    const catalog = mergeCatalog('gemini', [
+      {
+        id: 'gemini-live-only',
+        display_name: 'Gemini Live Only',
+      },
+    ]);
+
+    expect(catalog?.defaultModel).toBe('gemini-live-only');
+    expect(catalog?.models.map((model) => model.id)).toContain(catalog?.defaultModel);
+  });
+
   it('preserves static maxLevel when live thinking metadata omits it', () => {
     const catalog = mergeCatalog('claude', [
       {

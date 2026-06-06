@@ -354,7 +354,19 @@ class SharedManager {
       }
 
       const entryPath = path.join(sharedPluginsPath, entry.name);
-      const stats = fs.statSync(entryPath);
+      let stats: fs.Stats;
+      try {
+        stats = fs.statSync(entryPath);
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        console.log(
+          warn(
+            `Skipping plugins/${entry.name}: unable to inspect shared plugin entry${code ? ` (${code})` : ''}`
+          )
+        );
+        continue;
+      }
+
       items.set(entry.name, {
         name: entry.name,
         type: stats.isDirectory() ? 'directory' : 'file',

@@ -31,26 +31,110 @@ function buildUpstreamHeaders(profile: OpenAICompatProfileConfig): Record<string
   };
 }
 
-function isDirectOpenAIReasoningChatModel(
+function isKnownOpenAIReasoningChatModel(model: string | undefined): boolean {
+  if (typeof model !== 'string') {
+    return false;
+  }
+
+  const normalized = model.trim().toLowerCase();
+  const modelName = normalized.split('/').pop() || normalized;
+  return DIRECT_OPENAI_REASONING_CHAT_MODEL.test(modelName);
+}
+
+function shouldShapeOpenAIReasoningChatPayload(
   profile: OpenAICompatProfileConfig,
   model: string | undefined
 ): boolean {
-  return (
-    profile.provider === 'openai' &&
-    typeof model === 'string' &&
-    DIRECT_OPENAI_REASONING_CHAT_MODEL.test(model.trim().toLowerCase())
-  );
+  return profile.forceOpenAIReasoningModel === true || isKnownOpenAIReasoningChatModel(model);
+}
+
+function isMiniMaxOpenAICompatProfile(profile: OpenAICompatProfileConfig): boolean {
+  try {
+    return new URL(profile.baseUrl).hostname.toLowerCase().includes('minimax');
+  } catch {
+    return false;
+  }
+}
+
+function prependTextToContent(
+  content: ProxyOpenAIRequest['messages'][number]['content'],
+  text: string
+): ProxyOpenAIRequest['messages'][number]['content'] {
+  if (Array.isArray(content)) {
+    return [{ type: 'text', text }, ...content];
+  }
+  if (typeof content === 'string') {
+    return `${text}\n\n${content}`;
+  }
+  return text;
+}
+
+function extractTextContent(content: ProxyOpenAIRequest['messages'][number]['content']): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return '';
+  }
+  return content
+    .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n\n');
+}
+
+function shapeMiniMaxChatPayload(payload: ProxyOpenAIRequest): ProxyOpenAIRequest {
+  const systemMessages: string[] = [];
+  let removedSystemMessage = false;
+  const messages = payload.messages.filter((message) => {
+    if (message.role !== 'system') {
+      return true;
+    }
+    removedSystemMessage = true;
+    const systemText = extractTextContent(message.content).trim();
+    if (systemText.length > 0) {
+      systemMessages.push(systemText);
+    }
+    return false;
+  });
+
+  if (!removedSystemMessage) {
+    return payload;
+  }
+
+  if (systemMessages.length === 0) {
+    return { ...payload, messages };
+  }
+
+  const systemPrefix = systemMessages.join('\n\n');
+  const firstUserIndex = messages.findIndex((message) => message.role === 'user');
+
+  if (firstUserIndex >= 0) {
+    messages[firstUserIndex] = {
+      ...messages[firstUserIndex],
+      content: prependTextToContent(messages[firstUserIndex].content, systemPrefix),
+    };
+  } else {
+    messages.unshift({ role: 'user', content: systemPrefix });
+  }
+
+  return { ...payload, messages };
 }
 
 function shapeUpstreamChatPayload(
   payload: ProxyOpenAIRequest,
   profile: OpenAICompatProfileConfig
 ): ProxyOpenAIRequest {
-  if (!isDirectOpenAIReasoningChatModel(profile, payload.model)) {
-    return payload;
+  let shaped = payload;
+
+  if (isMiniMaxOpenAICompatProfile(profile)) {
+    shaped = shapeMiniMaxChatPayload(shaped);
   }
 
-  const shaped = { ...payload };
+  if (!shouldShapeOpenAIReasoningChatPayload(profile, shaped.model)) {
+    return shaped;
+  }
+
+  shaped = { ...shaped };
 
   if (shaped.max_tokens !== undefined) {
     shaped.max_completion_tokens = shaped.max_tokens;

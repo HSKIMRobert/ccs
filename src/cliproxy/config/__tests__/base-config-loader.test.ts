@@ -8,6 +8,7 @@ describe('base-config-loader new providers', () => {
     ['gitlab', '/api/provider/gitlab', 'gitlab-duo'],
     ['codebuddy', '/api/provider/codebuddy', 'auto'],
     ['kilo', '/api/provider/kilo', 'kilo/auto'],
+    ['qoder', '/api/provider/qoder', 'qoder/auto'],
   ] as const)('loads base settings for %s', (provider, baseUrlPath, defaultModel) => {
     const config = loadBaseConfig(provider);
 

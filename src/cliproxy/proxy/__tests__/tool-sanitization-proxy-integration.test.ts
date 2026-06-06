@@ -436,6 +436,155 @@ describe('ToolSanitizationProxy Integration', () => {
       }
     });
 
+    it('translates Codex fast aliases before forwarding to provider routes', async () => {
+      const proxy = new ToolSanitizationProxy({
+        upstreamBaseUrl: `http://127.0.0.1:${mockUpstreamPort}`,
+      });
+      const port = await proxy.start();
+
+      try {
+        await fetch(`http://127.0.0.1:${port}/api/provider/codex/v1/messages?beta=true`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'gpt-5.5-fast',
+            messages: [],
+          }),
+        });
+
+        const sentBody = lastRequest!.body as Record<string, unknown>;
+        expect(sentBody.model).toBe('gpt-5.5');
+        expect(sentBody.service_tier).toBe('priority');
+      } finally {
+        proxy.stop();
+      }
+    });
+
+    it('translates Codex effort and fast aliases before forwarding to provider routes', async () => {
+      const proxy = new ToolSanitizationProxy({
+        upstreamBaseUrl: `http://127.0.0.1:${mockUpstreamPort}`,
+      });
+      const port = await proxy.start();
+
+      try {
+        await fetch(`http://127.0.0.1:${port}/api/provider/codex/v1/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'gpt-5.5-fast-high',
+            messages: [],
+            reasoning: { summary: 'auto' },
+          }),
+        });
+
+        const sentBody = lastRequest!.body as Record<string, unknown>;
+        expect(sentBody.model).toBe('gpt-5.5');
+        expect((sentBody.reasoning as Record<string, unknown>).summary).toBe('auto');
+        expect((sentBody.reasoning as Record<string, unknown>).effort).toBe('high');
+        expect(sentBody.service_tier).toBe('priority');
+      } finally {
+        proxy.stop();
+      }
+    });
+
+    it('folds Codex system messages into the first user message before forwarding', async () => {
+      const proxy = new ToolSanitizationProxy({
+        upstreamBaseUrl: `http://127.0.0.1:${mockUpstreamPort}`,
+      });
+      const port = await proxy.start();
+
+      try {
+        await fetch(`http://127.0.0.1:${port}/api/provider/codex/v1/messages?beta=true`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'gpt-5.4',
+            system: [{ type: 'text', text: 'Always be concise.' }],
+            messages: [
+              { role: 'system', content: 'Use JSON.' },
+              { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+            ],
+          }),
+        });
+
+        const sentBody = lastRequest!.body as Record<string, unknown>;
+        const sentMessages = sentBody.messages as Array<Record<string, unknown>>;
+
+        expect(sentBody.system).toBeUndefined();
+        expect(sentMessages).toHaveLength(1);
+        expect(sentMessages[0].role).toBe('user');
+        expect(sentMessages[0].content).toEqual([
+          { type: 'text', text: 'Always be concise.\n\nUse JSON.' },
+          { type: 'text', text: 'hello' },
+        ]);
+      } finally {
+        proxy.stop();
+      }
+    });
+
+    it('strips blank Codex system messages before forwarding', async () => {
+      const proxy = new ToolSanitizationProxy({
+        upstreamBaseUrl: `http://127.0.0.1:${mockUpstreamPort}`,
+      });
+      const port = await proxy.start();
+
+      try {
+        await fetch(`http://127.0.0.1:${port}/api/provider/codex/v1/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'gpt-5.4',
+            system: '   ',
+            messages: [
+              { role: 'system', content: [{ type: 'text', text: '  ' }] },
+              { role: 'user', content: 'hello' },
+            ],
+          }),
+        });
+
+        const sentBody = lastRequest!.body as Record<string, unknown>;
+        const sentMessages = sentBody.messages as Array<Record<string, unknown>>;
+
+        expect(sentBody.system).toBeUndefined();
+        expect(sentMessages).toEqual([{ role: 'user', content: 'hello' }]);
+      } finally {
+        proxy.stop();
+      }
+    });
+
+    it('does not apply Codex alias or system rewrites on explicit non-Codex provider routes', async () => {
+      const proxy = new ToolSanitizationProxy({
+        upstreamBaseUrl: `http://127.0.0.1:${mockUpstreamPort}`,
+      });
+      const port = await proxy.start();
+
+      try {
+        await fetch(`http://127.0.0.1:${port}/api/provider/gemini/v1/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'gpt-5.5-fast',
+            system: 'Keep this as a provider-level system field.',
+            messages: [
+              { role: 'system', content: 'Keep this as a message.' },
+              { role: 'user', content: 'hello' },
+            ],
+          }),
+        });
+
+        const sentBody = lastRequest!.body as Record<string, unknown>;
+        expect(sentBody.model).toBe('gpt-5.5-fast');
+        expect(sentBody.service_tier).toBeUndefined();
+        expect(sentBody.system).toBe('Keep this as a provider-level system field.');
+        expect(sentBody.messages).toEqual([
+          { role: 'system', content: 'Keep this as a message.' },
+          { role: 'user', content: 'hello' },
+        ]);
+      } finally {
+        proxy.stop();
+      }
+    });
+
     for (const model of [
       'gpt-5.3-codex-xhigh',
       'gpt-5.1-codex-mini',
@@ -825,6 +974,49 @@ describe('ToolSanitizationProxy Integration', () => {
         proxy.stop();
       }
     });
+
+    it('returns 504 when raw upstream passthrough stalls after headers', async () => {
+      const upstream = http.createServer((req, res) => {
+        req.resume();
+        req.on('end', () => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.flushHeaders();
+        });
+      });
+      const upstreamPort = await new Promise<number>((resolve, reject) => {
+        upstream.once('error', reject);
+        upstream.listen(0, '127.0.0.1', () => {
+          const address = upstream.address();
+          if (typeof address !== 'object' || !address) {
+            reject(new Error('Failed to resolve upstream port'));
+            return;
+          }
+          resolve(address.port);
+        });
+      });
+
+      const proxy = new ToolSanitizationProxy({
+        upstreamBaseUrl: `http://127.0.0.1:${upstreamPort}`,
+        timeoutMs: 100,
+      });
+      const port = await proxy.start();
+
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/health`);
+        const text = await Promise.race([
+          response.text(),
+          new Promise<string>((_, reject) =>
+            setTimeout(() => reject(new Error('Timed out waiting for proxy response')), 2_000)
+          ),
+        ]);
+
+        expect(response.status).toBe(504);
+        expect(text).toContain('Upstream response timed out');
+      } finally {
+        proxy.stop();
+        await new Promise<void>((resolve) => upstream.close(() => resolve()));
+      }
+    });
   });
 
   describe('Multiple Tools Sanitization', () => {
@@ -1084,6 +1276,66 @@ describe('ToolSanitizationProxy Integration', () => {
         expect(messageStopCount).toBe(1);
       } finally {
         proxy.stop();
+      }
+    });
+
+    it('ends stalled streaming responses after upstream headers', async () => {
+      const upstream = http.createServer((req, res) => {
+        req.resume();
+        req.on('end', () => {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+          });
+          res.write(
+            'event: message_start\n' +
+              'data: {"type":"message_start","message":{"id":"msg_stall","type":"message","role":"assistant","content":[],"model":"test","stop_reason":null}}\n\n'
+          );
+        });
+      });
+      const upstreamPort = await new Promise<number>((resolve, reject) => {
+        upstream.once('error', reject);
+        upstream.listen(0, '127.0.0.1', () => {
+          const address = upstream.address();
+          if (typeof address !== 'object' || !address) {
+            reject(new Error('Failed to resolve upstream port'));
+            return;
+          }
+          resolve(address.port);
+        });
+      });
+
+      const proxy = new ToolSanitizationProxy({
+        upstreamBaseUrl: `http://127.0.0.1:${upstreamPort}`,
+        timeoutMs: 100,
+      });
+      const port = await proxy.start();
+
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/v1/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            stream: true,
+            tools: [{ name: 'valid_tool' }],
+          }),
+        });
+
+        const text = await Promise.race([
+          response.text(),
+          new Promise<string>((_, reject) =>
+            setTimeout(() => reject(new Error('Timed out waiting for proxy response')), 2_000)
+          ),
+        ]);
+
+        expect(response.status).toBe(200);
+        expect(text).toContain('message_start');
+        expect(text).toContain('timeout_error');
+        expect(text).toContain('Upstream response timed out');
+      } finally {
+        proxy.stop();
+        await new Promise<void>((resolve) => upstream.close(() => resolve()));
       }
     });
   });

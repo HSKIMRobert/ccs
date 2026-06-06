@@ -23,7 +23,7 @@ export const TARGET_METADATA: Record<TargetType, TargetMetadata> = {
     displayName: 'Codex CLI',
     runtimeAliases: ['ccs-codex', 'ccsx', 'ccsxp'],
     legacyAliasEnvVar: 'CCS_CODEX_ALIASES',
-    persistedTarget: false,
+    persistedTarget: true,
   },
 } satisfies Record<TargetType, TargetMetadata>;
 

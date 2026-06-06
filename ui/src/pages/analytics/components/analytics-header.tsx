@@ -15,8 +15,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { RefreshCw } from 'lucide-react';
+import { Info, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { AnalyticsProfileOption } from '../hooks';
 
 interface AnalyticsHeaderProps {
@@ -53,21 +54,44 @@ export function AnalyticsHeader({
         <p className="text-sm text-muted-foreground">{t('analytics.subtitle')}</p>
       </div>
       <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-        <Select value={selectedProfile} onValueChange={onProfileChange}>
-          <SelectTrigger className="h-8 w-[190px]" aria-label="Analytics profile">
-            <SelectValue placeholder="All profiles" />
-          </SelectTrigger>
-          <SelectContent>
-            {profileOptions.map((option) => (
-              <SelectItem key={option.value} value={option.value} disabled={!option.supported}>
-                <span className="flex flex-col">
-                  <span>{option.label}</span>
-                  <span className="text-xs text-muted-foreground">{option.description}</span>
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="inline-flex items-center gap-1 shrink-0">
+          <Select value={selectedProfile} onValueChange={onProfileChange}>
+            <SelectTrigger className="h-8 w-[170px]" aria-label="Analytics profile">
+              <SelectValue placeholder="All profiles">
+                {profileOptions.find((o) => o.value === selectedProfile)?.label ?? 'All profiles'}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {profileOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value} disabled={!option.supported}>
+                  <span className="flex flex-col">
+                    <span>{option.label}</span>
+                    <span className="text-xs text-muted-foreground">{option.description}</span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {selectedProfile !== 'all' && (
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Selected-profile analytics scope"
+                    className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    <Info className="size-4" aria-hidden="true" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" align="start" className="max-w-xs text-xs">
+                  Selected-profile analytics include only default/account data with stable profile
+                  attribution. CLIProxy and native runtime snapshots remain in All profiles.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </div>
         <Button
           variant={viewMode === 'hourly' ? 'default' : 'outline'}
           size="sm"
@@ -92,8 +116,11 @@ export function AnalyticsHeader({
         />
 
         {lastUpdatedText && (
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            {t('analytics.updated', { value: lastUpdatedText })}
+          <span
+            className="text-xs text-muted-foreground whitespace-nowrap font-mono"
+            title={t('analytics.updated', { value: lastUpdatedText })}
+          >
+            {lastUpdatedText}
           </span>
         )}
         <Button
@@ -106,12 +133,6 @@ export function AnalyticsHeader({
           <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
         </Button>
       </div>
-      {selectedProfile !== 'all' && (
-        <p className="text-xs text-muted-foreground xl:text-right">
-          Selected-profile analytics include only default/account data with stable profile
-          attribution. CLIProxy and native runtime snapshots remain in All profiles.
-        </p>
-      )}
     </div>
   );
 }

@@ -350,6 +350,8 @@ type RunMcpRequestsOptions = {
   childEnv?: NodeJS.ProcessEnv;
   responseTimeoutMs?: number;
   requirePutForNewPage?: boolean;
+  requirePutForClosePage?: boolean;
+  closePageRespondsWithText?: boolean;
 };
 
 function encodeMessage(message: unknown): string {
@@ -746,6 +748,12 @@ function createMockBrowser(pagesInput: MockPageState[]) {
         }
 
         if (req.url?.startsWith('/json/close/')) {
+          if (options.requirePutForClosePage && req.method !== 'PUT') {
+            res.writeHead(405, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'method not allowed' }));
+            return;
+          }
+
           const targetId = decodeURIComponent(req.url.slice('/json/close/'.length));
           const entry = Array.from(pageStates.entries()).find(([, page]) => page.id === targetId);
           if (!entry) {
@@ -754,6 +762,11 @@ function createMockBrowser(pagesInput: MockPageState[]) {
             return;
           }
           pageStates.delete(entry[0]);
+          if (options.closePageRespondsWithText) {
+            res.writeHead(200, { 'Content-Type': 'text/plain' });
+            res.end('Target is closing');
+            return;
+          }
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ id: targetId }));
           return;

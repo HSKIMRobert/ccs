@@ -66,11 +66,12 @@ export async function applyDefaultPreset(
   const defaultModelEntry =
     resolvedCatalog.models.find((model) => model.id === resolvedCatalog.defaultModel) ||
     resolvedCatalog.models[0];
+  const selectedModelId = defaultModelEntry?.id ?? resolvedCatalog.defaultModel;
   const mapping = defaultModelEntry?.presetMapping || {
-    default: resolvedCatalog.defaultModel,
-    opus: resolvedCatalog.defaultModel,
-    sonnet: resolvedCatalog.defaultModel,
-    haiku: resolvedCatalog.defaultModel,
+    default: selectedModelId,
+    opus: selectedModelId,
+    sonnet: selectedModelId,
+    haiku: selectedModelId,
   };
 
   // Fetch effective API key (respects user customization)

@@ -114,8 +114,8 @@ export function resolveRuntimeCodexFallbackModel(options: {
     (options.excludeModels ?? []).map((model) => normalizeCodexModelId(model)).filter(Boolean)
   );
   const candidates = [
-    options.modelMap.defaultModel,
     getFreePlanFallbackCodexModel(requestedModel),
+    options.modelMap.defaultModel,
     options.modelMap.opusModel,
     options.modelMap.sonnetModel,
     options.modelMap.haikuModel,

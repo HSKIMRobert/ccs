@@ -31,13 +31,51 @@ afterEach(async () => {
 });
 
 describe('cursor daemon lifecycle smoke', () => {
+  it('requires Anthropic caller auth token when credentials are present', async () => {
+    const port = 10000 + Math.floor(Math.random() * 50000);
+
+    saveCredentials({
+      accessToken: 'a'.repeat(60),
+      machineId: '1234567890abcdef1234567890abcdef',
+      authMethod: 'manual',
+      importedAt: new Date().toISOString(),
+    });
+
+    const result = await startDaemon({ port, ghost_mode: true });
+    expect(result.success).toBe(true);
+    const daemonToken = result.daemonToken as string;
+
+    const response = await fetch(`http://127.0.0.1:${port}/v1/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+        'x-ccs-cursor-token': daemonToken,
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4.5',
+        max_tokens: 64,
+        messages: [{ role: 'user', content: 'hello' }],
+      }),
+    });
+
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as {
+      type?: string;
+      error?: { type?: string; message?: string };
+    };
+    expect(body.type).toBe('error');
+    expect(body.error?.type).toBe('authentication_error');
+    expect(body.error?.message).toContain('Invalid Anthropic auth token');
+  });
   it('starts, serves expected routes, and stops cleanly', async () => {
     const port = 10000 + Math.floor(Math.random() * 50000);
     const result = await startDaemon({ port, ghost_mode: true });
     expect(result.success).toBe(true);
     expect(result.pid).toBeDefined();
+    const daemonToken = result.daemonToken as string;
 
-    expect(await isDaemonRunning(port)).toBe(true);
+    expect(await isDaemonRunning(port, daemonToken)).toBe(true);
 
     const modelsResponse = await fetch(`http://127.0.0.1:${port}/v1/models`);
     expect(modelsResponse.status).toBe(200);
@@ -47,7 +85,7 @@ describe('cursor daemon lifecycle smoke', () => {
 
     const chatResponse = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-ccs-cursor-token': daemonToken },
       body: JSON.stringify({
         model: 'gpt-4.1',
         messages: [{ role: 'user', content: 'hello' }],
@@ -60,6 +98,7 @@ describe('cursor daemon lifecycle smoke', () => {
       headers: {
         'Content-Type': 'application/json',
         'anthropic-version': '2023-06-01',
+        'x-ccs-cursor-token': daemonToken,
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4.5',
@@ -78,15 +117,18 @@ describe('cursor daemon lifecycle smoke', () => {
 
     const stopResult = await stopDaemon();
     expect(stopResult.success).toBe(true);
-    expect(await isDaemonRunning(port)).toBe(false);
+    expect(await isDaemonRunning(port, daemonToken)).toBe(false);
   }, 35000);
 
   it('returns 404 for unknown routes', async () => {
     const port = 10000 + Math.floor(Math.random() * 50000);
     const result = await startDaemon({ port, ghost_mode: true });
     expect(result.success).toBe(true);
+    const daemonToken = result.daemonToken as string;
 
-    const response = await fetch(`http://127.0.0.1:${port}/unknown`);
+    const response = await fetch(`http://127.0.0.1:${port}/unknown`, {
+      headers: { 'x-ccs-cursor-token': daemonToken },
+    });
     expect(response.status).toBe(404);
   });
 
@@ -103,10 +145,11 @@ describe('cursor daemon lifecycle smoke', () => {
 
     const result = await startDaemon({ port, ghost_mode: true });
     expect(result.success).toBe(true);
+    const daemonToken = result.daemonToken as string;
 
     const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-ccs-cursor-token': daemonToken },
       body: JSON.stringify({
         model: 'gpt-4.1',
         messages: [{ role: 'user', content: 'hello' }],
@@ -122,17 +165,19 @@ describe('cursor daemon lifecycle smoke', () => {
     const port = 10000 + Math.floor(Math.random() * 50000);
     const result = await startDaemon({ port, ghost_mode: true });
     expect(result.success).toBe(true);
+    const daemonToken = result.daemonToken as string;
+    const tokenHeader = { 'x-ccs-cursor-token': daemonToken };
 
     const invalidJson = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...tokenHeader },
       body: '{invalid-json',
     });
     expect(invalidJson.status).toBe(400);
 
     const invalidSchema = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...tokenHeader },
       body: JSON.stringify({
         model: 'gpt-4.1',
         messages: { role: 'user', content: 'hello' },
@@ -145,6 +190,7 @@ describe('cursor daemon lifecycle smoke', () => {
       headers: {
         'Content-Type': 'application/json',
         'anthropic-version': '2023-06-01',
+        ...tokenHeader,
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4.5',
@@ -163,7 +209,7 @@ describe('cursor daemon lifecycle smoke', () => {
 
     const oversized = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...tokenHeader },
       body: JSON.stringify({
         model: 'gpt-4.1',
         messages: [

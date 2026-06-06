@@ -145,8 +145,16 @@ function registerChildProcessMock(): void {
   }));
 }
 
+const tempCcsHomes = new Set<string>();
+
+function createTempCcsHome(prefix: string): string {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  tempCcsHomes.add(tempHome);
+  return tempHome;
+}
+
 function writeConfigWithAutoUpdatePreference(enabled: boolean): void {
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-auto-update-pref-'));
+  const tempHome = createTempCcsHome('ccs-auto-update-pref-');
   process.env.CCS_HOME = tempHome;
   const ccsDir = path.join(tempHome, '.ccs');
   fs.mkdirSync(ccsDir, { recursive: true });
@@ -158,7 +166,7 @@ preferences:
 }
 
 function writeConfigWithWebSearchSettings(yamlBody: string): void {
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-websearch-env-'));
+  const tempHome = createTempCcsHome('ccs-websearch-env-');
   process.env.CCS_HOME = tempHome;
   const ccsDir = path.join(tempHome, '.ccs');
   fs.mkdirSync(ccsDir, { recursive: true });
@@ -225,10 +233,8 @@ describe('CLAUDECODE environment stripping', () => {
   });
 
   afterEach(async () => {
-    const tempCcsHome = process.env.CCS_HOME?.startsWith(os.tmpdir())
-      ? process.env.CCS_HOME
-      : undefined;
-    if (tempCcsHome) {
+    const tempCcsHome = process.env.CCS_HOME;
+    if (tempCcsHome && tempCcsHomes.has(tempCcsHome)) {
       await stopOpenAICompatProxy();
     }
 
@@ -277,9 +283,10 @@ describe('CLAUDECODE environment stripping', () => {
       }
     }
 
-    if (tempCcsHome) {
-      fs.rmSync(tempCcsHome, { recursive: true, force: true });
+    for (const tempHome of tempCcsHomes) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
     }
+    tempCcsHomes.clear();
   });
 
   it('stripClaudeCodeEnv removes CLAUDECODE case-insensitively', () => {

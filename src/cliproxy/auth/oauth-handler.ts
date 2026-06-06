@@ -82,6 +82,7 @@ import { generateSessionId } from './project-selection-handler';
 import { createFileSink } from './oauth-trace/sink-file';
 import { createOAuthTraceRecorder, OAuthTracePhase, type OAuthTraceRecorder } from './oauth-trace';
 import { diagnoseFailure, formatErrorMessage } from './oauth-trace/diagnose-failure';
+import { redactString } from './oauth-trace/redactor';
 
 interface PasteCallbackStartData {
   url?: string;
@@ -889,8 +890,9 @@ export async function handlePasteCallbackMode(
     if (!callbackResponse.ok || callbackData.status === 'error') {
       const callbackError =
         callbackData.error || `OAuth callback failed with status ${callbackResponse.status}`;
-      console.log(fail(callbackError));
-      warnPossible403Ban(provider, callbackError);
+      const redactedCallbackError = redactString(callbackError);
+      console.log(fail(redactedCallbackError));
+      warnPossible403Ban(provider, redactedCallbackError);
       trace.record(
         OAuthTracePhase.Error,
         { status: callbackResponse.status },
@@ -915,8 +917,9 @@ export async function handlePasteCallbackMode(
     );
 
     if (tokenWaitError) {
-      console.log(fail(tokenWaitError));
-      warnPossible403Ban(provider, tokenWaitError);
+      const redactedTokenWaitError = redactString(tokenWaitError);
+      console.log(fail(redactedTokenWaitError));
+      warnPossible403Ban(provider, redactedTokenWaitError);
       trace.record(
         OAuthTracePhase.Error,
         {},
@@ -999,8 +1002,8 @@ async function handleGitLabPatLogin(
   const baseUrl = normalizeGitLabBaseUrl(options?.gitlabBaseUrl);
   const knownTokenFiles = listProviderTokenSnapshots(provider, tokenDir);
   const suppliedToken = options?.gitlabPersonalAccessToken?.trim();
-  const personalAccessToken =
-    suppliedToken || process.env['GITLAB_PERSONAL_ACCESS_TOKEN']?.trim() || undefined;
+  const envPersonalAccessToken = process.env['GITLAB_PERSONAL_ACCESS_TOKEN']?.trim() || undefined;
+  const personalAccessToken = suppliedToken || envPersonalAccessToken;
 
   let token = personalAccessToken;
   if (!token) {
@@ -1013,6 +1016,11 @@ async function handleGitLabPatLogin(
   if (!token) {
     console.log(info('Cancelled'));
     return null;
+  }
+
+  // PAT provided via process env should never be forwarded to downstream runtime.
+  if (!suppliedToken && envPersonalAccessToken) {
+    delete process.env['GITLAB_PERSONAL_ACCESS_TOKEN'];
   }
 
   const response = await fetch(buildProxyUrl(target, '/v0/management/gitlab-auth-url'), {
@@ -1126,8 +1134,9 @@ export async function triggerOAuth(
   // Check for existing accounts
   const existingAccounts = getProviderAccounts(provider);
   const existingNameMatch = nickname ? findAccountNameMatch(existingAccounts, nickname) : null;
+  const targetAccountId = options.expectedAccountId || existingNameMatch?.id;
   const nicknameError = !fromUI
-    ? getCliAuthNicknameError(provider, nickname, existingAccounts, existingNameMatch?.id)
+    ? getCliAuthNicknameError(provider, nickname, existingAccounts, targetAccountId)
     : null;
   if (nicknameError) {
     console.log(fail(nicknameError));
@@ -1139,7 +1148,7 @@ export async function triggerOAuth(
     const tokenDir = getProviderTokenDir(provider);
     const success = await importKiroToken(verbose);
     if (success) {
-      return registerAccountFromToken(provider, tokenDir, nickname, verbose, existingNameMatch?.id);
+      return registerAccountFromToken(provider, tokenDir, nickname, verbose, targetAccountId);
     }
     return null;
   }
@@ -1230,7 +1239,7 @@ export async function triggerOAuth(
       verbose,
       tokenDir,
       nickname,
-      existingNameMatch?.id,
+      targetAccountId,
       {
         gitlabBaseUrl: resolvedGitLabBaseUrl,
         gitlabPersonalAccessToken: options.gitlabPersonalAccessToken,
@@ -1246,7 +1255,7 @@ export async function triggerOAuth(
       verbose,
       tokenDir,
       nickname,
-      existingNameMatch?.id,
+      targetAccountId,
       {
         kiroMethod: provider === 'kiro' ? resolvedKiroMethod : undefined,
         gitlabBaseUrl: provider === 'gitlab' ? resolvedGitLabBaseUrl : undefined,
@@ -1331,7 +1340,7 @@ export async function triggerOAuth(
     verbose,
     isCLI,
     nickname,
-    expectedAccountId: existingNameMatch?.id,
+    expectedAccountId: targetAccountId,
     authFlowType: isDeviceCodeFlow ? 'device_code' : 'authorization_code',
     kiroMethod: provider === 'kiro' ? resolvedKiroMethod : undefined,
     manualCallback: useSelectedKiroLocalPasteCallback,

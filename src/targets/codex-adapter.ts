@@ -143,6 +143,10 @@ function normalizeCcsxpCodexModelFlagAliases(args: string[]): {
 
   for (let index = 0; index < normalizedArgs.length; index += 1) {
     const arg = normalizedArgs[index];
+    if (arg === '--') {
+      break;
+    }
+
     if (arg === '-m' || arg === '--model') {
       const nextValue = normalizedArgs[index + 1];
       if (typeof nextValue === 'string') {
@@ -222,7 +226,7 @@ function prepareExplicitCodexHome(
   }
 
   try {
-    fs.mkdirSync(codexHome, { recursive: true });
+    fs.mkdirSync(codexHome, { mode: 0o700, recursive: true });
   } catch (err) {
     const error = err as NodeJS.ErrnoException;
     if (error.code !== 'EEXIST') {
@@ -289,20 +293,19 @@ export class CodexAdapter implements TargetAdapter {
     const runtimeConfigOverrides = creds?.runtimeConfigOverrides ?? [];
 
     if (profileType === 'default') {
-      const modelFlagNormalization = isCcsxpCliproxyShortcut()
+      const isCcsxpShortcut = isCcsxpCliproxyShortcut();
+      const modelFlagNormalization = isCcsxpShortcut
         ? normalizeCcsxpCodexModelFlagAliases(userArgs)
         : { args: userArgs, overrides: [] };
       const overrides = [...runtimeConfigOverrides, ...modelFlagNormalization.overrides];
       if (reasoningOverride) {
         overrides.push(`model_reasoning_effort=${formatTomlString(reasoningOverride)}`);
       }
-      if (overrides.length === 0) {
-        return modelFlagNormalization.args;
+      const needsConfigOverrideSupport = isCcsxpShortcut || overrides.length > 0;
+      if (needsConfigOverrideSupport && !codexBinarySupportsConfigOverrides(options?.binaryInfo)) {
+        throw buildConfigOverrideSupportError(hydrateCodexBinaryVersion(options?.binaryInfo));
       }
-      if (!codexBinarySupportsConfigOverrides(options?.binaryInfo)) {
-        if (reasoningOverride || modelFlagNormalization.overrides.length > 0) {
-          throw buildConfigOverrideSupportError(hydrateCodexBinaryVersion(options?.binaryInfo));
-        }
+      if (overrides.length === 0) {
         return modelFlagNormalization.args;
       }
       return [...buildConfigOverrideArgs(overrides), ...modelFlagNormalization.args];

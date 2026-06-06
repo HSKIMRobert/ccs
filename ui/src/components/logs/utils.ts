@@ -21,6 +21,19 @@ export function formatLogTimestamp(timestamp: string | null | undefined) {
   }).format(date);
 }
 
+export function formatLogTimestampIso(timestamp: string | null | undefined) {
+  if (!timestamp) {
+    return 'No activity yet';
+  }
+
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return timestamp;
+  }
+
+  return date.toISOString();
+}
+
 export function formatRelativeLogTime(timestamp: string | null | undefined) {
   if (!timestamp) {
     return 'No activity yet';

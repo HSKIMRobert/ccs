@@ -38,6 +38,7 @@ const CHANNEL_TO_PROVIDER: Record<string, CLIProxyProvider> = {
   kimi: 'kimi',
   kiro: 'kiro',
   'github-copilot': 'ghcp',
+  qoder: 'qoder',
 };
 
 /** CCS provider → channel name mapping (reverse) */
@@ -249,7 +250,6 @@ export function mergeCatalog(
   if (!staticCatalog && filteredRemoteModels.length === 0) return undefined;
 
   const displayName = staticCatalog?.displayName || provider;
-  const defaultModel = staticCatalog?.defaultModel || (filteredRemoteModels[0]?.id ?? '');
 
   // Build map of static models by lowercase ID for fast lookup
   const staticMap = new Map<string, ModelEntry>();
@@ -260,14 +260,11 @@ export function mergeCatalog(
   }
 
   // Process remote models: merge with static entries
-  const mergedIds = new Set<string>();
   const mergedModels: ModelEntry[] = [];
 
   for (const remote of filteredRemoteModels) {
     const remoteEntry = mapRemoteToModelEntry(remote);
     const staticEntry = staticMap.get(remote.id.toLowerCase());
-    mergedIds.add(remote.id.toLowerCase());
-
     if (staticEntry) {
       const mergedThinking = remoteEntry.thinking
         ? {
@@ -291,6 +288,12 @@ export function mergeCatalog(
       mergedModels.push(remoteEntry);
     }
   }
+
+  const staticDefaultModel = staticCatalog?.defaultModel;
+  const hasStaticDefaultModel =
+    typeof staticDefaultModel === 'string' &&
+    mergedModels.some((model) => model.id.toLowerCase() === staticDefaultModel.toLowerCase());
+  const defaultModel = hasStaticDefaultModel ? staticDefaultModel : (mergedModels[0]?.id ?? '');
 
   return {
     provider,

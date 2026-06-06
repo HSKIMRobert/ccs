@@ -9,8 +9,13 @@ export interface ProfileScopedUsageData {
 
 const PROFILE_NAME_REGEX = /^[A-Za-z0-9._-]+$/;
 
-export function normalizeProfileQuery(profile?: string): string | undefined {
-  const value = profile?.trim();
+export function normalizeProfileQuery(profile?: unknown): string | undefined {
+  if (profile === undefined) return undefined;
+  if (typeof profile !== 'string') {
+    throw new Error('Invalid profile filter');
+  }
+
+  const value = profile.trim();
   if (!value || value === 'all') return undefined;
   if (!PROFILE_NAME_REGEX.test(value)) {
     throw new Error('Invalid profile filter');

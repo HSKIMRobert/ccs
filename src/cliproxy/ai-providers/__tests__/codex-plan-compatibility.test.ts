@@ -78,6 +78,21 @@ describe('codex plan compatibility', () => {
     ).toBe('gpt-5.4-mini');
   });
 
+  it('prefers a rejected model explicit free-plan fallback over saved paid-only models', () => {
+    expect(
+      resolveRuntimeCodexFallbackModel({
+        requestedModel: 'gpt-5.3-codex-spark',
+        modelMap: {
+          defaultModel: 'gpt-5.3-codex',
+          opusModel: 'gpt-5.3-codex',
+          sonnetModel: 'gpt-5.3-codex',
+          haikuModel: 'gpt-5.3-codex-spark',
+        },
+        excludeModels: ['gpt-5.3-codex-spark'],
+      })
+    ).toBe('gpt-5.4-mini');
+  });
+
   it('tracks Codex thinking caps for current safe defaults, paid models, and legacy aliases', () => {
     expect(getModelMaxLevel('codex', 'gpt-5.5')).toBe('xhigh');
     expect(getModelMaxLevel('codex', 'gpt-5.4')).toBe('xhigh');

@@ -31,4 +31,14 @@ describe('stale Codex translator settings scanner', () => {
       '["custom-key"][0]',
     ]);
   });
+
+  it('does not overflow the stack on deeply nested local settings values', () => {
+    let settings: Record<string, unknown> = { value: 'leaf' };
+    for (let depth = 0; depth < 20000; depth += 1) {
+      settings = { nested: settings };
+    }
+
+    expect(() => findCodexTranslatorUrlPaths(settings)).not.toThrow();
+    expect(findCodexTranslatorUrlPaths(settings)).toEqual([]);
+  });
 });

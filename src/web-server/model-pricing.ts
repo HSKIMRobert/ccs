@@ -17,11 +17,21 @@ import {
 // TYPE DEFINITIONS
 // ============================================================================
 
-export interface ModelPricing {
+export interface PricingRates {
   inputPerMillion: number;
   outputPerMillion: number;
   cacheCreationPerMillion: number;
   cacheReadPerMillion: number;
+}
+
+export interface ModelPricing extends PricingRates {
+  /**
+   * Optional per-service-tier rate overrides keyed by Anthropic's
+   * `service_tier` request parameter (e.g. `'fast'`). When the lookup is
+   * called with a known tier, these rates replace the base ones; otherwise
+   * the base rates apply.
+   */
+  serviceTiers?: Record<string, PricingRates>;
 }
 
 export interface TokenUsage {
@@ -31,7 +41,41 @@ export interface TokenUsage {
   cacheReadTokens: number;
 }
 
-export type PricingLookupOptions = ModelsDevPricingLookupOptions;
+export interface PricingLookupOptions extends ModelsDevPricingLookupOptions {
+  /**
+   * Anthropic `service_tier` (e.g. `'fast'`). When set and the resolved model
+   * has matching `serviceTiers` rates, those are returned instead of the
+   * base rates. Unknown tiers transparently fall through to base.
+   */
+  serviceTier?: string;
+}
+
+// Anthropic prompt-caching multipliers, expressed relative to the base input
+// rate (see https://platform.claude.com/docs/en/about-claude/pricing#prompt-caching).
+// Keeping them as named constants avoids drift when deriving per-tier cache rates.
+const CACHE_5M_WRITE_MULTIPLIER = 1.25;
+const CACHE_READ_MULTIPLIER = 0.1;
+
+/**
+ * Build a full rate set from input/output rates, deriving cache rates from the
+ * documented Anthropic multipliers so fast-tier entries stay in sync with the
+ * base-rate math instead of carrying hand-computed cache numbers.
+ */
+function buildRates(inputPerMillion: number, outputPerMillion: number): PricingRates {
+  return {
+    inputPerMillion,
+    outputPerMillion,
+    cacheCreationPerMillion: inputPerMillion * CACHE_5M_WRITE_MULTIPLIER,
+    cacheReadPerMillion: inputPerMillion * CACHE_READ_MULTIPLIER,
+  };
+}
+
+// Anthropic fast-mode premiums (per
+// https://platform.claude.com/docs/en/about-claude/pricing#fast-mode-pricing).
+// Opus 4.6 and 4.7 share the same 6x premium; 4.8 is 2x. Shared constants keep
+// the registry entries in sync rather than repeating the literal rates.
+const OPUS_46_47_FAST_RATES = buildRates(30.0, 150.0);
+const OPUS_48_FAST_RATES = buildRates(10.0, 50.0);
 
 // ============================================================================
 // USER-EDITABLE PRICING TABLE
@@ -223,25 +267,54 @@ const PRICING_REGISTRY: Record<string, ModelPricing> = {
     cacheCreationPerMillion: 6.25,
     cacheReadPerMillion: 0.5,
   },
-  // Claude 4.6 Opus ($5/$25)
+  // Claude 4.6 Opus ($5/$25) — fast mode ($30/$150, 6x premium per Anthropic docs)
   'claude-opus-4-6': {
     inputPerMillion: 5.0,
     outputPerMillion: 25.0,
     cacheCreationPerMillion: 6.25,
     cacheReadPerMillion: 0.5,
+    serviceTiers: {
+      fast: OPUS_46_47_FAST_RATES,
+    },
   },
   'claude-opus-4-6-thinking': {
     inputPerMillion: 5.0,
     outputPerMillion: 25.0,
     cacheCreationPerMillion: 6.25,
     cacheReadPerMillion: 0.5,
+    serviceTiers: {
+      fast: OPUS_46_47_FAST_RATES,
+    },
   },
-  // Claude 4.7 Opus ($5/$25)
+  // Claude 4.7 Opus ($5/$25) — fast mode ($30/$150, 6x premium per Anthropic docs)
   'claude-opus-4-7': {
     inputPerMillion: 5.0,
     outputPerMillion: 25.0,
     cacheCreationPerMillion: 6.25,
     cacheReadPerMillion: 0.5,
+    serviceTiers: {
+      fast: OPUS_46_47_FAST_RATES,
+    },
+  },
+  // Legacy pricing-only entry for historical analytics data; this id has no
+  // catalog model (Opus 4.7 moved to adaptive thinking levels in 84dc4e24, so
+  // there is no separate -thinking variant). Kept so older usage records still
+  // resolve to the correct rate. No fast tier: the id is never requested live.
+  'claude-opus-4-7-thinking': {
+    inputPerMillion: 5.0,
+    outputPerMillion: 25.0,
+    cacheCreationPerMillion: 6.25,
+    cacheReadPerMillion: 0.5,
+  },
+  // Claude 4.8 Opus ($5/$25) — fast mode ($10/$50, 2x premium per Anthropic docs)
+  'claude-opus-4-8': {
+    inputPerMillion: 5.0,
+    outputPerMillion: 25.0,
+    cacheCreationPerMillion: 6.25,
+    cacheReadPerMillion: 0.5,
+    serviceTiers: {
+      fast: OPUS_48_FAST_RATES,
+    },
   },
 
   // ---------------------------------------------------------------------------
@@ -887,11 +960,34 @@ function hasProviderContext(model: string, options: PricingLookupOptions): boole
 }
 
 /**
+ * Apply per-service-tier rates if the resolved model declares them and the
+ * caller requested a matching tier. Unknown tiers transparently fall through
+ * to the base rates so existing callers stay unaffected.
+ *
+ * TODO(opus-fast-mode): No production caller currently passes `serviceTier`.
+ * Anthropic's `service_tier` is not yet captured on CliproxyRequestDetail, so
+ * usage transformers (cliproxy-usage-transformer.ts, data-aggregator.ts) bill
+ * fast-mode requests at the standard rate — i.e. fast Opus is under-reported by
+ * the tier premium ($10/$50 vs $5/$25). Wire `serviceTier` through once the
+ * usage pipeline records it. The schema below is ready for that integration.
+ */
+function applyServiceTier(pricing: ModelPricing, tier: string | undefined): ModelPricing {
+  if (!tier) return pricing;
+  const tierRates = pricing.serviceTiers?.[tier];
+  if (!tierRates) return pricing;
+  return { ...tierRates, serviceTiers: pricing.serviceTiers };
+}
+
+/**
  * Get pricing for a model with narrow fuzzy matching fallback.
  * Unknown future model families should fall back instead of inheriting the
  * first known family tier that happens to share a prefix.
  */
 export function getModelPricing(model: string, options: PricingLookupOptions = {}): ModelPricing {
+  return applyServiceTier(resolveBasePricing(model, options), options.serviceTier);
+}
+
+function resolveBasePricing(model: string, options: PricingLookupOptions): ModelPricing {
   if (hasProviderContext(model, options)) {
     const ccsOverridePricing = getCcsPolicyOverridePricing(model);
     if (ccsOverridePricing !== undefined) {

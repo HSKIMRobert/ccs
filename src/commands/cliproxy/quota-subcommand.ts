@@ -18,6 +18,10 @@ import {
 } from '../../cliproxy/accounts/account-manager';
 import { fetchAllProviderQuotas } from '../../cliproxy/quota/quota-fetcher';
 import { fetchAllCodexQuotas } from '../../cliproxy/quota/quota-fetcher-codex';
+import {
+  sanitizeCodexFeatureLabel,
+  sanitizeCodexFeatureLabelOrNull,
+} from '../../cliproxy/quota/quota-label-sanitizer';
 import { fetchAllClaudeQuotas } from '../../cliproxy/quota/quota-fetcher-claude';
 import { pickMostRestrictiveClaudeWeeklyWindow } from '../../cliproxy/quota/quota-fetcher-claude-normalizer';
 import { fetchAllGeminiCliQuotas } from '../../cliproxy/quota/quota-fetcher-gemini-cli';
@@ -279,9 +283,12 @@ function inferCodeReviewCadence(
  * Strip a leading "GPT-X.Y-Codex-" prefix from a feature label and turn the
  * remainder into a Codex-prefixed display name. Other labels pass through unchanged.
  */
-function prettifyCodexFeatureLabel(featureLabel: string): string {
-  const trimmed = featureLabel.trim();
-  if (!trimmed) return 'Additional';
+function prettifyCodexFeatureLabel(featureLabel: unknown, fallbackLabel?: unknown): string {
+  const trimmed =
+    sanitizeCodexFeatureLabelOrNull(featureLabel) ??
+    (fallbackLabel === undefined
+      ? sanitizeCodexFeatureLabel(featureLabel)
+      : sanitizeCodexFeatureLabel(fallbackLabel));
   const stripped = trimmed.replace(/^GPT-[\d.]+-Codex-/i, '');
   if (stripped !== trimmed && stripped.length > 0) {
     return `Codex ${stripped}`;
@@ -302,7 +309,7 @@ function getCodexWindowDisplayLabel(
   }
 
   if (window.category === 'additional') {
-    const pretty = prettifyCodexFeatureLabel(window.featureLabel || window.label || 'Additional');
+    const pretty = prettifyCodexFeatureLabel(window.featureLabel, window.label);
     if (window.cadence === '5h') return `${pretty} (5h)`;
     if (window.cadence === 'weekly') return `${pretty} (weekly)`;
     return pretty;
@@ -850,7 +857,9 @@ const QUOTA_PROVIDER_RUNTIME: Record<QuotaSupportedProvider, QuotaProviderRuntim
 };
 
 export const __testExports = {
+  getCodexWindowDisplayLabel,
   getQuotaFailureDisplayEntries,
+  prettifyCodexFeatureLabel,
   resolveDisplayedTier,
 };
 
@@ -1056,8 +1065,13 @@ export async function handlePauseAccount(args: string[]): Promise<void> {
   }
 
   if (account.paused) {
+    const refreshed = pauseAccount(provider, account.id);
+    const refreshedAccount = refreshed ? findAccountByQuery(provider, account.id) : account;
     console.log(warn(`Account already paused: ${formatCliAccountLabel(account)}`));
-    console.log(info(`Paused at: ${account.pausedAt || 'unknown'}`));
+    if (refreshed) {
+      console.log(info('Manual pause refreshed; account will stay out of quota rotation'));
+    }
+    console.log(info(`Paused at: ${refreshedAccount?.pausedAt || account.pausedAt || 'unknown'}`));
     return;
   }
 

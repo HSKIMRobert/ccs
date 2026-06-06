@@ -29,17 +29,14 @@ describe('buildAccountVisualGroups', () => {
     ]);
 
     expect(groups).toHaveLength(1);
-    expect(groups[0]?.variants?.map((variant) => variant.audience)).toEqual([
-      'business',
-      'personal',
-    ]);
+    expect(groups[0]?.variants?.map((variant) => variant.audience)).toEqual(['business', 'free']);
     expect(groups[0]?.variants?.map((variant) => variant.inlineLabel)).toEqual([
       'Business · Workspace 04a0f049',
-      'Personal · Free',
+      'Free',
     ]);
     expect(groups[0]?.variants?.map((variant) => variant.compactDetailLabel)).toEqual([
       '04a0f049',
-      'Free',
+      null,
     ]);
     expect(groups[0]?.memberIds).toEqual([
       'kaidu.kd@gmail.com#04a0f049-team',
@@ -47,7 +44,7 @@ describe('buildAccountVisualGroups', () => {
     ]);
   });
 
-  it('keeps multiple personal codex plans distinct inside the same grouped card', () => {
+  it('keeps personal and free codex plans distinct inside the same grouped card', () => {
     const groups = buildAccountVisualGroups([
       makeAccount({
         id: 'kaidu.kd@gmail.com#plus',
@@ -61,8 +58,8 @@ describe('buildAccountVisualGroups', () => {
 
     expect(groups).toHaveLength(1);
     expect(groups[0]?.variants?.map((variant) => variant.inlineLabel)).toEqual([
-      'Personal · Free',
       'Personal · Plus',
+      'Free',
     ]);
   });
 });

@@ -307,6 +307,31 @@ describe('SharedManager', () => {
   });
 
   describe('marketplace registry ownership', () => {
+    it('skips unstatable shared plugin entries during instance linking', () => {
+      const manager = new SharedManager();
+      const instancePath = instanceDir('work');
+      const sharedPluginsPath = path.join(claudeDir(), 'plugins');
+      const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+
+      fs.mkdirSync(instancePath, { recursive: true });
+      fs.mkdirSync(sharedPluginsPath, { recursive: true });
+      fs.symlinkSync(
+        path.join(sharedPluginsPath, 'missing-plugin'),
+        path.join(sharedPluginsPath, 'broken-plugin'),
+        'dir'
+      );
+
+      expect(() => manager.linkSharedDirectories(instancePath)).not.toThrow();
+      expect(fs.existsSync(path.join(instancePath, 'plugins', 'broken-plugin'))).toBe(false);
+      expect(
+        logSpy.mock.calls.some(([message]) =>
+          String(message).includes(
+            'Skipping plugins/broken-plugin: unable to inspect shared plugin entry'
+          )
+        )
+      ).toBe(true);
+    });
+
     it('writes global and instance registries with different authoritative install locations', () => {
       const globalRegistryPath = path.join(claudeDir(), 'plugins', 'known_marketplaces.json');
       ensureMarketplacePayload(claudeDir());

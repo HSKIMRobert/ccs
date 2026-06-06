@@ -415,6 +415,43 @@ describe('persist command Claude extension parity', () => {
     expect(renderedLogs).toContain('Native Codex target: ccsxp or ccs codex --target codex');
   });
 
+  it('does not fail after writing settings when a cleared env value is deeply nested', async () => {
+    await writeUnifiedConfig();
+
+    const settingsPath = path.join(tempRoot, '.claude', 'settings.json');
+    await fs.promises.mkdir(path.dirname(settingsPath), { recursive: true });
+    const deepValue = `${'{"nested":'.repeat(20000)}"leaf"${'}'.repeat(20000)}`;
+    await fs.promises.writeFile(
+      settingsPath,
+      `{"env":{"KEEP_ME":"still-here","ANTHROPIC_AUTH_TOKEN":${deepValue}}}\n`,
+      'utf8'
+    );
+
+    const originalConsoleLog = console.log;
+    const capturedLogs: string[] = [];
+    console.log = (...args: unknown[]) => {
+      capturedLogs.push(args.map((arg) => String(arg)).join(' '));
+    };
+
+    try {
+      await withScopedHome(() => handlePersistCommand(['default', '--yes']));
+    } finally {
+      console.log = originalConsoleLog;
+    }
+
+    const persisted = JSON.parse(await fs.promises.readFile(settingsPath, 'utf8')) as {
+      env: Record<string, string>;
+    };
+
+    expect(persisted.env.KEEP_ME).toBe('still-here');
+    expect(persisted.env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+    const renderedLogs = capturedLogs.join('\n');
+    expect(renderedLogs).toContain("Profile 'default' written to");
+    expect(renderedLogs).toContain('Config Receipt');
+    expect(renderedLogs).toContain('Codex translator URL: not found');
+    expect(renderedLogs).not.toContain('Failed to write settings');
+  });
+
   it('warns in the persist receipt when a Codex translator URL remains in settings', async () => {
     await writeUnifiedConfig();
 
