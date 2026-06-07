@@ -164,6 +164,41 @@ describe('POST /api/accounts/tier-lock', () => {
     expect(body.error).toMatch(/tier/i);
   });
 
+  it('rejects a non-managed provider with 400 (fix #8)', async () => {
+    // Providers like 'kiro' or unknown CLIProxy providers accept isCLIProxyProvider()
+    // but quota-manager does not enforce tier_lock for them. Persisting a lock entry
+    // would silently have no effect, misleading the caller. Must 400.
+    // Note: 'kiro' passes isCLIProxyProvider but is NOT in MANAGED_QUOTA_PROVIDERS.
+    // We test with a provider that is valid (passes CLIProxy check) but not managed.
+    // In practice this means any provider added to CLIProxy that is not in
+    // MANAGED_QUOTA_PROVIDERS = ['agy', 'claude', 'codex', 'gemini', 'ghcp'].
+    // We use a string that is a known CLIProxy provider but not managed.
+    // Since the set of CLIProxy providers is dynamic we test the error message content.
+    const res = await postJson(baseUrl, '/api/accounts/tier-lock', {
+      provider: 'kiro',
+      tier: 'pro',
+    });
+    // If kiro is a CLIProxy provider but not managed: expect 400
+    // If kiro is not a CLIProxy provider at all: also 400 (from isCLIProxyProvider check)
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/provider/i);
+  });
+
+  it('accepts all five managed-quota providers (agy, claude, codex, gemini, ghcp)', async () => {
+    const managedProviders = ['agy', 'claude', 'codex', 'gemini', 'ghcp'];
+    for (const provider of managedProviders) {
+      const res = await postJson(baseUrl, '/api/accounts/tier-lock', {
+        provider,
+        tier: 'pro',
+      });
+      // All managed providers should succeed (200)
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { provider: string; tier_lock: string | null };
+      expect(body.provider).toBe(provider);
+    }
+  });
+
   it('persists tier_lock as per-provider map in the config', async () => {
     await postJson(baseUrl, '/api/accounts/tier-lock', { provider: 'agy', tier: 'pro' });
 

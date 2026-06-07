@@ -44,6 +44,10 @@ import {
   mutateConfig,
 } from '../../config/config-loader-facade';
 import type { AccountTier } from '../../cliproxy/accounts/types';
+import {
+  isManagedQuotaProvider,
+  MANAGED_QUOTA_PROVIDERS,
+} from '../../cliproxy/quota/quota-manager';
 
 /** Valid account tier values for tier-lock validation */
 const VALID_ACCOUNT_TIERS: ReadonlySet<string> = new Set<AccountTier>([
@@ -666,6 +670,18 @@ router.post('/tier-lock', (req: Request, res: Response): void => {
 
     if (!isCLIProxyProvider(provider)) {
       res.status(400).json({ error: `Invalid provider: ${provider}` });
+      return;
+    }
+
+    // Fix #8: tier_lock is only enforced by quota-manager for managed-quota providers.
+    // Locking a non-managed provider persists a silently-unenforced entry.
+    // Reject with 400 to avoid misleading the caller.
+    if (!isManagedQuotaProvider(provider)) {
+      res.status(400).json({
+        error:
+          `Provider "${provider}" does not support tier-lock. ` +
+          `Only managed-quota providers support it: ${[...MANAGED_QUOTA_PROVIDERS].join(', ')}.`,
+      });
       return;
     }
 
