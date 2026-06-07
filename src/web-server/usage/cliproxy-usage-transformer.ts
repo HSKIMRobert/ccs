@@ -69,11 +69,15 @@ function createHistoryDetail(
   const outputTokens = detail.tokens?.output_tokens ?? 0;
   const cacheReadTokens = detail.tokens?.cached_tokens ?? 0;
 
-  // Resolve accountId from auth_index → account map, falling back to detail.source
+  // Resolve accountId from auth_index → account map.
+  // buildAuthIndexToAccountMap stores only String(auth_index) keys, so the numeric-key
+  // lookup is dead code and the detail.source fallback mis-attributes cost to a CLIProxy
+  // source label rather than an email. Leave accountId undefined when the index is absent
+  // so getTodayCostByAccount buckets it under 'unknown' and the bar excludes it.
   let accountId: string | undefined;
   if (accountMap !== undefined) {
     const key = String(detail.auth_index);
-    accountId = accountMap.get(key) ?? accountMap.get(detail.auth_index) ?? detail.source;
+    accountId = accountMap.get(key);
   }
 
   return {

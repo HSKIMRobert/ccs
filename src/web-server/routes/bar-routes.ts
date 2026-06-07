@@ -214,10 +214,17 @@ function buildRow(
   account: AccountInfo,
   fetchResult: AccountFetchResult,
   costByAccount: Record<string, number>,
-  overallHealth: 'ok' | 'warning' | 'error'
+  overallHealth: 'ok' | 'warning' | 'error',
+  /** Set of cost-keys that are shared by more than one account. Cost is unknowable for these. */
+  sharedCostKeys: ReadonlySet<string>
 ): BarSummaryRow {
   const { quota, cached, fetchedAt } = fetchResult;
   const costKey = resolveCostKey(account);
+
+  // Fix #11: when multiple accounts share the same cost-key (e.g. two codex accounts with
+  // the same email), we cannot attribute the combined cost to either individual account.
+  // Report null (unknowable) rather than the inflated shared total.
+  const todayCost = sharedCostKeys.has(costKey) ? null : (costByAccount[costKey] ?? 0);
 
   if (!quota || !quota.success) {
     // Degraded row: preserve identity fields, null out quota data
@@ -229,7 +236,7 @@ function buildRow(
       paused: account.paused ?? false,
       quota_percentage: null,
       next_reset: null,
-      today_cost: costByAccount[costKey] ?? 0,
+      today_cost: todayCost,
       health: quota?.needsReauth ? 'error' : overallHealth,
       cached,
       fetchedAt,
@@ -245,7 +252,7 @@ function buildRow(
     paused: account.paused ?? false,
     quota_percentage: extractQuotaPercentage(quota),
     next_reset: extractNextReset(quota),
-    today_cost: costByAccount[costKey] ?? 0,
+    today_cost: todayCost,
     health: overallHealth,
     cached,
     fetchedAt,
@@ -315,6 +322,19 @@ export function createBarRouter(deps: BarRouterDeps): Router {
       const summary = deps.getAllAccountsSummary();
       const allAccounts: AccountInfo[] = Object.values(summary).flat();
 
+      // Fix #11: compute which cost-keys are shared by >1 account so buildRow can
+      // report null (unknowable) rather than the combined total for those rows.
+      const costKeyCount = new Map<string, number>();
+      for (const account of allAccounts) {
+        const key = resolveCostKey(account);
+        costKeyCount.set(key, (costKeyCount.get(key) ?? 0) + 1);
+      }
+      const sharedCostKeys = new Set<string>(
+        Array.from(costKeyCount.entries())
+          .filter(([, count]) => count > 1)
+          .map(([key]) => key)
+      );
+
       // Fetch quota in parallel with per-account error isolation.
       // Concurrency is capped to avoid fan-out across large account lists.
       // Paused accounts are handled inside fetchAccountData (cache/degrade, no live fetch).
@@ -325,7 +345,7 @@ export function createBarRouter(deps: BarRouterDeps): Router {
         const batchRows = await Promise.all(
           batch.map(async (account): Promise<BarSummaryRow> => {
             const fetchResult = await fetchAccountData(account, doForceRefresh, deps);
-            return buildRow(account, fetchResult, costByAccount, overallHealth);
+            return buildRow(account, fetchResult, costByAccount, overallHealth, sharedCostKeys);
           })
         );
         rows.push(...batchRows);

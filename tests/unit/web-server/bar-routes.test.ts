@@ -736,3 +736,115 @@ describe('force-fresh: paused accounts and concurrency cap (finding #7)', () => 
     expect(pausedRow?.paused).toBe(true);
   });
 });
+
+// ============================================================================
+// Finding #11: codex duplicate-email cost double-count
+// ============================================================================
+
+describe('today_cost: duplicate-email accounts get null (finding #11)', () => {
+  // When two codex accounts share the same email, both rows must report today_cost: null
+  // instead of the combined total that would otherwise be double-counted.
+
+  async function buildRouter(accounts: object[], costMap: Record<string, number>) {
+    const { createBarRouter } = await import('../../../src/web-server/routes/bar-routes');
+    const { resetForceFreshDebounce: resetDebounce } = await import('../../../src/web-server/routes/bar-routes');
+
+    const app = express();
+    app.use(express.json());
+
+    const router = createBarRouter({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      getAllAccountsSummary: () => ({ codex: accounts }) as any,
+      getCachedQuota: () => null,
+      setCachedQuota: () => {},
+      invalidateQuotaCache: () => {},
+      fetchAccountQuota: async () => makeQuotaResult(),
+      getTodayCostByAccount: () => costMap,
+      loadCliproxyDetails: async () => [],
+      runHealthChecks: async () => makeHealthReport(),
+    });
+
+    app.use('/api/bar', router);
+
+    const srv = await new Promise<Server>((resolve, reject) => {
+      const instance = app.listen(0, '127.0.0.1');
+      instance.once('error', reject);
+      instance.once('listening', () => resolve(instance));
+    });
+
+    const addr = srv.address();
+    if (!addr || typeof addr === 'string') throw new Error('No server address');
+    resetDebounce();
+
+    return { srv, url: `http://127.0.0.1:${(addr as { port: number }).port}` };
+  }
+
+  it('two codex accounts sharing an email both get today_cost: null (not the doubled total)', async () => {
+    const sharedEmail = 'shared@example.com';
+    const accounts = [
+      {
+        id: `${sharedEmail}#free`,
+        email: sharedEmail,
+        provider: 'codex',
+        nickname: 'free-codex',
+        tier: 'free',
+        paused: false,
+        isDefault: false,
+        tokenFile: 'codex-shared-free.json',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: `${sharedEmail}#pro`,
+        email: sharedEmail,
+        provider: 'codex',
+        nickname: 'pro-codex',
+        tier: 'pro',
+        paused: false,
+        isDefault: true,
+        tokenFile: 'codex-shared-pro.json',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ];
+    // The cost map only has a combined total for the shared email
+    const costMap = { [sharedEmail]: 5.00 };
+
+    const { srv, url } = await buildRouter(accounts, costMap);
+
+    const { body } = await getJson<BarSummaryRow[]>(url, '/api/bar/summary');
+    await new Promise<void>((resolve) => srv.close(() => resolve()));
+
+    expect(body.length).toBe(2);
+    // Both rows must be null — the cost is unknowable per-account when email is shared
+    expect(body[0].today_cost).toBeNull();
+    expect(body[1].today_cost).toBeNull();
+    // Neither should show the combined total
+    expect(body[0].today_cost).not.toBe(5.00);
+    expect(body[1].today_cost).not.toBe(5.00);
+  });
+
+  it('unique-email account still shows its individual cost', async () => {
+    const accounts = [
+      {
+        id: 'unique@example.com',
+        email: 'unique@example.com',
+        provider: 'codex',
+        nickname: 'unique-codex',
+        tier: 'pro',
+        paused: false,
+        isDefault: true,
+        tokenFile: 'codex-unique.json',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ];
+    const costMap = { 'unique@example.com': 3.75 };
+
+    const { srv, url } = await buildRouter(accounts, costMap);
+
+    const { body } = await getJson<BarSummaryRow[]>(url, '/api/bar/summary');
+    await new Promise<void>((resolve) => srv.close(() => resolve()));
+
+    expect(body.length).toBe(1);
+    // Unique email — cost is attributable
+    expect(body[0].today_cost).toBeCloseTo(3.75);
+  });
+});

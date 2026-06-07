@@ -87,9 +87,11 @@ const twoAccountResponse = makeResponse([
   },
 ]);
 
+// Fix #7/#13/#15: buildAuthIndexToAccountMap stores String(auth_index) keys only.
+// The map must use string keys so accountMap.get(String(detail.auth_index)) resolves correctly.
 const authFileMap: Map<number | string, string> = new Map([
-  [0, 'alice@example.com'],
-  [1, 'bob@example.com'],
+  ['0', 'alice@example.com'],
+  ['1', 'bob@example.com'],
 ]);
 
 // ============================================================================
@@ -109,14 +111,25 @@ describe('extractCliproxyUsageHistoryDetails with accountMap', () => {
     expect(bobDetails).toHaveLength(1);   // auth_index 1 appears once
   });
 
-  it('falls back to detail.source when auth_index not in accountMap', async () => {
+  it('leaves accountId undefined when auth_index is not in accountMap (no source fallback)', async () => {
+    // Fix #7/#13/#15: detail.source is a CLIProxy source label, not an email.
+    // Using it as a cost key caused mis-attribution. When auth_index is absent from the
+    // map, accountId must be undefined so getTodayCostByAccount buckets under 'unknown'.
     const { extractCliproxyUsageHistoryDetails } = await import('../../../../src/web-server/usage/cliproxy-usage-transformer');
 
-    const partialMap: Map<number | string, string> = new Map([[0, 'alice@example.com']]);
+    // Use string key matching buildAuthIndexToAccountMap's String(auth_index) output
+    const partialMap: Map<number | string, string> = new Map([['0', 'alice@example.com']]);
     const details = extractCliproxyUsageHistoryDetails(twoAccountResponse, partialMap);
 
-    const unknownAccount = details.find((d) => d.accountId === 'old-source-b');
-    expect(unknownAccount).toBeDefined();
+    // auth_index 1 (bob) is not in the partial map — must be undefined, not 'old-source-b'
+    const bobDetail = details.find((d) => d.accountId === undefined && !d.accountId);
+    // There should be exactly one detail with no accountId (bob's request)
+    const unmappedDetails = details.filter((d) => d.accountId === undefined);
+    expect(unmappedDetails).toHaveLength(1);
+    // Confirm it is NOT keyed under the source string
+    const sourceFallback = details.find((d) => d.accountId === 'old-source-b');
+    expect(sourceFallback).toBeUndefined();
+    void bobDetail; // suppress lint
   });
 
   it('does not include accountId when no accountMap is provided (backward compat)', async () => {
@@ -255,7 +268,9 @@ describe('getTodayCostByAccount', () => {
     expect(result['alice@example.com']).toBeCloseTo(aliceCostFromDetails, 10);
   });
 
-  it('details without accountId are grouped under fallback source key', async () => {
+  it('details without accountId are grouped under the "unknown" key', async () => {
+    // Fix #7/#13/#15: when no accountMap is provided, accountId is undefined on all details.
+    // getTodayCostByAccount buckets these under 'unknown' — not under detail.source.
     const { getTodayCostByAccount } = await import('../../../../src/web-server/usage/data-aggregator');
     const { extractCliproxyUsageHistoryDetails } = await import('../../../../src/web-server/usage/cliproxy-usage-transformer');
 
@@ -263,9 +278,12 @@ describe('getTodayCostByAccount', () => {
     const details = extractCliproxyUsageHistoryDetails(twoAccountResponse);
     const result = getTodayCostByAccount(details, TODAY);
 
-    // With no accountId, details with cost > 0 should still contribute
-    // grouped under some non-empty key derived from the detail
-    expect(Object.values(result).some((v) => v > 0)).toBe(true);
+    // All costs should be accumulated under the literal key 'unknown'
+    expect(typeof result['unknown']).toBe('number');
+    expect(result['unknown']).toBeGreaterThan(0);
+    // No source-string keys should appear in the result
+    expect(result['old-source-a']).toBeUndefined();
+    expect(result['old-source-b']).toBeUndefined();
   });
 });
 
