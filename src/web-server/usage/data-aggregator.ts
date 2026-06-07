@@ -480,6 +480,42 @@ export function aggregateSessionUsage(
 }
 
 // ============================================================================
+// CLIPROXY ACCOUNT-LEVEL COST (Phase 1A: CCS Bar)
+// ============================================================================
+
+import type { CliproxyUsageHistoryDetail } from './cliproxy-usage-transformer';
+
+/**
+ * Compute per-account cost totals for a given calendar day.
+ *
+ * @param details Flat history details produced by extractCliproxyUsageHistoryDetails.
+ *   Details with `accountId` are grouped by that value; details without are grouped
+ *   under the key `'unknown'`.
+ * @param today YYYY-MM-DD date string (defaults to local date if omitted).
+ * @returns Record mapping accountId (or 'unknown') → total cost in USD for that day.
+ */
+export function getTodayCostByAccount(
+  details: CliproxyUsageHistoryDetail[],
+  today?: string
+): Record<string, number> {
+  const dateKey = today ?? new Date().toISOString().slice(0, 10);
+  const result: Record<string, number> = {};
+
+  for (const detail of details) {
+    // Filter to the requested day only
+    if (!detail.timestamp.startsWith(dateKey)) continue;
+
+    // Skip zero-cost records to avoid polluting result with no-op entries
+    if (detail.cost <= 0) continue;
+
+    const accountKey = detail.accountId ?? 'unknown';
+    result[accountKey] = (result[accountKey] ?? 0) + detail.cost;
+  }
+
+  return result;
+}
+
+// ============================================================================
 // MAIN DATA LOADER (drop-in replacement for better-ccusage)
 // ============================================================================
 

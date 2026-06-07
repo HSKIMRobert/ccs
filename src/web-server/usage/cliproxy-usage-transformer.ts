@@ -21,6 +21,8 @@ import { getModelsUsed, normalizeUsageProvider } from './model-identity';
 export interface CliproxyUsageHistoryDetail {
   model: string;
   provider?: string;
+  /** CLIProxy account email/id derived from auth_index lookup. Populated when an accountMap is supplied. */
+  accountId?: string;
   timestamp: string;
   inputTokens: number;
   outputTokens: number;
@@ -59,16 +61,29 @@ function buildModelBreakdown(
 function createHistoryDetail(
   provider: string,
   model: string,
-  detail: CliproxyRequestDetail
+  detail: CliproxyRequestDetail,
+  accountMap?: Map<number | string, string>
 ): CliproxyUsageHistoryDetail {
   const pricingProvider = normalizeUsageProvider(provider) ?? provider.trim().toLowerCase();
   const inputTokens = detail.tokens?.input_tokens ?? 0;
   const outputTokens = detail.tokens?.output_tokens ?? 0;
   const cacheReadTokens = detail.tokens?.cached_tokens ?? 0;
 
+  // Resolve accountId from auth_index → account map.
+  // buildAuthIndexToAccountMap stores only String(auth_index) keys, so the numeric-key
+  // lookup is dead code and the detail.source fallback mis-attributes cost to a CLIProxy
+  // source label rather than an email. Leave accountId undefined when the index is absent
+  // so getTodayCostByAccount buckets it under 'unknown' and the bar excludes it.
+  let accountId: string | undefined;
+  if (accountMap !== undefined) {
+    const key = String(detail.auth_index);
+    accountId = accountMap.get(key);
+  }
+
   return {
     model,
     provider: pricingProvider,
+    ...(accountId !== undefined && { accountId }),
     timestamp: detail.timestamp,
     inputTokens,
     outputTokens,
@@ -147,9 +162,15 @@ export function normalizeCliproxyUsageHistoryDetail(
     )
   );
 
+  const accountId =
+    typeof candidate.accountId === 'string' && candidate.accountId.length > 0
+      ? candidate.accountId
+      : undefined;
+
   return {
     model: candidate.model,
     ...(provider && { provider }),
+    ...(accountId !== undefined && { accountId }),
     timestamp: candidate.timestamp,
     inputTokens,
     outputTokens,
@@ -177,9 +198,14 @@ function hasTrackedUsage(detail: CliproxyRequestDetail): boolean {
  * Flatten the nested response.usage.apis[provider].models[model].details[]
  * structure into normalized history details. Failed requests are retained only
  * when they still report tracked token usage that analytics can account for.
+ *
+ * @param accountMap Optional auth_index → account email/id map. When provided,
+ *   each detail's `accountId` is resolved from auth_index; falls back to
+ *   `detail.source` when the index is not in the map.
  */
 export function extractCliproxyUsageHistoryDetails(
-  response: CliproxyUsageApiResponse
+  response: CliproxyUsageApiResponse,
+  accountMap?: Map<number | string, string>
 ): CliproxyUsageHistoryDetail[] {
   const apis = response?.usage?.apis;
   if (!apis) return [];
@@ -193,7 +219,7 @@ export function extractCliproxyUsageHistoryDetails(
       if (!details) continue;
       for (const detail of details) {
         if (detail.failed && !hasTrackedUsage(detail)) continue;
-        results.push(createHistoryDetail(provider, model, detail));
+        results.push(createHistoryDetail(provider, model, detail, accountMap));
       }
     }
   }
@@ -204,6 +230,7 @@ function sanitizeHistoryDetail(detail: CliproxyUsageHistoryDetail): CliproxyUsag
   return {
     model: detail.model,
     ...(detail.provider && { provider: detail.provider }),
+    ...(detail.accountId !== undefined && { accountId: detail.accountId }),
     timestamp: detail.timestamp,
     inputTokens: detail.inputTokens,
     outputTokens: detail.outputTokens,

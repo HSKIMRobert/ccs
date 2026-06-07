@@ -140,6 +140,12 @@ export const ROOT_COMMAND_CATALOG: readonly RootCommandEntry[] = [
     visibility: 'public',
   },
   {
+    name: 'bar',
+    summary: 'Install and launch the CCS macOS menu bar app',
+    group: 'operations',
+    visibility: 'public',
+  },
+  {
     name: 'sync',
     summary: 'Sync delegation commands and skills',
     group: 'operations',
