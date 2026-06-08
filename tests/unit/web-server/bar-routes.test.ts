@@ -43,14 +43,16 @@ async function getJson<T>(baseUrl: string, path: string): Promise<{ status: numb
 // Mock factories
 // ============================================================================
 
-function makeAccountInfo(overrides: Partial<{
-  id: string;
-  provider: string;
-  nickname: string;
-  tier: string;
-  paused: boolean;
-  isDefault: boolean;
-}> = {}) {
+function makeAccountInfo(
+  overrides: Partial<{
+    id: string;
+    provider: string;
+    nickname: string;
+    tier: string;
+    paused: boolean;
+    isDefault: boolean;
+  }> = {}
+) {
   return {
     id: overrides.id ?? 'test@example.com',
     provider: overrides.provider ?? 'agy',
@@ -63,25 +65,31 @@ function makeAccountInfo(overrides: Partial<{
   };
 }
 
-function makeQuotaResult(overrides: Partial<{
-  success: boolean;
-  models: Array<{ name: string; percentage: number; resetTime: string | null }>;
-  needsReauth: boolean;
-  error: string;
-  lastUpdated: number;
-}> = {}) {
+function makeQuotaResult(
+  overrides: Partial<{
+    success: boolean;
+    models: Array<{ name: string; percentage: number; resetTime: string | null }>;
+    needsReauth: boolean;
+    error: string;
+    lastUpdated: number;
+  }> = {}
+) {
   return {
     success: overrides.success ?? true,
-    models: overrides.models ?? [{ name: 'gemini-3-pro', percentage: 75, resetTime: '2026-06-08T00:00:00Z' }],
+    models: overrides.models ?? [
+      { name: 'gemini-3-pro', percentage: 75, resetTime: '2026-06-08T00:00:00Z' },
+    ],
     lastUpdated: overrides.lastUpdated ?? Date.now(),
     needsReauth: overrides.needsReauth ?? false,
     ...(overrides.error !== undefined && { error: overrides.error }),
   };
 }
 
-function makeHealthReport(overrides: Partial<{
-  summary: { errors: number; warnings: number; passed: number; total: number; info: number };
-}> = {}) {
+function makeHealthReport(
+  overrides: Partial<{
+    summary: { errors: number; warnings: number; passed: number; total: number; info: number };
+  }> = {}
+) {
   return {
     timestamp: Date.now(),
     version: '1.0.0',
@@ -216,8 +224,18 @@ describe('GET /api/bar/summary', () => {
   });
 
   it('maps account metadata into the row correctly', async () => {
-    mockAccounts = [makeAccountInfo({ id: 'alice@example.com', provider: 'agy', tier: 'ultra', paused: false, nickname: 'alice' })];
-    mockQuotaResult = makeQuotaResult({ models: [{ name: 'gemini-3-pro', percentage: 60, resetTime: '2026-06-08T00:00:00Z' }] });
+    mockAccounts = [
+      makeAccountInfo({
+        id: 'alice@example.com',
+        provider: 'agy',
+        tier: 'ultra',
+        paused: false,
+        nickname: 'alice',
+      }),
+    ];
+    mockQuotaResult = makeQuotaResult({
+      models: [{ name: 'gemini-3-pro', percentage: 60, resetTime: '2026-06-08T00:00:00Z' }],
+    });
 
     const { body } = await getJson<BarSummaryRow[]>(baseUrl, '/api/bar/summary');
     const row = body[0];
@@ -235,7 +253,9 @@ describe('GET /api/bar/summary', () => {
   // --------------------------------------------------------------------------
 
   it('default mode returns cached: true when cache is populated', async () => {
-    mockCachedQuota = makeQuotaResult({ models: [{ name: 'model-a', percentage: 80, resetTime: null }] });
+    mockCachedQuota = makeQuotaResult({
+      models: [{ name: 'model-a', percentage: 80, resetTime: null }],
+    });
 
     const { body } = await getJson<BarSummaryRow[]>(baseUrl, '/api/bar/summary');
     const row = body[0];
@@ -323,7 +343,12 @@ describe('GET /api/bar/summary', () => {
     // We test degradation by simulating the success path; the real per-account
     // error test verifies via needsReauth row
     mockAccounts = [makeAccountInfo({ id: 'reauth@example.com', provider: 'agy' })];
-    mockQuotaResult = makeQuotaResult({ success: false, needsReauth: true, models: [], error: 'token expired' });
+    mockQuotaResult = makeQuotaResult({
+      success: false,
+      needsReauth: true,
+      models: [],
+      error: 'token expired',
+    });
     void callCount; // suppress lint
 
     const { body } = await getJson<BarSummaryRow[]>(baseUrl, '/api/bar/summary');
@@ -375,25 +400,36 @@ describe('GET /api/bar/summary', () => {
   });
 
   // --------------------------------------------------------------------------
-  // health mapping
+  // health is per-account, derived from each account's own quota result
+  // (no blocking system audit on the request path)
   // --------------------------------------------------------------------------
 
-  it('health is "ok" when overall health has no errors or warnings', async () => {
-    mockHealthReport = makeHealthReport({ summary: { errors: 0, warnings: 0, passed: 5, total: 5, info: 0 } });
+  it('health is "ok" when the account quota fetch succeeds', async () => {
+    mockQuotaResult = makeQuotaResult({ success: true });
 
     const { body } = await getJson<BarSummaryRow[]>(baseUrl, '/api/bar/summary');
     expect(body[0].health).toBe('ok');
   });
 
-  it('health is "warning" when overall health has warnings but no errors', async () => {
-    mockHealthReport = makeHealthReport({ summary: { errors: 0, warnings: 2, passed: 3, total: 5, info: 0 } });
+  it('health is "warning" when the quota fetch fails without needing reauth', async () => {
+    mockQuotaResult = makeQuotaResult({
+      success: false,
+      needsReauth: false,
+      models: [],
+      error: 'temporary',
+    });
 
     const { body } = await getJson<BarSummaryRow[]>(baseUrl, '/api/bar/summary');
     expect(body[0].health).toBe('warning');
   });
 
-  it('health is "error" when overall health has errors', async () => {
-    mockHealthReport = makeHealthReport({ summary: { errors: 1, warnings: 0, passed: 4, total: 5, info: 0 } });
+  it('health is "error" when the account needs reauthentication', async () => {
+    mockQuotaResult = makeQuotaResult({
+      success: false,
+      needsReauth: true,
+      models: [],
+      error: 'token expired',
+    });
 
     const { body } = await getJson<BarSummaryRow[]>(baseUrl, '/api/bar/summary');
     expect(body[0].health).toBe('error');
@@ -455,30 +491,35 @@ describe('today_cost key consistency — non-email account.id (finding #4)', () 
     // Simulate a codex account where id = "user@example.com#free"
     // but the cost map key is the canonical email "user@example.com"
     const { createBarRouter } = await import('../../../src/web-server/routes/bar-routes');
-    const { resetForceFreshDebounce: resetDebounce } = await import('../../../src/web-server/routes/bar-routes');
+    const { resetForceFreshDebounce: resetDebounce } = await import(
+      '../../../src/web-server/routes/bar-routes'
+    );
 
     const app = express();
     app.use(express.json());
 
     const costMap: Record<string, number> = {
-      'codex-user@example.com': 2.50,  // keyed by email (as buildAuthIndexToAccountMap produces)
+      'codex-user@example.com': 2.5, // keyed by email (as buildAuthIndexToAccountMap produces)
     };
 
     const router = createBarRouter({
-      getAllAccountsSummary: () => ({
-        codex: [{
-          id: 'codex-user@example.com#free',     // id has variant suffix
-          email: 'codex-user@example.com',         // email is the canonical lookup key
-          provider: 'codex',
-          nickname: 'codex-user',
-          tier: 'free',
-          paused: false,
-          isDefault: true,
-          tokenFile: 'codex-codex-user_example_com-free.json',
-          createdAt: '2026-01-01T00:00:00.000Z',
-        }],
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      }) as any,
+      getAllAccountsSummary: () =>
+        ({
+          codex: [
+            {
+              id: 'codex-user@example.com#free', // id has variant suffix
+              email: 'codex-user@example.com', // email is the canonical lookup key
+              provider: 'codex',
+              nickname: 'codex-user',
+              tier: 'free',
+              paused: false,
+              isDefault: true,
+              tokenFile: 'codex-codex-user_example_com-free.json',
+              createdAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }) as any,
       getCachedQuota: () => null,
       setCachedQuota: () => {},
       invalidateQuotaCache: () => {},
@@ -509,12 +550,14 @@ describe('today_cost key consistency — non-email account.id (finding #4)', () 
     // account_id should reflect the registry id
     expect(row.account_id).toBe('codex-user@example.com#free');
     // cost should be attributed via email lookup (2.50), not lost due to id mismatch
-    expect(row.today_cost).toBeCloseTo(2.50);
+    expect(row.today_cost).toBeCloseTo(2.5);
   });
 
   it('attributes cost correctly for account with no email (kiro/ghcp type): cost remains 0', async () => {
     const { createBarRouter } = await import('../../../src/web-server/routes/bar-routes');
-    const { resetForceFreshDebounce: resetDebounce } = await import('../../../src/web-server/routes/bar-routes');
+    const { resetForceFreshDebounce: resetDebounce } = await import(
+      '../../../src/web-server/routes/bar-routes'
+    );
 
     const app2 = express();
     app2.use(express.json());
@@ -525,20 +568,23 @@ describe('today_cost key consistency — non-email account.id (finding #4)', () 
     const costMap2: Record<string, number> = {};
 
     const router2 = createBarRouter({
-      getAllAccountsSummary: () => ({
-        kiro: [{
-          id: 'kiro-default',
-          // no email field
-          provider: 'kiro',
-          nickname: 'kiro-default',
-          tier: 'unknown',
-          paused: false,
-          isDefault: true,
-          tokenFile: 'kiro-default.json',
-          createdAt: '2026-01-01T00:00:00.000Z',
-        }],
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      }) as any,
+      getAllAccountsSummary: () =>
+        ({
+          kiro: [
+            {
+              id: 'kiro-default',
+              // no email field
+              provider: 'kiro',
+              nickname: 'kiro-default',
+              tier: 'unknown',
+              paused: false,
+              isDefault: true,
+              tokenFile: 'kiro-default.json',
+              createdAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }) as any,
       getCachedQuota: () => null,
       setCachedQuota: () => {},
       invalidateQuotaCache: () => {},
@@ -584,7 +630,9 @@ describe('debounce: concurrent refresh=true requests (finding #6)', () => {
     concurrentInvalidateCalls = [];
     fetchDelay = 0;
 
-    const { createBarRouter, resetForceFreshDebounce: resetDebounce } = await import('../../../src/web-server/routes/bar-routes');
+    const { createBarRouter, resetForceFreshDebounce: resetDebounce } = await import(
+      '../../../src/web-server/routes/bar-routes'
+    );
 
     resetDebounce();
 
@@ -592,10 +640,11 @@ describe('debounce: concurrent refresh=true requests (finding #6)', () => {
     app.use(express.json());
 
     const router = createBarRouter({
-      getAllAccountsSummary: () => ({
-        agy: [makeAccountInfo({ id: 'concurrent@example.com', provider: 'agy' })],
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      }) as any,
+      getAllAccountsSummary: () =>
+        ({
+          agy: [makeAccountInfo({ id: 'concurrent@example.com', provider: 'agy' })],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }) as any,
       getCachedQuota: () => null,
       setCachedQuota: () => {},
       invalidateQuotaCache: (provider: string, accountId: string) => {
@@ -633,7 +682,8 @@ describe('debounce: concurrent refresh=true requests (finding #6)', () => {
   beforeEach(() => {
     concurrentInvalidateCalls = [];
     fetchDelay = 20; // ms — enough for requests to overlap
-    const { resetForceFreshDebounce: resetDebounce } = require('../../../src/web-server/routes/bar-routes') as typeof import('../../../src/web-server/routes/bar-routes');
+    const { resetForceFreshDebounce: resetDebounce } =
+      require('../../../src/web-server/routes/bar-routes') as typeof import('../../../src/web-server/routes/bar-routes');
     resetDebounce();
   });
 
@@ -669,7 +719,9 @@ describe('force-fresh: paused accounts and concurrency cap (finding #7)', () => 
   beforeAll(async () => {
     fetchedAccounts = [];
 
-    const { createBarRouter, resetForceFreshDebounce: resetDebounce } = await import('../../../src/web-server/routes/bar-routes');
+    const { createBarRouter, resetForceFreshDebounce: resetDebounce } = await import(
+      '../../../src/web-server/routes/bar-routes'
+    );
 
     resetDebounce();
 
@@ -677,13 +729,14 @@ describe('force-fresh: paused accounts and concurrency cap (finding #7)', () => 
     app.use(express.json());
 
     const router = createBarRouter({
-      getAllAccountsSummary: () => ({
-        agy: [
-          makeAccountInfo({ id: 'active@example.com', provider: 'agy', paused: false }),
-          makeAccountInfo({ id: 'paused@example.com', provider: 'agy', paused: true }),
-        ],
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      }) as any,
+      getAllAccountsSummary: () =>
+        ({
+          agy: [
+            makeAccountInfo({ id: 'active@example.com', provider: 'agy', paused: false }),
+            makeAccountInfo({ id: 'paused@example.com', provider: 'agy', paused: true }),
+          ],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }) as any,
       getCachedQuota: () => null,
       setCachedQuota: () => {},
       invalidateQuotaCache: () => {},
@@ -715,7 +768,8 @@ describe('force-fresh: paused accounts and concurrency cap (finding #7)', () => 
 
   beforeEach(() => {
     fetchedAccounts = [];
-    const { resetForceFreshDebounce: resetDebounce } = require('../../../src/web-server/routes/bar-routes') as typeof import('../../../src/web-server/routes/bar-routes');
+    const { resetForceFreshDebounce: resetDebounce } =
+      require('../../../src/web-server/routes/bar-routes') as typeof import('../../../src/web-server/routes/bar-routes');
     resetDebounce();
   });
 
@@ -747,7 +801,9 @@ describe('today_cost: duplicate-email accounts get null (finding #11)', () => {
 
   async function buildRouter(accounts: object[], costMap: Record<string, number>) {
     const { createBarRouter } = await import('../../../src/web-server/routes/bar-routes');
-    const { resetForceFreshDebounce: resetDebounce } = await import('../../../src/web-server/routes/bar-routes');
+    const { resetForceFreshDebounce: resetDebounce } = await import(
+      '../../../src/web-server/routes/bar-routes'
+    );
 
     const app = express();
     app.use(express.json());
@@ -806,7 +862,7 @@ describe('today_cost: duplicate-email accounts get null (finding #11)', () => {
       },
     ];
     // The cost map only has a combined total for the shared email
-    const costMap = { [sharedEmail]: 5.00 };
+    const costMap = { [sharedEmail]: 5.0 };
 
     const { srv, url } = await buildRouter(accounts, costMap);
 
@@ -818,8 +874,8 @@ describe('today_cost: duplicate-email accounts get null (finding #11)', () => {
     expect(body[0].today_cost).toBeNull();
     expect(body[1].today_cost).toBeNull();
     // Neither should show the combined total
-    expect(body[0].today_cost).not.toBe(5.00);
-    expect(body[1].today_cost).not.toBe(5.00);
+    expect(body[0].today_cost).not.toBe(5.0);
+    expect(body[1].today_cost).not.toBe(5.0);
   });
 
   it('unique-email account still shows its individual cost', async () => {
