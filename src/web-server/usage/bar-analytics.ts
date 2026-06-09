@@ -54,6 +54,12 @@ export interface BarAnalytics {
   today: BarAnalyticsWindow;
   last7d: BarAnalyticsWindow;
   last30d: BarAnalyticsWindow;
+  /**
+   * Honest calendar month-to-date (1st of the current local month → now), NOT a
+   * rolling 30 days. A fresh month resets this toward ~0 even when `last30d`
+   * stays populated, so a monthly-cap alert measures the real billing month.
+   */
+  monthToDate: BarAnalyticsWindow;
   /** Lifetime totals across every record in the snapshot. */
   allTime: BarAnalyticsWindow;
   /** Oldest → newest, exactly 30 entries (zero-filled), for the sparkline. */
@@ -94,6 +100,17 @@ function localDayKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * Local-time YYYY-MM key for a Date. Local (not a UTC ISO slice) so it matches
+ * the local-day semantics of `dayDelta`/`localDayKey` — a record near midnight
+ * lands in the same month the user sees on their calendar.
+ */
+function localMonthKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
 /** Whole-day difference (a - b) in local days, via midnight-anchored dates. */
 function dayDelta(a: Date, b: Date): number {
   const da = new Date(a.getFullYear(), a.getMonth(), a.getDate());
@@ -112,7 +129,11 @@ export function computeBarAnalytics(
   const today: BarAnalyticsWindow = { cost: 0, requests: 0 };
   const last7d: BarAnalyticsWindow = { cost: 0, requests: 0 };
   const last30d: BarAnalyticsWindow = { cost: 0, requests: 0 };
+  const monthToDate: BarAnalyticsWindow = { cost: 0, requests: 0 };
   const allTime: BarAnalyticsWindow = { cost: 0, requests: 0 };
+
+  // Current local calendar month — records keyed to it feed month-to-date.
+  const currentMonth = localMonthKey(now);
 
   // Seed the sparkline with the trailing 7 local days (zero-filled, ordered).
   const dayBuckets = new Map<string, BarAnalyticsDay>();
@@ -162,6 +183,11 @@ export function computeBarAnalytics(
     allTime.requests += requests;
     bump(modelAll, detail.model, cost, requests);
 
+    if (localMonthKey(ts) === currentMonth) {
+      monthToDate.cost += cost;
+      monthToDate.requests += requests;
+    }
+
     if (delta === 0) {
       today.cost += cost;
       today.requests += requests;
@@ -202,6 +228,7 @@ export function computeBarAnalytics(
     today,
     last7d,
     last30d,
+    monthToDate,
     allTime,
     byDay: Array.from(dayBuckets.values()),
     topModels,
@@ -255,7 +282,12 @@ export function computeBarAnalyticsFromDaily(
   const today: BarAnalyticsWindow = { cost: 0, requests: 0 };
   const last7d: BarAnalyticsWindow = { cost: 0, requests: 0 };
   const last30d: BarAnalyticsWindow = { cost: 0, requests: 0 };
+  const monthToDate: BarAnalyticsWindow = { cost: 0, requests: 0 };
   const allTime: BarAnalyticsWindow = { cost: 0, requests: 0 };
+
+  // Daily keys (YYYY-MM-DD) and hourly keys (YYYY-MM-DD HH:00) are already local,
+  // so slice(0,7) yields the local YYYY-MM to compare against the current month.
+  const currentMonth = localMonthKey(now);
 
   const dayBuckets = new Map<string, BarAnalyticsDay>();
   for (let i = SPARKLINE_DAYS - 1; i >= 0; i--) {
@@ -309,6 +341,8 @@ export function computeBarAnalyticsFromDaily(
     }
     if (cost > 0) touchActivity(d.date);
 
+    if (d.date.slice(0, 7) === currentMonth) monthToDate.cost += cost;
+
     if (delta === 0) today.cost += cost;
     if (delta < 7) last7d.cost += cost;
     if (delta < 30) {
@@ -337,6 +371,8 @@ export function computeBarAnalyticsFromDaily(
     allTime.requests += requests;
     bumpSurface(surfaceAll, source, 0, requests);
     touchActivity(dayKey);
+
+    if (h.hour.slice(0, 7) === currentMonth) monthToDate.requests += requests;
 
     if (delta === 0) today.requests += requests;
     if (delta < 7) last7d.requests += requests;
@@ -369,6 +405,7 @@ export function computeBarAnalyticsFromDaily(
     today,
     last7d,
     last30d,
+    monthToDate,
     allTime,
     byDay: Array.from(dayBuckets.values()),
     topModels,

@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'bun:test';
-import { computeBarAnalytics } from '../../../src/web-server/usage/bar-analytics';
+import {
+  computeBarAnalytics,
+  computeBarAnalyticsFromDaily,
+} from '../../../src/web-server/usage/bar-analytics';
 import type { CliproxyUsageHistoryDetail } from '../../../src/web-server/usage/cliproxy-usage-transformer';
+import type { DailyUsage, HourlyUsage } from '../../../src/web-server/usage/types';
 
 const NOW = new Date('2026-06-08T12:00:00-04:00');
 
@@ -131,5 +135,101 @@ describe('computeBarAnalytics', () => {
     expect(a.last30d.cost).toBe(0);
     expect(a.topModelsWindow).toBe('all');
     expect(a.topModels[0].model).toBe('gpt-5.4');
+  });
+
+  it('sums monthToDate from only current-calendar-month records, even when prior-month data is inside the rolling 30d', () => {
+    // NOW is 2026-06-08. A 2026-05-25 record is 14 days ago: inside last30d but
+    // in the PRIOR calendar month, so it must NOT count toward June MTD.
+    const a = computeBarAnalytics(
+      [
+        detail({ timestamp: '2026-06-02T10:00:00-04:00', cost: 3, requestCount: 2 }), // June
+        detail({ timestamp: '2026-06-08T09:00:00-04:00', cost: 4, requestCount: 1 }), // June (today)
+        detail({ timestamp: '2026-05-25T10:00:00-04:00', cost: 5, requestCount: 9 }), // May, within 30d
+      ],
+      NOW
+    );
+    expect(a.monthToDate.cost).toBe(7); // 3 + 4, May excluded
+    expect(a.monthToDate.requests).toBe(3); // 2 + 1
+    // last30d still includes the May record — proves MTD is a distinct window.
+    expect(a.last30d.cost).toBe(12);
+  });
+
+  it('returns zeroed monthToDate for no details', () => {
+    const a = computeBarAnalytics([], NOW);
+    expect(a.monthToDate).toEqual({ cost: 0, requests: 0 });
+  });
+});
+
+function daily(over: Partial<DailyUsage>): DailyUsage {
+  return {
+    date: '2026-06-08',
+    source: 'cliproxy',
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+    cost: 0,
+    totalCost: 0,
+    modelsUsed: [],
+    modelBreakdowns: [],
+    ...over,
+  };
+}
+
+function hourly(over: Partial<HourlyUsage>): HourlyUsage {
+  return {
+    hour: '2026-06-08 10:00',
+    source: 'cliproxy',
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+    cost: 0,
+    totalCost: 0,
+    modelsUsed: [],
+    modelBreakdowns: [],
+    requestCount: 0,
+    ...over,
+  };
+}
+
+describe('computeBarAnalyticsFromDaily — monthToDate', () => {
+  it('sums monthToDate cost (daily) and requests (hourly) for only the current calendar month', () => {
+    const a = computeBarAnalyticsFromDaily(
+      [
+        daily({ date: '2026-06-02', totalCost: 10 }), // June
+        daily({ date: '2026-06-08', totalCost: 4 }), // June (today)
+        daily({ date: '2026-05-25', totalCost: 7 }), // May, still within 30d
+      ],
+      [
+        hourly({ hour: '2026-06-02 10:00', requestCount: 5 }), // June
+        hourly({ hour: '2026-06-08 09:00', requestCount: 3 }), // June
+        hourly({ hour: '2026-05-25 10:00', requestCount: 99 }), // May
+      ],
+      NOW
+    );
+    expect(a.monthToDate.cost).toBe(14); // 10 + 4, May excluded
+    expect(a.monthToDate.requests).toBe(8); // 5 + 3, May excluded
+    // Distinct from last30d, which still carries the prior-month May record.
+    expect(a.last30d.cost).toBe(21);
+  });
+
+  it('resets monthToDate toward 0 on a fresh-month boundary while last30d stays populated', () => {
+    // Treat the 1st of the month as "now": all activity sits in the prior month,
+    // so MTD must be ~0 even though those days remain inside the rolling 30d.
+    const firstOfMonth = new Date('2026-06-01T08:00:00-04:00');
+    const a = computeBarAnalyticsFromDaily(
+      [daily({ date: '2026-05-20', totalCost: 12 }), daily({ date: '2026-05-31', totalCost: 8 })],
+      [hourly({ hour: '2026-05-31 10:00', requestCount: 4 })],
+      firstOfMonth
+    );
+    expect(a.monthToDate.cost).toBe(0);
+    expect(a.monthToDate.requests).toBe(0);
+    expect(a.last30d.cost).toBe(20); // rolling 30d still populated
+  });
+
+  it('returns zeroed monthToDate for empty daily and hourly input', () => {
+    const a = computeBarAnalyticsFromDaily([], [], NOW);
+    expect(a.monthToDate).toEqual({ cost: 0, requests: 0 });
   });
 });
