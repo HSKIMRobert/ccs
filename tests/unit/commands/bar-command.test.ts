@@ -45,9 +45,7 @@ function restoreConsole(): void {
 let moduleSeq = 0;
 async function loadHandleBarCommand() {
   moduleSeq++;
-  const mod = await import(
-    `../../../src/commands/bar/index?test=${Date.now()}-${moduleSeq}`
-  );
+  const mod = await import(`../../../src/commands/bar/index?test=${Date.now()}-${moduleSeq}`);
   return mod.handleBarCommand as (args: string[]) => Promise<void>;
 }
 
@@ -242,7 +240,9 @@ describe('bar.json contract (launch subcommand)', () => {
 
     // Mock dependencies injected into handleBarLaunch
     const mockEnsureDashboard = async () => ({ port: 4242, baseUrl: 'http://127.0.0.1:4242' });
-    const mockOpenApp = async (_appPath: string) => { calls.push(`open:${_appPath}`); };
+    const mockOpenApp = async (_appPath: string) => {
+      calls.push(`open:${_appPath}`);
+    };
     const mockGetCcsDir = () => ccsDir;
 
     const { handleBarLaunch } = await loadLaunchSubcommand();
@@ -273,14 +273,16 @@ describe('bar.json contract (launch subcommand)', () => {
 
     await handleBarLaunch([], {
       ensureDashboard: async () => ({ port: 9000, baseUrl: 'http://127.0.0.1:9000' }),
-      openApp: async () => { /* noop */ },
+      openApp: async () => {
+        /* noop */
+      },
       getCcsDir: () => ccsDir,
       appInstallPath: path.join(tempHome, 'Applications', 'CCS Bar.app'),
     });
 
-    const barJson = JSON.parse(
-      fs.readFileSync(path.join(ccsDir, 'bar.json'), 'utf8')
-    ) as { authMode: string };
+    const barJson = JSON.parse(fs.readFileSync(path.join(ccsDir, 'bar.json'), 'utf8')) as {
+      authMode: string;
+    };
     expect(barJson.authMode).toBe('loopback');
   });
 
@@ -295,7 +297,9 @@ describe('bar.json contract (launch subcommand)', () => {
 
     await handleBarLaunch([], {
       ensureDashboard: async () => ({ port: 3000, baseUrl: 'http://127.0.0.1:3000' }),
-      openApp: async () => { throw new Error('App not found'); },
+      openApp: async () => {
+        throw new Error('App not found');
+      },
       getCcsDir: () => ccsDir,
       appInstallPath: nonExistentApp,
     });
@@ -313,7 +317,9 @@ describe('bar.json contract (launch subcommand)', () => {
 
     await handleBarLaunch([], {
       ensureDashboard: async () => ({ port: 3001, baseUrl: 'http://127.0.0.1:3001' }),
-      openApp: async () => { throw new Error('open failed'); },
+      openApp: async () => {
+        throw new Error('open failed');
+      },
       getCcsDir: () => ccsDir,
       appInstallPath: path.join(tempHome, 'Applications', 'CCS Bar.app'),
     });
@@ -330,8 +336,12 @@ describe('bar.json contract (launch subcommand)', () => {
     const { handleBarLaunch } = await loadLaunchSubcommand();
 
     await handleBarLaunch([], {
-      ensureDashboard: async () => { throw new Error('port busy'); },
-      openApp: async () => { /* noop */ },
+      ensureDashboard: async () => {
+        throw new Error('port busy');
+      },
+      openApp: async () => {
+        /* noop */
+      },
       getCcsDir: () => ccsDir,
       appInstallPath: path.join(tempHome, 'Applications', 'CCS Bar.app'),
     });
@@ -469,8 +479,12 @@ describe('bar install subcommand', () => {
 
     await expect(
       handleBarInstall([], {
-        fetchReleaseAsset: async () => { throw new Error('network error'); },
-        downloadAndExtract: async () => { /* noop */ },
+        fetchReleaseAsset: async () => {
+          throw new Error('network error');
+        },
+        downloadAndExtract: async () => {
+          /* noop */
+        },
         verifyCompat: async () => ({ version: FAKE_VERSION, compatible: true }),
         getCcsDir: () => path.join(tempHome, '.ccs'),
         getAppsDir: () => appsDir,
@@ -526,17 +540,6 @@ describe('bar install: redirect-following download (#8)', () => {
     const allOutput = consoleOutput.join('\n');
     expect(allOutput).not.toMatch(/\[X\]/);
     expect(allOutput).toMatch(/\[OK\]/);
-  });
-
-  it('production defaultDownloadAndExtract passes maxRedirections:5 to undici (structural test)', async () => {
-    // This test verifies the production code path uses maxRedirections.
-    // We test validateDownloadUrl directly (exported) and confirm the URL shape expected
-    // by defaultDownloadAndExtract is accepted for github.com and githubusercontent.com.
-    const { validateDownloadUrl } = await loadInstallSubcommand();
-
-    // Both the initial github.com URL and the 302 target must pass host validation.
-    expect(() => validateDownloadUrl(REDIRECT_URL)).not.toThrow();
-    expect(() => validateDownloadUrl(FINAL_URL)).not.toThrow();
   });
 });
 
@@ -602,9 +605,7 @@ describe('bar install: host allowlist validation (#9)', () => {
   it('validateDownloadUrl accepts github.com URLs', async () => {
     const { validateDownloadUrl } = await loadInstallSubcommand();
     expect(() =>
-      validateDownloadUrl(
-        'https://github.com/kaitranntt/ccs/releases/download/tag/CCS-Bar.app.zip'
-      )
+      validateDownloadUrl('https://github.com/kaitranntt/ccs/releases/download/tag/CCS-Bar.app.zip')
     ).not.toThrow();
   });
 
@@ -631,17 +632,17 @@ describe('bar install: host allowlist validation (#9)', () => {
 
   it('validateDownloadUrl rejects untrusted hostnames', async () => {
     const { validateDownloadUrl } = await loadInstallSubcommand();
-    expect(() =>
-      validateDownloadUrl('https://evil.example.com/CCS-Bar.app.zip')
-    ).toThrow(/allowlist|trusted/i);
+    expect(() => validateDownloadUrl('https://evil.example.com/CCS-Bar.app.zip')).toThrow(
+      /allowlist|trusted/i
+    );
   });
 
   it('validateDownloadUrl rejects a URL that looks like github but is not', async () => {
     const { validateDownloadUrl } = await loadInstallSubcommand();
     // A domain that ends in github.com.attacker.com must be rejected
-    expect(() =>
-      validateDownloadUrl('https://github.com.attacker.com/download/file.zip')
-    ).toThrow(/allowlist|trusted/i);
+    expect(() => validateDownloadUrl('https://github.com.attacker.com/download/file.zip')).toThrow(
+      /allowlist|trusted/i
+    );
   });
 
   it('handleBarInstall surfaces a clear error for non-github download URLs', async () => {

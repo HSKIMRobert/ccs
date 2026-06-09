@@ -280,10 +280,10 @@ async function runClaudeUsageFetch(
         // Surface the upstream status + Retry-After so an outer caller (the
         // native collector's circuit-breaker) can honor backoff guidance.
         const retryAfter = response.headers.get('retry-after');
-        if (
-          attempt < CLAUDE_QUOTA_MAX_ATTEMPTS &&
-          (response.status === 429 || response.status >= 500)
-        ) {
+        // Do not inner-retry 429 with no delay; the outer cache + circuit breaker
+        // honor Retry-After and bound total volume. Inner retry stays for
+        // transient 5xx only.
+        if (attempt < CLAUDE_QUOTA_MAX_ATTEMPTS && response.status >= 500) {
           clearTimeout(timeoutId);
           continue;
         }

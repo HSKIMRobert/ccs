@@ -10,24 +10,38 @@
  */
 
 import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
-import type { CliproxyUsageApiResponse, CliproxyManagementAuthFile } from '../../../../src/cliproxy/services/stats-fetcher';
+import type {
+  CliproxyUsageApiResponse,
+  CliproxyManagementAuthFile,
+} from '../../../../src/cliproxy/services/stats-fetcher';
 
 // ============================================================================
 // HELPERS & FIXTURES
 // ============================================================================
 
-const TODAY = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+// Local calendar day (matches production getTodayCostByAccount, which keys on
+// localDayKey — not a UTC ISO slice). Fixture timestamps below use the SAME
+// local day with no trailing Z so they bucket consistently with production.
+function localDay(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+const TODAY = localDay(new Date()); // YYYY-MM-DD, local
 
-function makeResponse(entries: Array<{
-  provider: string;
-  model: string;
-  auth_index: number;
-  source: string;
-  timestamp: string;
-  input: number;
-  output: number;
-  failed?: boolean;
-}>): CliproxyUsageApiResponse {
+function makeResponse(
+  entries: Array<{
+    provider: string;
+    model: string;
+    auth_index: number;
+    source: string;
+    timestamp: string;
+    input: number;
+    output: number;
+    failed?: boolean;
+  }>
+): CliproxyUsageApiResponse {
   const apis: CliproxyUsageApiResponse['usage'] = { apis: {} };
   for (const e of entries) {
     if (!apis.apis![e.provider]) {
@@ -100,7 +114,9 @@ const authFileMap: Map<number | string, string> = new Map([
 
 describe('extractCliproxyUsageHistoryDetails with accountMap', () => {
   it('populates accountId from accountMap when auth_index is present', async () => {
-    const { extractCliproxyUsageHistoryDetails } = await import('../../../../src/web-server/usage/cliproxy-usage-transformer');
+    const { extractCliproxyUsageHistoryDetails } = await import(
+      '../../../../src/web-server/usage/cliproxy-usage-transformer'
+    );
 
     const details = extractCliproxyUsageHistoryDetails(twoAccountResponse, authFileMap);
 
@@ -108,14 +124,16 @@ describe('extractCliproxyUsageHistoryDetails with accountMap', () => {
     const bobDetails = details.filter((d) => d.accountId === 'bob@example.com');
 
     expect(aliceDetails).toHaveLength(2); // auth_index 0 appears twice
-    expect(bobDetails).toHaveLength(1);   // auth_index 1 appears once
+    expect(bobDetails).toHaveLength(1); // auth_index 1 appears once
   });
 
   it('leaves accountId undefined when auth_index is not in accountMap (no source fallback)', async () => {
     // Fix #7/#13/#15: detail.source is a CLIProxy source label, not an email.
     // Using it as a cost key caused mis-attribution. When auth_index is absent from the
     // map, accountId must be undefined so getTodayCostByAccount buckets under 'unknown'.
-    const { extractCliproxyUsageHistoryDetails } = await import('../../../../src/web-server/usage/cliproxy-usage-transformer');
+    const { extractCliproxyUsageHistoryDetails } = await import(
+      '../../../../src/web-server/usage/cliproxy-usage-transformer'
+    );
 
     // Use string key matching buildAuthIndexToAccountMap's String(auth_index) output
     const partialMap: Map<number | string, string> = new Map([['0', 'alice@example.com']]);
@@ -133,7 +151,9 @@ describe('extractCliproxyUsageHistoryDetails with accountMap', () => {
   });
 
   it('does not include accountId when no accountMap is provided (backward compat)', async () => {
-    const { extractCliproxyUsageHistoryDetails } = await import('../../../../src/web-server/usage/cliproxy-usage-transformer');
+    const { extractCliproxyUsageHistoryDetails } = await import(
+      '../../../../src/web-server/usage/cliproxy-usage-transformer'
+    );
 
     const details = extractCliproxyUsageHistoryDetails(twoAccountResponse);
 
@@ -143,7 +163,9 @@ describe('extractCliproxyUsageHistoryDetails with accountMap', () => {
   });
 
   it('does not expose source or auth_index on returned history details', async () => {
-    const { extractCliproxyUsageHistoryDetails } = await import('../../../../src/web-server/usage/cliproxy-usage-transformer');
+    const { extractCliproxyUsageHistoryDetails } = await import(
+      '../../../../src/web-server/usage/cliproxy-usage-transformer'
+    );
 
     const details = extractCliproxyUsageHistoryDetails(twoAccountResponse, authFileMap);
 
@@ -160,7 +182,9 @@ describe('extractCliproxyUsageHistoryDetails with accountMap', () => {
 
 describe('CliproxyUsageHistoryDetail type', () => {
   it('allows accountId as optional string field', async () => {
-    const { normalizeCliproxyUsageHistoryDetail } = await import('../../../../src/web-server/usage/cliproxy-usage-transformer');
+    const { normalizeCliproxyUsageHistoryDetail } = await import(
+      '../../../../src/web-server/usage/cliproxy-usage-transformer'
+    );
 
     const withAccount = normalizeCliproxyUsageHistoryDetail({
       model: 'claude-sonnet-4-5',
@@ -179,7 +203,9 @@ describe('CliproxyUsageHistoryDetail type', () => {
   });
 
   it('normalizes detail without accountId (remains undefined)', async () => {
-    const { normalizeCliproxyUsageHistoryDetail } = await import('../../../../src/web-server/usage/cliproxy-usage-transformer');
+    const { normalizeCliproxyUsageHistoryDetail } = await import(
+      '../../../../src/web-server/usage/cliproxy-usage-transformer'
+    );
 
     const noAccount = normalizeCliproxyUsageHistoryDetail({
       model: 'claude-sonnet-4-5',
@@ -203,12 +229,16 @@ describe('CliproxyUsageHistoryDetail type', () => {
 
 describe('getTodayCostByAccount', () => {
   it('returns per-account cost totals for today', async () => {
-    const { getTodayCostByAccount } = await import('../../../../src/web-server/usage/data-aggregator');
+    const { getTodayCostByAccount } = await import(
+      '../../../../src/web-server/usage/data-aggregator'
+    );
 
     const details = [];
 
     // Simulate alice's two requests today
-    const { extractCliproxyUsageHistoryDetails } = await import('../../../../src/web-server/usage/cliproxy-usage-transformer');
+    const { extractCliproxyUsageHistoryDetails } = await import(
+      '../../../../src/web-server/usage/cliproxy-usage-transformer'
+    );
     const todayDetails = extractCliproxyUsageHistoryDetails(twoAccountResponse, authFileMap);
 
     const result = getTodayCostByAccount(todayDetails, TODAY);
@@ -225,7 +255,9 @@ describe('getTodayCostByAccount', () => {
   });
 
   it('returns empty object when no details exist for today', async () => {
-    const { getTodayCostByAccount } = await import('../../../../src/web-server/usage/data-aggregator');
+    const { getTodayCostByAccount } = await import(
+      '../../../../src/web-server/usage/data-aggregator'
+    );
 
     const result = getTodayCostByAccount([], TODAY);
 
@@ -233,8 +265,12 @@ describe('getTodayCostByAccount', () => {
   });
 
   it('filters out details from days other than today', async () => {
-    const { getTodayCostByAccount } = await import('../../../../src/web-server/usage/data-aggregator');
-    const { extractCliproxyUsageHistoryDetails } = await import('../../../../src/web-server/usage/cliproxy-usage-transformer');
+    const { getTodayCostByAccount } = await import(
+      '../../../../src/web-server/usage/data-aggregator'
+    );
+    const { extractCliproxyUsageHistoryDetails } = await import(
+      '../../../../src/web-server/usage/cliproxy-usage-transformer'
+    );
 
     const yesterdayResponse = makeResponse([
       {
@@ -254,8 +290,12 @@ describe('getTodayCostByAccount', () => {
   });
 
   it('accumulates costs across multiple details for the same account', async () => {
-    const { getTodayCostByAccount } = await import('../../../../src/web-server/usage/data-aggregator');
-    const { extractCliproxyUsageHistoryDetails } = await import('../../../../src/web-server/usage/cliproxy-usage-transformer');
+    const { getTodayCostByAccount } = await import(
+      '../../../../src/web-server/usage/data-aggregator'
+    );
+    const { extractCliproxyUsageHistoryDetails } = await import(
+      '../../../../src/web-server/usage/cliproxy-usage-transformer'
+    );
 
     const details = extractCliproxyUsageHistoryDetails(twoAccountResponse, authFileMap);
 
@@ -271,8 +311,12 @@ describe('getTodayCostByAccount', () => {
   it('details without accountId are grouped under the "unknown" key', async () => {
     // Fix #7/#13/#15: when no accountMap is provided, accountId is undefined on all details.
     // getTodayCostByAccount buckets these under 'unknown' — not under detail.source.
-    const { getTodayCostByAccount } = await import('../../../../src/web-server/usage/data-aggregator');
-    const { extractCliproxyUsageHistoryDetails } = await import('../../../../src/web-server/usage/cliproxy-usage-transformer');
+    const { getTodayCostByAccount } = await import(
+      '../../../../src/web-server/usage/data-aggregator'
+    );
+    const { extractCliproxyUsageHistoryDetails } = await import(
+      '../../../../src/web-server/usage/cliproxy-usage-transformer'
+    );
 
     // no accountMap — accountId will be undefined on all details
     const details = extractCliproxyUsageHistoryDetails(twoAccountResponse);
@@ -293,7 +337,9 @@ describe('getTodayCostByAccount', () => {
 
 describe('backward compatibility: profile-based aggregation unaffected', () => {
   it('transformCliproxyToDailyUsage works without accountMap', async () => {
-    const { transformCliproxyToDailyUsage } = await import('../../../../src/web-server/usage/cliproxy-usage-transformer');
+    const { transformCliproxyToDailyUsage } = await import(
+      '../../../../src/web-server/usage/cliproxy-usage-transformer'
+    );
 
     const daily = transformCliproxyToDailyUsage(twoAccountResponse);
 
@@ -303,7 +349,8 @@ describe('backward compatibility: profile-based aggregation unaffected', () => {
   });
 
   it('buildCliproxyUsageHistoryAggregates preserves existing shape', async () => {
-    const { buildCliproxyUsageHistoryAggregates, extractCliproxyUsageHistoryDetails } = await import('../../../../src/web-server/usage/cliproxy-usage-transformer');
+    const { buildCliproxyUsageHistoryAggregates, extractCliproxyUsageHistoryDetails } =
+      await import('../../../../src/web-server/usage/cliproxy-usage-transformer');
 
     const details = extractCliproxyUsageHistoryDetails(twoAccountResponse);
     const { daily, hourly, monthly } = buildCliproxyUsageHistoryAggregates(details);
@@ -338,7 +385,9 @@ describe('backward compatibility: profile-based aggregation unaffected', () => {
 
 describe('buildAuthIndexToAccountMap', () => {
   it('builds map from auth files with auth_index and email', async () => {
-    const { buildAuthIndexToAccountMap } = await import('../../../../src/cliproxy/services/stats-fetcher');
+    const { buildAuthIndexToAccountMap } = await import(
+      '../../../../src/cliproxy/services/stats-fetcher'
+    );
 
     const authFiles: CliproxyManagementAuthFile[] = [
       { auth_index: 0, provider: 'anthropic', email: 'alice@example.com' },
@@ -354,7 +403,9 @@ describe('buildAuthIndexToAccountMap', () => {
   });
 
   it('skips entries missing auth_index', async () => {
-    const { buildAuthIndexToAccountMap } = await import('../../../../src/cliproxy/services/stats-fetcher');
+    const { buildAuthIndexToAccountMap } = await import(
+      '../../../../src/cliproxy/services/stats-fetcher'
+    );
 
     const authFiles: CliproxyManagementAuthFile[] = [
       { provider: 'anthropic', email: 'nobody@example.com' }, // no auth_index
@@ -368,7 +419,9 @@ describe('buildAuthIndexToAccountMap', () => {
   });
 
   it('skips entries missing email', async () => {
-    const { buildAuthIndexToAccountMap } = await import('../../../../src/cliproxy/services/stats-fetcher');
+    const { buildAuthIndexToAccountMap } = await import(
+      '../../../../src/cliproxy/services/stats-fetcher'
+    );
 
     const authFiles: CliproxyManagementAuthFile[] = [
       { auth_index: 4, provider: 'anthropic' }, // no email
@@ -382,7 +435,9 @@ describe('buildAuthIndexToAccountMap', () => {
   });
 
   it('returns empty map for empty auth files array', async () => {
-    const { buildAuthIndexToAccountMap } = await import('../../../../src/cliproxy/services/stats-fetcher');
+    const { buildAuthIndexToAccountMap } = await import(
+      '../../../../src/cliproxy/services/stats-fetcher'
+    );
 
     const map = buildAuthIndexToAccountMap([]);
 
@@ -390,7 +445,9 @@ describe('buildAuthIndexToAccountMap', () => {
   });
 
   it('handles numeric and string auth_index keys consistently', async () => {
-    const { buildAuthIndexToAccountMap } = await import('../../../../src/cliproxy/services/stats-fetcher');
+    const { buildAuthIndexToAccountMap } = await import(
+      '../../../../src/cliproxy/services/stats-fetcher'
+    );
 
     const authFiles: CliproxyManagementAuthFile[] = [
       { auth_index: 7, provider: 'anthropic', email: 'alice@example.com' },

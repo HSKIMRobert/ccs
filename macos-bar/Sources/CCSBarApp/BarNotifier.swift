@@ -64,7 +64,7 @@ final class BarNotifier: NotificationDelivering {
       return
     }
 
-    // Already requested: post only when authorized; a denied state is a no-op.
+    // Already requested: post when authorized or still-unknown; a denied state is a no-op.
     if authState == .authorized || authState == .unknown {
       post(notification, on: center)
     }

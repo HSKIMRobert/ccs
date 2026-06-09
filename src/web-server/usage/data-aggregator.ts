@@ -484,6 +484,7 @@ export function aggregateSessionUsage(
 // ============================================================================
 
 import type { CliproxyUsageHistoryDetail } from './cliproxy-usage-transformer';
+import { localDayKey } from './bar-analytics';
 
 /**
  * Compute per-account cost totals for a given calendar day.
@@ -498,7 +499,9 @@ export function getTodayCostByAccount(
   details: CliproxyUsageHistoryDetail[],
   today?: string
 ): Record<string, number> {
-  const dateKey = today ?? new Date().toISOString().slice(0, 10);
+  // Key on the LOCAL calendar day so a near-midnight record buckets into the
+  // same day the analytics panel shows (bar-analytics also keys on localDayKey).
+  const dateKey = today ?? localDayKey(new Date());
   const result: Record<string, number> = {};
 
   for (const detail of details) {

@@ -164,7 +164,7 @@ struct BarSubscriptionCard: View {
   /// Terse window label for the bar list, at most 4-5 chars:
   ///   five_hour          → "5h"
   ///   seven_day          → "wk"
-  ///   seven_day_opus     → "Son" (sic — this is the Opus sub-budget inside the week)
+  ///   seven_day_opus     → "Opus"
   ///   seven_day_sonnet   → "Son"
   ///
   /// Fall back to the backend-supplied label truncated to 5 chars so unknown

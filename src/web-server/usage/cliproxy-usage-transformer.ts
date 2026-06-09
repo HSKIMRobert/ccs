@@ -62,7 +62,7 @@ function createHistoryDetail(
   provider: string,
   model: string,
   detail: CliproxyRequestDetail,
-  accountMap?: Map<number | string, string>
+  accountMap?: Map<string, string>
 ): CliproxyUsageHistoryDetail {
   const pricingProvider = normalizeUsageProvider(provider) ?? provider.trim().toLowerCase();
   const inputTokens = detail.tokens?.input_tokens ?? 0;
@@ -204,12 +204,13 @@ function hasTrackedUsage(detail: CliproxyRequestDetail): boolean {
  * when they still report tracked token usage that analytics can account for.
  *
  * @param accountMap Optional auth_index → account email/id map. When provided,
- *   each detail's `accountId` is resolved from auth_index; falls back to
- *   `detail.source` when the index is not in the map.
+ *   each detail's `accountId` is resolved from String(auth_index). When the index
+ *   is absent from the map, `accountId` is left undefined so getTodayCostByAccount
+ *   buckets the cost under 'unknown' rather than mis-attributing it.
  */
 export function extractCliproxyUsageHistoryDetails(
   response: CliproxyUsageApiResponse,
-  accountMap?: Map<number | string, string>
+  accountMap?: Map<string, string>
 ): CliproxyUsageHistoryDetail[] {
   const apis = response?.usage?.apis;
   if (!apis) return [];

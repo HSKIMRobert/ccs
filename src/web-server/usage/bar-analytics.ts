@@ -93,7 +93,7 @@ const SPARKLINE_DAYS = 30;
 const TOP_MODELS_LIMIT = 5;
 
 /** Local-time YYYY-MM-DD key for a Date (matches the user's calendar day). */
-function localDayKey(d: Date): string {
+export function localDayKey(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');

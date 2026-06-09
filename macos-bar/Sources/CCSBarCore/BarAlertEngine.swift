@@ -147,6 +147,11 @@ public enum BarAlertEngine {
       let name = row.displayName ?? row.provider
 
       // (1) quotaRemainingBelow — fire the SINGLE most-severe crossed level.
+      // One alert per reset window (anti-spam): the fired-key embeds the reset
+      // bucket (row.nextReset ?? "noreset" below), so once an account crosses a
+      // level the alert is suppressed for the rest of that window even if quota
+      // recovers and then drops again. It re-arms automatically when nextReset
+      // rolls to a new window.
       if prefs.quotaEnabled, row.quotaStatus == "ok", let pct = row.quotaPercentage {
         let remaining = Int(pct.rounded())
         // levels sorted desc; the most-severe crossed level is the smallest L
