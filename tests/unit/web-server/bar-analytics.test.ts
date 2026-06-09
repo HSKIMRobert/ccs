@@ -29,9 +29,13 @@ describe('computeBarAnalytics', () => {
     const a = computeBarAnalytics([], NOW);
     expect(a.today.cost).toBe(0);
     expect(a.allTime.cost).toBe(0);
-    expect(a.byDay).toHaveLength(7);
+    expect(a.byDay).toHaveLength(30);
     expect(a.topModels).toHaveLength(0);
     expect(a.topModelsWindow).toBe('all');
+    // No usable records → no last-activity signal, not stale-but-present.
+    expect(a.lastActivityAt).toBeNull();
+    expect(a.daysSinceLastActivity).toBeNull();
+    expect(a.hasRecentData).toBe(false);
   });
 
   it('rolls today / 7d / 30d / allTime into the right windows', () => {
@@ -60,13 +64,46 @@ describe('computeBarAnalytics', () => {
     expect(a.allTime.cost).toBe(1);
   });
 
-  it('zero-fills the 7-day sparkline in chronological order', () => {
+  it('zero-fills the 30-day sparkline in chronological order', () => {
     const a = computeBarAnalytics([detail({ timestamp: daysAgo(2), cost: 4 })], NOW);
-    expect(a.byDay).toHaveLength(7);
+    expect(a.byDay).toHaveLength(30);
     // oldest first, newest last
-    expect(a.byDay[0].date < a.byDay[6].date).toBe(true);
+    expect(a.byDay[0].date < a.byDay[29].date).toBe(true);
     const hit = a.byDay.find((d) => d.cost > 0);
     expect(hit?.cost).toBe(4);
+  });
+
+  it('populates sparkline days 8..30 from records older than the 7-day window', () => {
+    // A record 20 days ago is outside last7d but inside the 30-day sparkline:
+    // the bucket must fill so the chart isn't flat when only old data exists.
+    const a = computeBarAnalytics([detail({ timestamp: daysAgo(20), cost: 6 })], NOW);
+    expect(a.last7d.cost).toBe(0); // 7-day window math unchanged
+    const hit = a.byDay.find((d) => d.cost > 0);
+    expect(hit?.cost).toBe(6);
+  });
+
+  it('reports last-activity and hasRecentData from the freshest non-failed record', () => {
+    const recent = daysAgo(1);
+    const a = computeBarAnalytics(
+      [
+        detail({ timestamp: daysAgo(5), cost: 1 }),
+        detail({ timestamp: recent, cost: 2 }),
+        // failed record must NOT count as activity even though it's newer
+        detail({ timestamp: daysAgo(0), cost: 9, failed: true }),
+      ],
+      NOW
+    );
+    expect(a.lastActivityAt).toBe(recent);
+    expect(a.daysSinceLastActivity).toBe(1);
+    expect(a.hasRecentData).toBe(true);
+  });
+
+  it('reports hasRecentData false and last-activity from old data when the 30-day window is idle', () => {
+    const old = daysAgo(45);
+    const a = computeBarAnalytics([detail({ timestamp: old, cost: 5 })], NOW);
+    expect(a.hasRecentData).toBe(false);
+    expect(a.lastActivityAt).toBe(old);
+    expect(a.daysSinceLastActivity).toBe(45);
   });
 
   it('ranks top models by spend and labels the window 30d when recent data exists', () => {

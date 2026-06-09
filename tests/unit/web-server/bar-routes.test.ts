@@ -21,7 +21,10 @@ interface BarSummaryRow {
   tier: string | null;
   paused: boolean;
   quota_percentage: number | null;
+  quotaStatus: 'ok' | 'unsupported' | 'error';
   next_reset: string | null;
+  is_default: boolean;
+  last_activity_at: string | null;
   today_cost: number | null;
   health: 'ok' | 'warning' | 'error';
   cached: boolean;
@@ -71,6 +74,7 @@ function makeQuotaResult(
     models: Array<{ name: string; percentage: number; resetTime: string | null }>;
     needsReauth: boolean;
     error: string;
+    errorCode: string;
     lastUpdated: number;
   }> = {}
 ) {
@@ -82,6 +86,7 @@ function makeQuotaResult(
     lastUpdated: overrides.lastUpdated ?? Date.now(),
     needsReauth: overrides.needsReauth ?? false,
     ...(overrides.error !== undefined && { error: overrides.error }),
+    ...(overrides.errorCode !== undefined && { errorCode: overrides.errorCode }),
   };
 }
 
@@ -166,6 +171,8 @@ describe('GET /api/bar/summary', () => {
       },
       getTodayCostByAccount: (_details: unknown[]) => mockCostByAccount,
       loadCliproxyDetails: async () => [],
+      loadDailyUsage: async () => [],
+      loadHourlyUsage: async () => [],
       runHealthChecks: async () => mockHealthReport,
     });
 
@@ -221,6 +228,10 @@ describe('GET /api/bar/summary', () => {
     expect(typeof row.health).toBe('string');
     expect(['ok', 'warning', 'error']).toContain(row.health);
     expect(typeof row.needsReauth).toBe('boolean');
+    // New contract fields
+    expect(['ok', 'unsupported', 'error']).toContain(row.quotaStatus);
+    expect(typeof row.is_default).toBe('boolean');
+    expect(row.last_activity_at === null || typeof row.last_activity_at === 'string').toBe(true);
   });
 
   it('maps account metadata into the row correctly', async () => {
@@ -246,6 +257,10 @@ describe('GET /api/bar/summary', () => {
     expect(row.paused).toBe(false);
     expect(row.quota_percentage).toBe(60);
     expect(row.next_reset).toBe('2026-06-08T00:00:00Z');
+    // is_default mirrors account.isDefault (factory default true); successful
+    // quota fetch → quotaStatus 'ok'.
+    expect(row.is_default).toBe(true);
+    expect(row.quotaStatus).toBe('ok');
   });
 
   // --------------------------------------------------------------------------
@@ -388,15 +403,16 @@ describe('GET /api/bar/summary', () => {
     expect(row.today_cost).toBeCloseTo(1.23);
   });
 
-  it('today_cost is 0 or null for accounts with no cost record', async () => {
+  it('today_cost is null (unknown) for accounts with no cost record', async () => {
     mockAccounts = [makeAccountInfo({ id: 'nocost@example.com', provider: 'agy' })];
     mockCostByAccount = {}; // no entry for this account
 
     const { body } = await getJson<BarSummaryRow[]>(baseUrl, '/api/bar/summary');
     const row = body[0];
 
-    // Should be 0 or null — either is acceptable, not a hard error
-    expect(row.today_cost === 0 || row.today_cost === null).toBe(true);
+    // A missing cost-key means "no usage data" (possibly stale snapshot), which is
+    // null=unknown — distinct from a genuine 0 spend. The UI renders "no data".
+    expect(row.today_cost).toBeNull();
   });
 
   // --------------------------------------------------------------------------
@@ -432,6 +448,61 @@ describe('GET /api/bar/summary', () => {
     });
 
     const { body } = await getJson<BarSummaryRow[]>(baseUrl, '/api/bar/summary');
+    expect(body[0].health).toBe('error');
+  });
+
+  // --------------------------------------------------------------------------
+  // quotaStatus tri-state (unsupported vs error vs ok) and its health mapping
+  // --------------------------------------------------------------------------
+
+  it('quotaStatus is "ok" and health "ok" on a successful quota fetch', async () => {
+    mockQuotaResult = makeQuotaResult({ success: true });
+
+    const { body } = await getJson<BarSummaryRow[]>(baseUrl, '/api/bar/summary');
+    expect(body[0].quotaStatus).toBe('ok');
+    expect(body[0].health).toBe('ok');
+  });
+
+  it('provider without a quota API (errorCode quota_not_supported) → quotaStatus "unsupported" and health "ok"', async () => {
+    // Mirrors fetchAccountQuota for any provider !== "agy" (e.g. ghcp/kiro):
+    // success false with the stable quota_not_supported code. This must read as
+    // healthy (no permanent orange dot), not a transient warning.
+    mockQuotaResult = makeQuotaResult({
+      success: false,
+      models: [],
+      error: 'Quota not supported for provider: ghcp',
+      errorCode: 'quota_not_supported',
+    });
+
+    const { body } = await getJson<BarSummaryRow[]>(baseUrl, '/api/bar/summary');
+    expect(body[0].quotaStatus).toBe('unsupported');
+    expect(body[0].health).toBe('ok');
+    expect(body[0].quota_percentage).toBeNull();
+  });
+
+  it('transient fetch failure (no errorCode, no reauth) → quotaStatus "error" and health "warning"', async () => {
+    mockQuotaResult = makeQuotaResult({
+      success: false,
+      needsReauth: false,
+      models: [],
+      error: 'temporary network blip',
+    });
+
+    const { body } = await getJson<BarSummaryRow[]>(baseUrl, '/api/bar/summary');
+    expect(body[0].quotaStatus).toBe('error');
+    expect(body[0].health).toBe('warning');
+  });
+
+  it('needsReauth → quotaStatus "error" and health "error"', async () => {
+    mockQuotaResult = makeQuotaResult({
+      success: false,
+      needsReauth: true,
+      models: [],
+      error: 'token expired',
+    });
+
+    const { body } = await getJson<BarSummaryRow[]>(baseUrl, '/api/bar/summary');
+    expect(body[0].quotaStatus).toBe('error');
     expect(body[0].health).toBe('error');
   });
 
@@ -526,6 +597,8 @@ describe('today_cost key consistency — non-email account.id (finding #4)', () 
       fetchAccountQuota: async () => makeQuotaResult(),
       getTodayCostByAccount: () => costMap,
       loadCliproxyDetails: async () => [],
+      loadDailyUsage: async () => [],
+      loadHourlyUsage: async () => [],
       runHealthChecks: async () => makeHealthReport(),
     });
 
@@ -553,7 +626,7 @@ describe('today_cost key consistency — non-email account.id (finding #4)', () 
     expect(row.today_cost).toBeCloseTo(2.5);
   });
 
-  it('attributes cost correctly for account with no email (kiro/ghcp type): cost remains 0', async () => {
+  it('attributes cost correctly for account with no email (kiro/ghcp type): cost is null (no record)', async () => {
     const { createBarRouter } = await import('../../../src/web-server/routes/bar-routes');
     const { resetForceFreshDebounce: resetDebounce } = await import(
       '../../../src/web-server/routes/bar-routes'
@@ -591,6 +664,8 @@ describe('today_cost key consistency — non-email account.id (finding #4)', () 
       fetchAccountQuota: async () => makeQuotaResult(),
       getTodayCostByAccount: () => costMap2,
       loadCliproxyDetails: async () => [],
+      loadDailyUsage: async () => [],
+      loadHourlyUsage: async () => [],
       runHealthChecks: async () => makeHealthReport(),
     });
 
@@ -610,7 +685,8 @@ describe('today_cost key consistency — non-email account.id (finding #4)', () 
 
     const { body } = await getJson<BarSummaryRow[]>(baseUrl2, '/api/bar/summary');
     expect(body.length).toBe(1);
-    expect(body[0].today_cost).toBe(0);
+    // No matching cost-key → null=unknown (not a misleading $0.00).
+    expect(body[0].today_cost).toBeNull();
 
     await new Promise<void>((resolve) => server2.close(() => resolve()));
   });
@@ -659,6 +735,8 @@ describe('debounce: concurrent refresh=true requests (finding #6)', () => {
       },
       getTodayCostByAccount: () => ({}),
       loadCliproxyDetails: async () => [],
+      loadDailyUsage: async () => [],
+      loadHourlyUsage: async () => [],
       runHealthChecks: async () => makeHealthReport(),
     });
 
@@ -746,6 +824,8 @@ describe('force-fresh: paused accounts and concurrency cap (finding #7)', () => 
       },
       getTodayCostByAccount: () => ({}),
       loadCliproxyDetails: async () => [],
+      loadDailyUsage: async () => [],
+      loadHourlyUsage: async () => [],
       runHealthChecks: async () => makeHealthReport(),
     });
 
@@ -817,6 +897,8 @@ describe('today_cost: duplicate-email accounts get null (finding #11)', () => {
       fetchAccountQuota: async () => makeQuotaResult(),
       getTodayCostByAccount: () => costMap,
       loadCliproxyDetails: async () => [],
+      loadDailyUsage: async () => [],
+      loadHourlyUsage: async () => [],
       runHealthChecks: async () => makeHealthReport(),
     });
 

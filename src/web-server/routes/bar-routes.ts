@@ -21,7 +21,8 @@ import type { AccountInfo } from '../../cliproxy/accounts/types';
 import type { QuotaResult } from '../../cliproxy/quota/quota-fetcher';
 import type { HealthReport } from '../health-service';
 import type { CliproxyUsageHistoryDetail } from '../usage/cliproxy-usage-transformer';
-import { computeBarAnalytics } from '../usage/bar-analytics';
+import { computeBarAnalyticsFromDaily } from '../usage/bar-analytics';
+import type { DailyUsage, HourlyUsage } from '../usage/types';
 
 // ============================================================================
 // Types
@@ -41,8 +42,21 @@ export interface BarSummaryRow {
   paused: boolean;
   /** Best-guess quota remaining percentage (0-100), null on error */
   quota_percentage: number | null;
+  /**
+   * Tri-state quota availability for this account:
+   *   'ok'          — provider has a quota API and the fetch succeeded
+   *   'unsupported' — provider has no quota API at all (e.g. ghcp, kiro)
+   *   'error'       — provider should report quota but the fetch failed/timed out/needs reauth
+   * The UI uses this to render "no quota" (unsupported) vs "quota ?" (error)
+   * instead of a bare "--" that conflates the two.
+   */
+  quotaStatus: 'ok' | 'unsupported' | 'error';
   /** ISO timestamp of next quota reset, null if unknown */
   next_reset: string | null;
+  /** Whether this is the provider's default account (drives the active/default badge) */
+  is_default: boolean;
+  /** ISO timestamp this account was last used, null if never/unknown */
+  last_activity_at: string | null;
   /** Today's attributed cost in USD, null if unavailable */
   today_cost: number | null;
   /** Health status derived from overall system health */
@@ -77,6 +91,13 @@ export interface BarRouterDeps {
   getTodayCostByAccount: (details: CliproxyUsageHistoryDetail[]) => Record<string, number>;
   /** Load persisted CLIProxy usage details (from snapshot cache) */
   loadCliproxyDetails: () => Promise<CliproxyUsageHistoryDetail[]>;
+  /**
+   * Load merged, multi-source daily usage (Claude Code, Codex, Droid, CLIProxy).
+   * Fresh, stale-while-revalidate; carries cost + per-model + per-surface spend.
+   */
+  loadDailyUsage: () => Promise<DailyUsage[]>;
+  /** Load merged hourly usage — the source of request counts (daily lacks them). */
+  loadHourlyUsage: () => Promise<HourlyUsage[]>;
   /**
    * Optional, retained only for test back-compat. NOT used by the request path:
    * the bar derives per-account health from each quota result. The real system
@@ -147,18 +168,46 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
 // ============================================================================
 
 /**
+ * Tri-state quota availability derived from the QuotaResult.
+ *
+ * We branch ONLY on the result's stable errorCode, never on a provider
+ * registry: ghcp is listed in MANAGED_QUOTA_PROVIDERS, yet fetchAccountQuota
+ * returns unsupported for every provider !== 'agy'. The result's
+ * 'quota_not_supported' code is the only honest signal that a provider has no
+ * quota API, so we use it here.
+ *
+ *   success                         → 'ok'
+ *   errorCode 'quota_not_supported' → 'unsupported' (no quota API; healthy)
+ *   anything else (null/timeout/reauth/other failure) → 'error'
+ */
+function deriveQuotaStatus(quota: QuotaResult | null): 'ok' | 'unsupported' | 'error' {
+  if (quota?.success === true) return 'ok';
+  if (quota && quota.errorCode === 'quota_not_supported') return 'unsupported';
+  return 'error';
+}
+
+/**
  * Health for a single account, derived from its own quota-fetch result.
  *
  * The menu bar is a per-account glance, so health is per-row — NOT the global
  * system audit. (The system audit is also unsafe here: it shells out via a
  * synchronous execSync that would block the event loop on the request path.)
  *
- *   needsReauth → 'error'   (token expired; user action required)
- *   fetch failed → 'warning' (transient/unknown; row degrades but isn't fatal)
- *   success      → 'ok'
+ * A provider with no quota API (quotaStatus 'unsupported', e.g. ghcp/kiro) is
+ * healthy — it must not show a permanent warning dot. 'warning' is reserved for
+ * genuine transient fetch failures, 'error' for accounts needing reauth.
+ *
+ *   needsReauth      → 'error'   (token expired; user action required)
+ *   quota unsupported → 'ok'     (no quota API is not a fault)
+ *   fetch failed      → 'warning' (transient/unknown; row degrades but isn't fatal)
+ *   success           → 'ok'
  */
-function deriveHealth(quota: QuotaResult | null): 'ok' | 'warning' | 'error' {
+function deriveHealth(
+  quota: QuotaResult | null,
+  quotaStatus: 'ok' | 'unsupported' | 'error'
+): 'ok' | 'warning' | 'error' {
   if (quota?.needsReauth) return 'error';
+  if (quotaStatus === 'unsupported') return 'ok';
   if (!quota || !quota.success) return 'warning';
   return 'ok';
 }
@@ -267,12 +316,17 @@ function buildRow(
 ): BarSummaryRow {
   const { quota, cached, fetchedAt } = fetchResult;
   const costKey = resolveCostKey(account);
-  const health = deriveHealth(quota);
+  const quotaStatus = deriveQuotaStatus(quota);
+  const health = deriveHealth(quota, quotaStatus);
+  const isDefault = account.isDefault ?? false;
+  const lastActivityAt = account.lastUsedAt ?? null;
 
-  // Fix #11: when multiple accounts share the same cost-key (e.g. two codex accounts with
-  // the same email), we cannot attribute the combined cost to either individual account.
-  // Report null (unknowable) rather than the inflated shared total.
-  const todayCost = sharedCostKeys.has(costKey) ? null : (costByAccount[costKey] ?? 0);
+  // When multiple accounts share the same cost-key (e.g. two codex accounts with
+  // the same email), we cannot attribute the combined cost to either individual
+  // account, so it is null=unknowable. A missing key on a single-owner account is
+  // ALSO null=unknown (no usage record on a possibly-stale snapshot), distinct from
+  // a genuine 0 spend — the UI renders "no data" vs "$0.00" honestly.
+  const todayCost = sharedCostKeys.has(costKey) ? null : (costByAccount[costKey] ?? null);
 
   if (!quota || !quota.success) {
     // Degraded row: preserve identity fields, null out quota data
@@ -283,7 +337,10 @@ function buildRow(
       tier: account.tier ?? null,
       paused: account.paused ?? false,
       quota_percentage: null,
+      quotaStatus,
       next_reset: null,
+      is_default: isDefault,
+      last_activity_at: lastActivityAt,
       today_cost: todayCost,
       health,
       cached,
@@ -299,7 +356,10 @@ function buildRow(
     tier: quota.tier ?? account.tier ?? null,
     paused: account.paused ?? false,
     quota_percentage: extractQuotaPercentage(quota),
+    quotaStatus,
     next_reset: extractNextReset(quota),
+    is_default: isDefault,
+    last_activity_at: lastActivityAt,
     today_cost: todayCost,
     health,
     cached,
@@ -425,14 +485,20 @@ export function createBarRouter(deps: BarRouterDeps): Router {
   /**
    * GET /analytics
    *
-   * Rolls up the persisted usage snapshot into today / 7-day / 30-day spend, a
-   * 7-day sparkline, and the top models. Read-only and cheap (the snapshot is
-   * already on disk); bounded so a slow read can't stall the menu.
+   * Rolls up the merged, multi-source usage (Claude Code, Codex, Droid, CLIProxy)
+   * into today / 7-day / 30-day spend, a 30-day sparkline, top models, and a
+   * per-surface breakdown. Reads the dashboard's stale-while-revalidate caches so
+   * recent activity shows even when the CLIProxy snapshot is frozen by a restart.
+   * Both loads are bounded so a slow read can't stall the menu; on miss the
+   * windows degrade to empty rather than failing the payload.
    */
   router.get('/analytics', async (_req: Request, res: Response): Promise<void> => {
     try {
-      const details = await withTimeout(deps.loadCliproxyDetails(), SIDELOAD_TIMEOUT_MS);
-      const analytics = computeBarAnalytics(details ?? [], new Date());
+      const [daily, hourly] = await Promise.all([
+        withTimeout(deps.loadDailyUsage(), SIDELOAD_TIMEOUT_MS).catch(() => [] as DailyUsage[]),
+        withTimeout(deps.loadHourlyUsage(), SIDELOAD_TIMEOUT_MS).catch(() => [] as HourlyUsage[]),
+      ]);
+      const analytics = computeBarAnalyticsFromDaily(daily ?? [], hourly ?? [], new Date());
       res.json(analytics);
     } catch (err) {
       console.error('[bar-routes] /analytics error:', (err as Error).message);
@@ -456,6 +522,7 @@ import {
 import { fetchAccountQuota } from '../../cliproxy/quota/quota-fetcher';
 import { getTodayCostByAccount } from '../usage/data-aggregator';
 import { loadCliproxySnapshotDetails } from '../usage/cliproxy-snapshot-reader';
+import { getCachedDailyData, getCachedHourlyData } from '../usage/aggregator';
 
 /** Production bar router — wired to real dependencies */
 const barRouter: Router = createBarRouter({
@@ -466,6 +533,8 @@ const barRouter: Router = createBarRouter({
   fetchAccountQuota,
   getTodayCostByAccount,
   loadCliproxyDetails: loadCliproxySnapshotDetails,
+  loadDailyUsage: () => getCachedDailyData(),
+  loadHourlyUsage: () => getCachedHourlyData(),
 });
 
 export default barRouter;
