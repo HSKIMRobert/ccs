@@ -29,4 +29,17 @@ enum BarTheme {
   /// so the user's own plan reads apart from CLIProxy pool accounts. A cool indigo
   /// contrasts with the warm orange accent used for everything else.
   static let subscription = Color(red: 0.357, green: 0.388, blue: 0.851) // ~#5B63D9
+
+  /// Headroom palette for quota bars. Muted for the dark surface (raw system
+  /// green/yellow/orange/red read garish here) and intuitive green→amber→coral→red.
+  /// Deliberately leans coral/red for "low" rather than the brand orange, so a
+  /// nearly-empty window never gets mistaken for the accent.
+  static let bandGreen = Color(red: 0.36, green: 0.74, blue: 0.56) // ~#5CBC8F emerald
+  static let bandAmber = Color(red: 0.86, green: 0.67, blue: 0.31) // ~#DBAB4F gold
+  static let bandCoral = Color(red: 0.91, green: 0.46, blue: 0.36) // ~#E8755C warning
+  static let bandRed = Color(red: 0.85, green: 0.34, blue: 0.31) // ~#D9564F critical
+
+  /// Neutral elevated surface for the subscription card — a faint light lift
+  /// rather than a colored wash, so the warm headroom bars read cleanly on top.
+  static let cardSurface = Color.primary.opacity(0.05)
 }

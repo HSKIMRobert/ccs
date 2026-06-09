@@ -36,7 +36,7 @@ struct BarSubscriptionCard: View {
     .padding(.horizontal, 10)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(
-      BarTheme.subscription.opacity(0.07),
+      BarTheme.cardSurface,
       in: RoundedRectangle(cornerRadius: 9))
   }
 
@@ -53,7 +53,7 @@ struct BarSubscriptionCard: View {
         .font(.system(.body, design: .default).weight(.semibold))
         .lineLimit(1)
       if row.needsReauth {
-        Chip("reauth", tint: .red)
+        Chip("reauth", tint: BarTheme.bandRed)
       }
       Spacer(minLength: 4)
       if let tier = row.tier {
@@ -149,7 +149,7 @@ struct BarSubscriptionCard: View {
       if isAtRisk, let pace = paceWarningText(for: w) {
         Text(pace)
           .font(.system(.caption2, design: .monospaced))
-          .foregroundStyle(.orange)
+          .foregroundStyle(BarTheme.bandCoral)
           .lineLimit(1)
           .padding(.leading, 5)
       }
@@ -244,18 +244,18 @@ struct BarSubscriptionCard: View {
 
   private var healthColor: Color {
     switch row.health {
-    case "error": return .red
-    case "warning": return .orange
-    default: return .green
+    case "error": return BarTheme.bandRed
+    case "warning": return BarTheme.bandAmber
+    default: return BarTheme.bandGreen
     }
   }
 
   private func color(for band: BarQuotaGauge.Band) -> Color {
     switch band {
-    case .green: return .green
-    case .yellow: return .yellow
-    case .orange: return .orange
-    case .red: return .red
+    case .green: return BarTheme.bandGreen
+    case .yellow: return BarTheme.bandAmber
+    case .orange: return BarTheme.bandCoral
+    case .red: return BarTheme.bandRed
     case .none: return .secondary
     }
   }
