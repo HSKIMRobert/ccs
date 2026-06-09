@@ -9,6 +9,7 @@ struct BarMenuView: View {
   @ObservedObject var viewModel: BarViewModel
   /// Drives the preferences sheet from the footer gear.
   @State private var showingPrefs = false
+  @State private var confirmingQuit = false
   /// The prefs adapter the sheet edits; shares the standard suite with the
   /// view model so a write-through is visible on the next poll.
   private let prefs = BarPreferences()
@@ -216,9 +217,9 @@ struct BarMenuView: View {
       Button {
         showingPrefs = true
       } label: {
-        Label("Alerts", systemImage: "bell.badge")
+        Label("Settings", systemImage: "gearshape")
       }
-      .help("Configure alerts and the menu-bar glance")
+      .help("Settings — appearance/theme, menu-bar glance, and alerts")
       Spacer()
       Button {
         viewModel.onOpen()
@@ -226,12 +227,20 @@ struct BarMenuView: View {
         Image(systemName: "arrow.clockwise")
       }
       .help("Refresh")
+      // Quit confirms first — a stray click here previously closed the whole
+      // app (removing the menu-bar item) with no easy way back.
       Button {
-        NSApplication.shared.terminate(nil)
+        confirmingQuit = true
       } label: {
         Image(systemName: "power")
       }
       .help("Quit CCS Bar")
+      .confirmationDialog("Quit CCS Bar?", isPresented: $confirmingQuit) {
+        Button("Quit", role: .destructive) { NSApplication.shared.terminate(nil) }
+        Button("Cancel", role: .cancel) {}
+      } message: {
+        Text("This closes the menu-bar app. Reopen it from Applications.")
+      }
     }
     .buttonStyle(.borderless)
     .font(.caption)
