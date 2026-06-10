@@ -3,8 +3,8 @@
  *
  * Tests run FIRST per TDD mandate.
  * Covers: subcommand routing, bar.json contract, floating-tag install,
- * version-compat handshake, port-discovery fallback, uninstall, version,
- * and verified review findings #8-#13.
+ * Info.plist version extraction, capability handshake compat, port-discovery
+ * fallback, uninstall, version, and verified review findings #8-#13.
  *
  * All network I/O and filesystem-home operations are mocked.
  * Uses CCS_HOME env var for isolation — never touches real ~/.ccs.
@@ -141,6 +141,12 @@ describe('bar command dispatcher (index.ts)', () => {
         calls.push(`version:`);
       },
     }));
+
+    mock.module('../../../src/commands/bar/help-subcommand', () => ({
+      showHelp: async () => {
+        calls.push(`help:`);
+      },
+    }));
   });
 
   it('dispatches bare `ccs bar` to launch', async () => {
@@ -189,6 +195,28 @@ describe('bar command dispatcher (index.ts)', () => {
     const handleBarCommand = await loadHandleBarCommand();
     // Should print help or error but not crash
     await expect(handleBarCommand(['unknown-subcommand'])).resolves.toBeUndefined();
+  });
+
+  it('dispatches `ccs bar --help` to help subcommand and does not launch', async () => {
+    const handleBarCommand = await loadHandleBarCommand();
+    await handleBarCommand(['--help']);
+    expect(calls).toEqual(['help:']);
+    expect(calls).not.toContain(expect.stringMatching(/^launch:/));
+  });
+
+  it('dispatches `ccs bar -h` to help subcommand and does not launch', async () => {
+    const handleBarCommand = await loadHandleBarCommand();
+    await handleBarCommand(['-h']);
+    expect(calls).toEqual(['help:']);
+    expect(calls).not.toContain(expect.stringMatching(/^launch:/));
+  });
+
+  it('dispatches `ccs bar help` to help subcommand and does not hit unknown-subcommand error', async () => {
+    const handleBarCommand = await loadHandleBarCommand();
+    await handleBarCommand(['help']);
+    expect(calls).toEqual(['help:']);
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).not.toMatch(/Unknown bar subcommand/);
   });
 });
 
@@ -352,7 +380,7 @@ describe('bar.json contract (launch subcommand)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. install subcommand — floating tag + version-compat handshake
+// 4. install subcommand — floating tag + Info.plist version + compat handshake
 // ---------------------------------------------------------------------------
 
 describe('bar install subcommand', () => {
@@ -377,13 +405,11 @@ describe('bar install subcommand', () => {
     await handleBarInstall([], {
       fetchReleaseAsset: async (tag: string, _asset: string) => {
         fetchedUrls.push(tag);
-        return { downloadUrl: FAKE_DOWNLOAD_URL, version: FAKE_VERSION };
+        return { downloadUrl: FAKE_DOWNLOAD_URL };
       },
       downloadAndExtract: fakeExtract(appsDir),
-      verifyCompat: async (_baseUrl: string, _installedVersion: string) => ({
-        version: FAKE_VERSION,
-        compatible: true,
-      }),
+      verifyCompat: async (_baseUrl: string) => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -393,7 +419,7 @@ describe('bar install subcommand', () => {
     expect(fetchedUrls).not.toContain(expect.stringMatching(/^\d+\.\d+\.\d+$/));
   });
 
-  it('pins the installed version to ~/.ccs/bar/.version', async () => {
+  it('pins the Info.plist version (not tag name) to ~/.ccs/bar/.version', async () => {
     const ccsDir = path.join(tempHome, '.ccs');
     const appsDir = path.join(tempHome, 'Applications');
     fs.mkdirSync(ccsDir, { recursive: true });
@@ -401,9 +427,10 @@ describe('bar install subcommand', () => {
     const { handleBarInstall } = await loadInstallSubcommand();
 
     await handleBarInstall([], {
-      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL, version: FAKE_VERSION }),
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
       downloadAndExtract: fakeExtract(appsDir),
-      verifyCompat: async () => ({ version: FAKE_VERSION, compatible: true }),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
       getCcsDir: () => ccsDir,
       getAppsDir: () => appsDir,
     });
@@ -413,19 +440,20 @@ describe('bar install subcommand', () => {
     expect(fs.readFileSync(versionFile, 'utf8').trim()).toBe(FAKE_VERSION);
   });
 
-  it('calls /api/overview for version-compat handshake after install', async () => {
+  it('calls /api/bar/summary for compat handshake after install', async () => {
     const compatCalls: string[] = [];
     const appsDir = path.join(tempHome, 'Applications');
 
     const { handleBarInstall } = await loadInstallSubcommand();
 
     await handleBarInstall([], {
-      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL, version: FAKE_VERSION }),
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
       downloadAndExtract: fakeExtract(appsDir),
-      verifyCompat: async (baseUrl: string, _installedVersion: string) => {
+      verifyCompat: async (baseUrl: string) => {
         compatCalls.push(baseUrl);
-        return { version: FAKE_VERSION, compatible: true };
+        return { compatible: true, reason: 'ok' };
       },
+      readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -433,26 +461,23 @@ describe('bar install subcommand', () => {
     expect(compatCalls.length).toBeGreaterThan(0);
   });
 
-  it('warns on version mismatch but does not hard-fail', async () => {
+  it('does not hard-fail when compat returns no-bar-api', async () => {
     const appsDir = path.join(tempHome, 'Applications');
     const { handleBarInstall } = await loadInstallSubcommand();
 
-    // Version mismatch: server says 2.0.0 but app is 1.2.3
     await expect(
       handleBarInstall([], {
-        fetchReleaseAsset: async () => ({
-          downloadUrl: FAKE_DOWNLOAD_URL,
-          version: '1.2.3',
-        }),
+        fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
         downloadAndExtract: fakeExtract(appsDir),
-        verifyCompat: async () => ({ version: '2.0.0', compatible: false }),
+        verifyCompat: async () => ({ compatible: false, reason: 'no-bar-api' }),
+        readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
         getCcsDir: () => path.join(tempHome, '.ccs'),
         getAppsDir: () => appsDir,
       })
     ).resolves.toBeUndefined(); // does not throw
 
     const allOutput = consoleOutput.join('\n');
-    expect(allOutput.toLowerCase()).toMatch(/warn|mismatch|version/i);
+    expect(allOutput.toLowerCase()).toMatch(/warn|api|update/i);
   });
 
   it('prints xattr/Gatekeeper note for ad-hoc builds', async () => {
@@ -460,9 +485,10 @@ describe('bar install subcommand', () => {
     const { handleBarInstall } = await loadInstallSubcommand();
 
     await handleBarInstall([], {
-      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL, version: FAKE_VERSION }),
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
       downloadAndExtract: fakeExtract(appsDir),
-      verifyCompat: async () => ({ version: FAKE_VERSION, compatible: true }),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -485,7 +511,8 @@ describe('bar install subcommand', () => {
         downloadAndExtract: async () => {
           /* noop */
         },
-        verifyCompat: async () => ({ version: FAKE_VERSION, compatible: true }),
+        verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+        readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
         getCcsDir: () => path.join(tempHome, '.ccs'),
         getAppsDir: () => appsDir,
       })
@@ -526,10 +553,10 @@ describe('bar install: redirect-following download (#8)', () => {
     await handleBarInstall([], {
       fetchReleaseAsset: async () => ({
         downloadUrl: REDIRECT_URL,
-        version: FAKE_VERSION,
       }),
       downloadAndExtract: redirectFollowingExtract,
-      verifyCompat: async () => ({ version: FAKE_VERSION, compatible: true }),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -562,10 +589,10 @@ describe('bar install: HTTP status code validation (#11)', () => {
     await handleBarInstall([], {
       fetchReleaseAsset: async () => ({
         downloadUrl: FAKE_DOWNLOAD_URL,
-        version: '1.0.0',
       }),
       downloadAndExtract: statusCheckingExtract,
-      verifyCompat: async () => ({ version: '1.0.0', compatible: true }),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: (_appPath: string) => '1.0.0',
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => path.join(tempHome, 'Applications'),
     });
@@ -582,12 +609,12 @@ describe('bar install: HTTP status code validation (#11)', () => {
     await handleBarInstall([], {
       fetchReleaseAsset: async () => ({
         downloadUrl: FAKE_DOWNLOAD_URL,
-        version: '1.0.0',
       }),
       downloadAndExtract: async (_url) => {
         throw new Error(`Download failed: HTTP 404 for ${_url}`);
       },
-      verifyCompat: async () => ({ version: '1.0.0', compatible: true }),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: (_appPath: string) => '1.0.0',
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => path.join(tempHome, 'Applications'),
     });
@@ -651,7 +678,6 @@ describe('bar install: host allowlist validation (#9)', () => {
     await handleBarInstall([], {
       fetchReleaseAsset: async () => ({
         downloadUrl: 'https://evil.example.com/CCS-Bar.app.zip',
-        version: '1.0.0',
       }),
       // downloadAndExtract is the production default; it calls validateDownloadUrl internally.
       // We pass a test-double that applies the same validation.
@@ -660,7 +686,8 @@ describe('bar install: host allowlist validation (#9)', () => {
         const { validateDownloadUrl } = await loadInstallSubcommand();
         validateDownloadUrl(url);
       },
-      verifyCompat: async () => ({ version: '1.0.0', compatible: true }),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: (_appPath: string) => '1.0.0',
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => path.join(tempHome, 'Applications'),
     });
@@ -673,10 +700,10 @@ describe('bar install: host allowlist validation (#9)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4d. Finding #10 — verifyCompat real major-version comparison
+// 4d. Compat capability handshake (replaces old major-version check)
 // ---------------------------------------------------------------------------
 
-describe('bar install: real version compatibility check (#10)', () => {
+describe('bar install: compat capability handshake', () => {
   const FAKE_DOWNLOAD_URL =
     'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip';
 
@@ -686,90 +713,76 @@ describe('bar install: real version compatibility check (#10)', () => {
     };
   }
 
-  it('passes installedVersion to verifyCompat so major comparison is possible', async () => {
+  it('verifyCompat receives only baseUrl (no installedVersion param)', async () => {
     const appsDir = path.join(tempHome, 'Applications');
-    const capturedArgs: Array<{ baseUrl: string; installedVersion: string }> = [];
+    const capturedArgs: Array<{ baseUrl: string }> = [];
     const { handleBarInstall } = await loadInstallSubcommand();
 
     await handleBarInstall([], {
-      fetchReleaseAsset: async () => ({
-        downloadUrl: FAKE_DOWNLOAD_URL,
-        version: '2.5.0',
-      }),
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
       downloadAndExtract: fakeExtract(appsDir),
-      verifyCompat: async (baseUrl: string, installedVersion: string) => {
-        capturedArgs.push({ baseUrl, installedVersion });
-        // Same major — compatible.
-        return { version: '2.1.0', compatible: true };
+      verifyCompat: async (baseUrl: string) => {
+        capturedArgs.push({ baseUrl });
+        return { compatible: true, reason: 'ok' };
       },
+      readAppBundleVersion: (_appPath: string) => '1.4.0',
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
 
     expect(capturedArgs.length).toBe(1);
-    // installedVersion must be the version from the release, not a hardcoded 0.
-    expect(capturedArgs[0].installedVersion).toBe('2.5.0');
+    // verifyCompat receives only one argument (baseUrl)
+    expect(capturedArgs[0].baseUrl).toMatch(/http/);
   });
 
-  it('reports compatible when server major equals installed major', async () => {
+  it('prints [OK] server bar API reachable when compat returns ok', async () => {
     const appsDir = path.join(tempHome, 'Applications');
     const { handleBarInstall } = await loadInstallSubcommand();
 
     await handleBarInstall([], {
-      fetchReleaseAsset: async () => ({
-        downloadUrl: FAKE_DOWNLOAD_URL,
-        version: '3.0.0',
-      }),
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
       downloadAndExtract: fakeExtract(appsDir),
-      verifyCompat: async (_baseUrl: string, _installedVersion: string) => {
-        // Same major (3 == 3).
-        return { version: '3.1.0', compatible: true };
-      },
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: (_appPath: string) => '1.4.0',
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
 
     const allOutput = consoleOutput.join('\n');
-    expect(allOutput).toMatch(/\[OK\].*[Vv]ersion/i);
+    expect(allOutput).toMatch(/\[OK\].*[Ss]erver bar API/);
+    // Must NOT print any mismatch warning
+    expect(allOutput).not.toMatch(/mismatch/i);
   });
 
-  it('warns when server major differs from installed major', async () => {
+  it('warns with actionable message when compat returns no-bar-api (404)', async () => {
     const appsDir = path.join(tempHome, 'Applications');
     const { handleBarInstall } = await loadInstallSubcommand();
 
     await handleBarInstall([], {
-      fetchReleaseAsset: async () => ({
-        downloadUrl: FAKE_DOWNLOAD_URL,
-        version: '1.0.0',
-      }),
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
       downloadAndExtract: fakeExtract(appsDir),
-      verifyCompat: async (_baseUrl: string, _installedVersion: string) => {
-        // Major mismatch: server v2, installed v1.
-        return { version: '2.0.0', compatible: false };
-      },
+      verifyCompat: async () => ({ compatible: false, reason: 'no-bar-api' }),
+      readAppBundleVersion: (_appPath: string) => '1.4.0',
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
 
     const allOutput = consoleOutput.join('\n');
     expect(allOutput).toMatch(/\[!\]/);
-    expect(allOutput.toLowerCase()).toMatch(/mismatch|version/i);
+    // Must mention the bar API and instruct the user to update CCS
+    expect(allOutput.toLowerCase()).toMatch(/bar api|\/api\/bar\/summary/i);
+    expect(allOutput.toLowerCase()).toMatch(/update ccs/i);
   });
 
-  it('warns (not silently compatible) when server is unreachable', async () => {
+  it('soft-warns (not crash) when compat returns unreachable', async () => {
     const appsDir = path.join(tempHome, 'Applications');
     const { handleBarInstall } = await loadInstallSubcommand();
 
     await handleBarInstall([], {
-      fetchReleaseAsset: async () => ({
-        downloadUrl: FAKE_DOWNLOAD_URL,
-        version: '1.0.0',
-      }),
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
       downloadAndExtract: fakeExtract(appsDir),
-      verifyCompat: async (_baseUrl: string, _installedVersion: string) => {
-        // Server unreachable — never claim compatible.
-        return { version: 'unknown', compatible: false };
-      },
+      verifyCompat: async () => ({ compatible: false, reason: 'unreachable' }),
+      readAppBundleVersion: (_appPath: string) => '1.4.0',
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -777,6 +790,25 @@ describe('bar install: real version compatibility check (#10)', () => {
     const allOutput = consoleOutput.join('\n');
     // Should warn rather than print [OK] compat confirmed
     expect(allOutput).not.toMatch(/\[OK\].*[Cc]ompat/);
+    expect(allOutput).toMatch(/\[!\].*[Cc]ould not verify|server may not be running/i);
+  });
+
+  it('install never hard-fails due to compat failure', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await expect(
+      handleBarInstall([], {
+        fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+        downloadAndExtract: fakeExtract(appsDir),
+        verifyCompat: async () => {
+          throw new Error('network explosion');
+        },
+        readAppBundleVersion: (_appPath: string) => '1.4.0',
+        getCcsDir: () => path.join(tempHome, '.ccs'),
+        getAppsDir: () => appsDir,
+      })
+    ).resolves.toBeUndefined();
   });
 });
 
@@ -796,12 +828,12 @@ describe('bar install: post-extract app-exists assertion (#12)', () => {
     await handleBarInstall([], {
       fetchReleaseAsset: async () => ({
         downloadUrl: FAKE_DOWNLOAD_URL,
-        version: '1.0.0',
       }),
       downloadAndExtract: async (_url: string, dest: string) => {
         fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
       },
-      verifyCompat: async () => ({ version: '1.0.0', compatible: true }),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: (_appPath: string) => '1.0.0',
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -819,14 +851,14 @@ describe('bar install: post-extract app-exists assertion (#12)', () => {
     await handleBarInstall([], {
       fetchReleaseAsset: async () => ({
         downloadUrl: FAKE_DOWNLOAD_URL,
-        version: '1.0.0',
       }),
       downloadAndExtract: async (_url: string, dest: string) => {
         // Places a wrongly-named artifact (simulates a bad archive).
         fs.mkdirSync(dest, { recursive: true });
         fs.writeFileSync(path.join(dest, 'WrongName.app'), 'dummy');
       },
-      verifyCompat: async () => ({ version: '1.0.0', compatible: true }),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: (_appPath: string) => '1.0.0',
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -844,13 +876,13 @@ describe('bar install: post-extract app-exists assertion (#12)', () => {
     await handleBarInstall([], {
       fetchReleaseAsset: async () => ({
         downloadUrl: FAKE_DOWNLOAD_URL,
-        version: '1.0.0',
       }),
       downloadAndExtract: async (_url: string, dest: string) => {
         // Nothing extracted
         fs.mkdirSync(dest, { recursive: true });
       },
-      verifyCompat: async () => ({ version: '1.0.0', compatible: true }),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: (_appPath: string) => '1.0.0',
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -858,6 +890,179 @@ describe('bar install: post-extract app-exists assertion (#12)', () => {
     const allOutput = consoleOutput.join('\n');
     // xattr note should NOT appear if install didn't succeed
     expect(allOutput).not.toMatch(/xattr.*quarantine/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4h. Regression: version source of truth — Info.plist, not tag_name
+// ---------------------------------------------------------------------------
+
+describe('bar install: Info.plist version extraction regression tests', () => {
+  const FAKE_DOWNLOAD_URL =
+    'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip';
+
+  function fakeExtract(appsDir: string) {
+    return async (_url: string, dest: string) => {
+      fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+    };
+  }
+
+  it('output never contains "vccs-bar-latest" when release tag is floating', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      downloadAndExtract: fakeExtract(appsDir),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      // readAppBundleVersion returns the real version from Info.plist
+      readAppBundleVersion: (_appPath: string) => '1.4.0',
+      getCcsDir: () => path.join(tempHome, '.ccs'),
+      getAppsDir: () => appsDir,
+    });
+
+    const allOutput = consoleOutput.join('\n');
+    // Must never print the floating tag as a version string
+    expect(allOutput).not.toMatch(/vccs-bar-latest/i);
+    // Must print the actual plist version
+    expect(allOutput).toMatch(/1\.4\.0/);
+  });
+
+  it('pins Info.plist version (1.4.0) to .version file, not the tag name', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    const appsDir = path.join(tempHome, 'Applications');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      downloadAndExtract: fakeExtract(appsDir),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: (_appPath: string) => '1.4.0',
+      getCcsDir: () => ccsDir,
+      getAppsDir: () => appsDir,
+    });
+
+    const versionFile = path.join(ccsDir, 'bar', '.version');
+    expect(fs.existsSync(versionFile)).toBe(true);
+    const pinned = fs.readFileSync(versionFile, 'utf8').trim();
+    // Must be the plist value, not the floating tag
+    expect(pinned).toBe('1.4.0');
+    expect(pinned).not.toMatch(/ccs-bar-latest/i);
+  });
+
+  it('no pin write and ASCII notice when readAppBundleVersion returns null', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    const appsDir = path.join(tempHome, 'Applications');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      downloadAndExtract: fakeExtract(appsDir),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      // Unreadable Info.plist — returns null
+      readAppBundleVersion: (_appPath: string) => null,
+      getCcsDir: () => ccsDir,
+      getAppsDir: () => appsDir,
+    });
+
+    // No pin written
+    const versionFile = path.join(ccsDir, 'bar', '.version');
+    expect(fs.existsSync(versionFile)).toBe(false);
+
+    const allOutput = consoleOutput.join('\n');
+    // ASCII notice must appear
+    expect(allOutput).toMatch(/\[!\].*Info\.plist/i);
+    // Install itself must still succeed (no [X])
+    expect(allOutput).toMatch(/\[OK\].*CCS Bar/);
+    // No crash — test reaches here
+  });
+
+  it('defaultReadAppBundleVersion: extracts CFBundleShortVersionString from XML plist fixture', async () => {
+    // Test the default implementation directly using a temp file.
+    // We import the real module (not a mock) to access the default implementation.
+    // Because the module only exports handleBarInstall and validateDownloadUrl,
+    // we exercise the default via handleBarInstall without mocking readAppBundleVersion.
+    const ccsDir = path.join(tempHome, '.ccs');
+    const appsDir = path.join(tempHome, 'Applications');
+    const appPath = path.join(appsDir, 'CCS Bar.app');
+
+    // Create a real Info.plist fixture inside the fake .app bundle
+    const contentsDir = path.join(appPath, 'Contents');
+    fs.mkdirSync(contentsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(contentsDir, 'Info.plist'),
+      `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.kaitranntt.CCSBar</string>
+  <key>CFBundleShortVersionString</key>
+  <string>2.7.1</string>
+  <key>CFBundleVersion</key>
+  <string>271</string>
+</dict>
+</plist>`
+    );
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    // Use production readAppBundleVersion (omit from deps so default is used)
+    await handleBarInstall([], {
+      fetchReleaseAsset: async () => ({
+        downloadUrl:
+          'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip',
+      }),
+      downloadAndExtract: async (_url: string, _dest: string) => {
+        // App bundle already created above — no actual download needed
+      },
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      // readAppBundleVersion intentionally omitted → uses production default
+      getCcsDir: () => ccsDir,
+      getAppsDir: () => appsDir,
+    });
+
+    const versionFile = path.join(ccsDir, 'bar', '.version');
+    expect(fs.existsSync(versionFile)).toBe(true);
+    expect(fs.readFileSync(versionFile, 'utf8').trim()).toBe('2.7.1');
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/2\.7\.1/);
+  });
+
+  it('defaultReadAppBundleVersion: returns null when Info.plist is missing', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    const appsDir = path.join(tempHome, 'Applications');
+    const appPath = path.join(appsDir, 'CCS Bar.app');
+
+    // Create app bundle WITHOUT Info.plist
+    fs.mkdirSync(appPath, { recursive: true });
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      fetchReleaseAsset: async () => ({
+        downloadUrl:
+          'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip',
+      }),
+      downloadAndExtract: async (_url: string, _dest: string) => {
+        // App bundle already created — no plist inside
+      },
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      // readAppBundleVersion omitted → uses production default
+      getCcsDir: () => ccsDir,
+      getAppsDir: () => appsDir,
+    });
+
+    // No pin because plist is missing
+    const versionFile = path.join(ccsDir, 'bar', '.version');
+    expect(fs.existsSync(versionFile)).toBe(false);
+
+    const allOutput = consoleOutput.join('\n');
+    // Should emit the ASCII notice
+    expect(allOutput).toMatch(/\[!\].*Info\.plist/i);
   });
 });
 
@@ -1101,10 +1306,10 @@ describe('bar install: redirect host re-validation (fix #6)', () => {
     await handleBarInstall([], {
       fetchReleaseAsset: async () => ({
         downloadUrl: INITIAL_URL,
-        version: FAKE_VERSION,
       }),
       downloadAndExtract: redirectFollowingExtract,
-      verifyCompat: async () => ({ version: FAKE_VERSION, compatible: true }),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => path.join(tempHome, 'Applications'),
     });
@@ -1151,10 +1356,10 @@ describe('bar install: zip-slip guard (fix #14)', () => {
     await handleBarInstall([], {
       fetchReleaseAsset: async () => ({
         downloadUrl: FAKE_DOWNLOAD_URL,
-        version: FAKE_VERSION,
       }),
       downloadAndExtract: zipSlipExtract,
-      verifyCompat: async () => ({ version: FAKE_VERSION, compatible: true }),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => path.join(tempHome, 'Applications'),
     });
@@ -1180,10 +1385,10 @@ describe('bar install: zip-slip guard (fix #14)', () => {
     await handleBarInstall([], {
       fetchReleaseAsset: async () => ({
         downloadUrl: FAKE_DOWNLOAD_URL,
-        version: FAKE_VERSION,
       }),
       downloadAndExtract: safeExtract,
-      verifyCompat: async () => ({ version: FAKE_VERSION, compatible: true }),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -1191,5 +1396,156 @@ describe('bar install: zip-slip guard (fix #14)', () => {
     const allOutput = consoleOutput.join('\n');
     expect(allOutput).toMatch(/\[OK\]/);
     expect(allOutput).not.toMatch(/\[X\]/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 1 — stale .version cleanup when readAppBundleVersion returns null
+// ---------------------------------------------------------------------------
+
+describe('bar install: stale version-pin removal on null plist read (Fix 1)', () => {
+  const FAKE_DOWNLOAD_URL =
+    'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip';
+
+  function fakeExtract(appsDir: string) {
+    return async (_url: string, dest: string) => {
+      fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+    };
+  }
+
+  it('removes a stale .version pin when readAppBundleVersion returns null, and install still succeeds', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    const appsDir = path.join(tempHome, 'Applications');
+    const barDir = path.join(ccsDir, 'bar');
+
+    // Pre-write a stale pin from a previous install
+    fs.mkdirSync(barDir, { recursive: true });
+    fs.writeFileSync(path.join(barDir, '.version'), '9.9.9');
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      downloadAndExtract: fakeExtract(appsDir),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      // Simulate unreadable Info.plist
+      readAppBundleVersion: (_appPath: string) => null,
+      getCcsDir: () => ccsDir,
+      getAppsDir: () => appsDir,
+    });
+
+    // Stale pin must be gone
+    const versionFile = path.join(barDir, '.version');
+    expect(fs.existsSync(versionFile)).toBe(false);
+
+    // Install still reports success (no [X])
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/\[OK\].*CCS Bar/);
+    expect(allOutput).not.toMatch(/\[X\]/);
+    // ASCII notice still appears
+    expect(allOutput).toMatch(/\[!\].*Info\.plist/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 2 — `ccs bar install --help` dispatches to help, not install
+// ---------------------------------------------------------------------------
+
+describe('bar command dispatcher: --help anywhere in args (Fix 2)', () => {
+  beforeEach(() => {
+    mock.module('../../../src/commands/bar/launch-subcommand', () => ({
+      handleBarLaunch: async (args: string[]) => {
+        calls.push(`launch:${args.join(' ')}`);
+      },
+    }));
+
+    mock.module('../../../src/commands/bar/install-subcommand', () => ({
+      handleBarInstall: async (args: string[]) => {
+        calls.push(`install:${args.join(' ')}`);
+      },
+    }));
+
+    mock.module('../../../src/commands/bar/uninstall-subcommand', () => ({
+      handleBarUninstall: async (args: string[]) => {
+        calls.push(`uninstall:${args.join(' ')}`);
+      },
+    }));
+
+    mock.module('../../../src/commands/bar/version-subcommand', () => ({
+      handleBarVersion: async () => {
+        calls.push(`version:`);
+      },
+    }));
+
+    mock.module('../../../src/commands/bar/help-subcommand', () => ({
+      showHelp: async () => {
+        calls.push(`help:`);
+      },
+    }));
+  });
+
+  it('`ccs bar install --help` dispatches to help and does NOT call install handler', async () => {
+    const handleBarCommand = await loadHandleBarCommand();
+    await handleBarCommand(['install', '--help']);
+    expect(calls).toContain('help:');
+    expect(calls.some((c) => c.startsWith('install:'))).toBe(false);
+  });
+
+  it('`ccs bar uninstall -h` dispatches to help and does NOT call uninstall handler', async () => {
+    const handleBarCommand = await loadHandleBarCommand();
+    await handleBarCommand(['uninstall', '-h']);
+    expect(calls).toContain('help:');
+    expect(calls.some((c) => c.startsWith('uninstall:'))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 3 — defaultReadAppBundleVersion: whitespace-only plist value → null
+// ---------------------------------------------------------------------------
+
+describe('bar install: whitespace-only CFBundleShortVersionString yields null (Fix 3)', () => {
+  it('defaultReadAppBundleVersion returns null for a whitespace-only version string', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    const appsDir = path.join(tempHome, 'Applications');
+    const appPath = path.join(appsDir, 'CCS Bar.app');
+    const contentsDir = path.join(appPath, 'Contents');
+
+    // Create Info.plist with a whitespace-only CFBundleShortVersionString
+    fs.mkdirSync(contentsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(contentsDir, 'Info.plist'),
+      `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleShortVersionString</key>
+  <string>   </string>
+</dict>
+</plist>`
+    );
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      fetchReleaseAsset: async () => ({
+        downloadUrl:
+          'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip',
+      }),
+      downloadAndExtract: async (_url: string, _dest: string) => {
+        // App bundle already created above
+      },
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      // readAppBundleVersion intentionally omitted → uses production default
+      getCcsDir: () => ccsDir,
+      getAppsDir: () => appsDir,
+    });
+
+    // Whitespace-only version treated as null → no pin written
+    const versionFile = path.join(ccsDir, 'bar', '.version');
+    expect(fs.existsSync(versionFile)).toBe(false);
+
+    // ASCII notice must appear
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/\[!\].*Info\.plist/i);
   });
 });
