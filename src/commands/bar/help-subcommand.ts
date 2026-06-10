@@ -27,10 +27,19 @@ export async function showHelp(): Promise<void> {
       ],
     ],
     [
+      'Install options:',
+      [
+        ['--launch', 'Launch CCS Bar immediately after install without prompting'],
+        ['--no-launch', 'Skip the launch prompt after install'],
+      ],
+    ],
+    [
       'Examples:',
       [
         ['ccs bar', 'Start the web-server and open CCS Bar (default launch)'],
-        ['ccs bar install', 'Download and install CCS Bar into ~/Applications'],
+        ['ccs bar install', 'Download and install CCS Bar, then prompt to launch'],
+        ['ccs bar install --launch', 'Install and launch immediately (no prompt)'],
+        ['ccs bar install --no-launch', 'Install without launching'],
         ['ccs bar version', 'Show CLI and installed app versions'],
         ['ccs bar uninstall', 'Remove CCS Bar and its version pin'],
       ],
@@ -49,8 +58,9 @@ export async function showHelp(): Promise<void> {
   console.log(dim('  macOS only. The app communicates with the CCS web-server on localhost only.'));
   console.log(
     dim(
-      '  Ad-hoc signed builds may require right-click > Open or `xattr -dr com.apple.quarantine` on first launch.'
+      '  Gatekeeper quarantine is cleared automatically after install. If the app is still blocked,'
     )
   );
+  console.log(dim('  right-click > Open or run `xattr -dr com.apple.quarantine` manually.'));
   console.log('');
 }

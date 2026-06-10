@@ -31,15 +31,26 @@ ccs bar install
 
 This downloads `CCS-Bar.app.zip` from the floating `ccs-bar-latest` GitHub release and installs `CCS Bar.app` into `~/Applications`. Downloads are restricted to `github.com` and `objects.githubusercontent.com`, and extraction is guarded against zip-slip.
 
+If `CCS Bar.app` is already installed, the command shows the current version and proceeds as a reinstall.
+
 After installation, CCS reads the app version directly from the bundle's `Info.plist` and pins it to `~/.ccs/bar/.version`. It then performs a reachability check against the bar API (`GET /api/bar/summary`). A 404 response means the running CCS server predates CCS Bar support — update CCS to a version that includes CCS Bar, then restart `ccs bar`.
+
+After a successful install, CCS asks whether to launch CCS Bar immediately (default: yes). Pass `--launch` to skip the prompt and launch right away, or `--no-launch` to suppress the prompt entirely:
+
+```bash
+ccs bar install --launch     # install and launch immediately
+ccs bar install --no-launch  # install, skip launch prompt
+```
 
 ### Gatekeeper note
 
-The v1 builds use ad-hoc signing, so the first launch may be blocked by Gatekeeper. Either right-click the app and choose Open, or clear the quarantine attribute:
+The install command automatically clears the macOS Gatekeeper quarantine attribute (`xattr -dr com.apple.quarantine`) on the downloaded app. If clearing fails for any reason, the command falls back to printing the manual command:
 
 ```bash
 xattr -dr com.apple.quarantine "$HOME/Applications/CCS Bar.app"
 ```
+
+Or right-click the app and choose Open.
 
 ## Launch
 

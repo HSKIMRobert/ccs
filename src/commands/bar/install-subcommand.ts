@@ -19,6 +19,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { getCcsDir } from '../../config/config-loader-facade';
+import { hasAnyFlag } from '../arg-extractor';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -84,6 +85,39 @@ export interface InstallDeps {
   getCcsDir: () => string;
   /** Destination directory for the .app bundle (~/Applications by default). */
   getAppsDir: () => string;
+  /**
+   * Clear the macOS Gatekeeper quarantine attribute from the installed app.
+   * Run via `/usr/bin/xattr -dr com.apple.quarantine <appPath>` (execFile, not shell-string).
+   * Returns true on success, false if xattr is unavailable or the call fails (non-fatal).
+   * Injectable for tests — avoids touching the real system.
+   */
+  clearQuarantine: (appPath: string) => Promise<boolean>;
+  /**
+   * Invoke handleBarLaunch after a successful install when the user consents.
+   * Injectable so tests can assert invocation without starting a real server.
+   */
+  launchBar: (args: string[]) => Promise<void>;
+  /**
+   * Ask the user whether to launch CCS Bar now (stdin-TTY-only).
+   * Returns true on yes/default, false on no or non-TTY stdin.
+   * Injectable for tests.
+   */
+  promptLaunch: () => Promise<boolean>;
+  /**
+   * Detect whether CCS Bar is already running.
+   * Production: uses /usr/bin/pgrep -x CCSBar (exit 0 = running, exit 1 = not found).
+   * Returns false on any error (treat pgrep failure as not running).
+   * Injectable for tests — avoids touching the real process table.
+   */
+  isBarRunning: () => Promise<boolean>;
+  /**
+   * Remove an existing app bundle before extraction so a malformed archive
+   * cannot silently leave the old version in place.
+   * Production: fs.rmSync(appPath, { recursive: true, force: true }).
+   * Injectable for tests — avoids real filesystem side-effects.
+   * Throws on failure; caller catches and aborts install.
+   */
+  removeExistingApp: (appPath: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -341,6 +375,79 @@ function defaultGetAppsDir(): string {
   return path.join(os.homedir(), 'Applications');
 }
 
+/**
+ * Clear the macOS Gatekeeper quarantine attribute from the installed app.
+ * Uses absolute path `/usr/bin/xattr` to avoid PATH hijacking.
+ * Runs `/usr/bin/xattr -dr com.apple.quarantine <appPath>` via execFile (not shell-string)
+ * so the path is passed as an argument, not interpolated into a shell command.
+ * Returns true on success, false on any error (non-fatal — install already succeeded).
+ */
+async function defaultClearQuarantine(appPath: string): Promise<boolean> {
+  try {
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+    await execFileAsync('/usr/bin/xattr', ['-dr', 'com.apple.quarantine', appPath]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function defaultRemoveExistingApp(appPath: string): void {
+  fs.rmSync(appPath, { recursive: true, force: true });
+}
+
+async function defaultLaunchBar(args: string[]): Promise<void> {
+  const { handleBarLaunch } = await import('./launch-subcommand');
+  await handleBarLaunch(args);
+}
+
+/**
+ * Detect whether CCS Bar is already running using `/usr/bin/pgrep -x CCSBar`.
+ * pgrep exits 0 when a match is found (running), 1 when no match (not running).
+ * execFile surfaces exit code 1 as an error, so we catch and return false.
+ * Any other error (pgrep unavailable, permission denied) is also treated as not running.
+ */
+async function defaultIsBarRunning(): Promise<boolean> {
+  try {
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+    await execFileAsync('/usr/bin/pgrep', ['-x', 'CCSBar']);
+    return true;
+  } catch {
+    // pgrep exits 1 when no match found; execFile throws for non-zero exit codes.
+    return false;
+  }
+}
+
+/**
+ * Ask the user whether to launch CCS Bar now.
+ * Only prompts when stdin is a TTY — stdin is what the prompt actually reads.
+ * Non-TTY stdin: return false (caller prints guidance).
+ * Default answer is yes (Enter = launch).
+ */
+async function defaultPromptLaunch(): Promise<boolean> {
+  if (!process.stdin.isTTY) {
+    return false;
+  }
+  const readline = await import('readline');
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: true,
+  });
+  return new Promise((resolve) => {
+    rl.question('Launch CCS Bar now? [Y/n] ', (answer: string) => {
+      rl.close();
+      const normalized = answer.trim().toLowerCase();
+      // Empty (Enter) or 'y'/'yes' → launch
+      resolve(normalized === '' || normalized === 'y' || normalized === 'yes');
+    });
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Version pin helpers
 // ---------------------------------------------------------------------------
@@ -360,17 +467,37 @@ function pinBarVersion(ccsDir: string, version: string): void {
 // ---------------------------------------------------------------------------
 
 export async function handleBarInstall(
-  _args: string[],
+  args: string[],
   deps: Partial<InstallDeps> = {}
 ): Promise<void> {
+  // Parse --launch / --no-launch flags before delegating to deps.
+  const forceLaunch = hasAnyFlag(args, ['--launch']);
+  const noLaunch = hasAnyFlag(args, ['--no-launch']);
+
   const fetchReleaseAsset = deps.fetchReleaseAsset ?? defaultFetchReleaseAsset;
   const downloadAndExtract = deps.downloadAndExtract ?? defaultDownloadAndExtract;
   const verifyCompat = deps.verifyCompat ?? defaultVerifyCompat;
   const readAppBundleVersion = deps.readAppBundleVersion ?? defaultReadAppBundleVersion;
+  const clearQuarantine = deps.clearQuarantine ?? defaultClearQuarantine;
+  const launchBar = deps.launchBar ?? defaultLaunchBar;
+  const promptLaunch = deps.promptLaunch ?? defaultPromptLaunch;
+  const isBarRunning = deps.isBarRunning ?? defaultIsBarRunning;
+  const removeExistingApp = deps.removeExistingApp ?? defaultRemoveExistingApp;
   const ccsDir = (deps.getCcsDir ?? defaultGetCcsDir)();
   const appsDir = (deps.getAppsDir ?? defaultGetAppsDir)();
 
-  console.log('[i] Fetching CCS Bar release info...');
+  // 0. Already-installed detection: show the current version before proceeding.
+  const appPath = path.join(appsDir, BAR_APP_NAME);
+  if (fs.existsSync(appPath)) {
+    const existingVersion = readAppBundleVersion(appPath);
+    if (existingVersion !== null) {
+      console.log(`[i] CCS Bar v${existingVersion} is already installed. Reinstalling...`);
+    } else {
+      console.log('[i] CCS Bar is already installed. Reinstalling...');
+    }
+  } else {
+    console.log('[i] Fetching CCS Bar release info...');
+  }
 
   // 1. Resolve the floating tag → download URL.
   let releaseInfo: ReleaseAssetResult;
@@ -386,31 +513,82 @@ export async function handleBarInstall(
   const { downloadUrl } = releaseInfo;
   console.log(`[i] Installing CCS Bar from ${BAR_RELEASE_TAG}...`);
 
-  // 2. Download and extract into ~/Applications.
+  // 1b. Stage-then-swap: extract into a hidden staging dir on the same filesystem
+  //     so the rename to appPath is atomic-ish. The old bundle is only removed
+  //     AFTER the new one is verified in staging — a transient download/extraction
+  //     failure during reinstall therefore leaves the previous working install intact.
+  fs.mkdirSync(appsDir, { recursive: true });
+  let stagingDir: string;
   try {
-    await downloadAndExtract(downloadUrl, appsDir);
+    stagingDir = fs.mkdtempSync(path.join(appsDir, '.ccs-bar-staging-'));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[X] Could not create staging directory in ${appsDir}: ${msg}`);
+    return;
+  }
+
+  // Helper: remove staging dir, ignoring errors (best-effort cleanup).
+  function cleanupStaging(): void {
+    try {
+      fs.rmSync(stagingDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // 2. Download and extract into staging, NOT appsDir.
+  try {
+    await downloadAndExtract(downloadUrl, stagingDir);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[X] Download or extraction failed: ${msg}`);
+    cleanupStaging();
     return;
   }
 
   // 3. Finding #12: assert that the expected .app bundle was actually extracted
-  //    before reporting success.
-  const appPath = path.join(appsDir, BAR_APP_NAME);
-  if (!fs.existsSync(appPath)) {
+  //    into the staging dir before touching the old install.
+  const stagedApp = path.join(stagingDir, BAR_APP_NAME);
+  if (!fs.existsSync(stagedApp)) {
     // Report what was actually extracted to help diagnose archive issues.
     let extracted: string[] = [];
     try {
-      extracted = fs.readdirSync(appsDir);
+      extracted = fs.readdirSync(stagingDir);
     } catch {
       /* ignore */
     }
     const found = extracted.length > 0 ? extracted.join(', ') : '(none)';
-    console.error(`[X] Extraction succeeded but "${BAR_APP_NAME}" was not found in ${appsDir}.`);
-    console.error(`[i] Files found in ${appsDir}: ${found}`);
+    console.error(`[X] Extraction succeeded but "${BAR_APP_NAME}" was not found in staging.`);
+    console.error(`[i] Files found in staging: ${found}`);
+    cleanupStaging();
     return;
   }
+
+  // 3b. New bundle verified in staging — now safe to remove the old install.
+  if (fs.existsSync(appPath)) {
+    try {
+      removeExistingApp(appPath);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[X] Could not remove the existing CCS Bar.app: ${msg}`);
+      console.error('[i] Close any running instance and try again.');
+      cleanupStaging();
+      return;
+    }
+  }
+
+  // 3c. Atomic-ish rename: move staged bundle into the final location.
+  try {
+    fs.renameSync(stagedApp, appPath);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[X] Could not move staged app into place: ${msg}`);
+    cleanupStaging();
+    return;
+  }
+
+  // Staging dir is now empty (bundle was moved out); remove it.
+  cleanupStaging();
 
   // 4. Read the real version from the extracted bundle's Info.plist.
   const installedVersion = readAppBundleVersion(appPath);
@@ -439,6 +617,9 @@ export async function handleBarInstall(
   }
 
   // 5. Capability handshake via GET /api/bar/summary.
+  //    Runs BEFORE the quarantine-clear + launch handoff because it is a server-side
+  //    check unrelated to Gatekeeper. A failed quarantine clear must not prevent the
+  //    compat result from being shown to the user.
   //    Read bar.json for baseUrl if present; otherwise fall back to localhost:3000.
   const barJsonPath = path.join(ccsDir, 'bar.json');
   let baseUrl = 'http://127.0.0.1:3000';
@@ -469,10 +650,51 @@ export async function handleBarInstall(
     console.log('[i] Run `ccs bar` to start the server and recheck.');
   }
 
-  // 6. Print Gatekeeper guidance for ad-hoc/unsigned builds.
-  console.log('');
-  console.log('[i] Gatekeeper note (ad-hoc build):');
-  console.log('    If macOS says the app is "damaged" or "unverified", run:');
-  console.log(`      xattr -dr com.apple.quarantine "${path.join(appsDir, BAR_APP_NAME)}"`);
-  console.log('    Or right-click the app and select Open.');
+  // 6. Quarantine handling: run `xattr -dr com.apple.quarantine` automatically.
+  //    This clears the Gatekeeper quarantine flag that ad-hoc builds receive on download.
+  //    On success: print [OK] confirmation. On failure: fall back to printed guidance and
+  //    SKIP the launch handoff entirely — launching a still-quarantined app hits the
+  //    Gatekeeper block, so the user must clear quarantine manually first.
+  const quarantineCleared = await clearQuarantine(appPath);
+  if (quarantineCleared) {
+    console.log('[OK] Cleared Gatekeeper quarantine.');
+  } else {
+    console.log('[i] Gatekeeper note (ad-hoc build):');
+    console.log('    If macOS says the app is "damaged" or "unverified", run:');
+    console.log(`      xattr -dr com.apple.quarantine "${appPath}"`);
+    console.log('    Or right-click the app and select Open.');
+    console.log('[i] After clearing quarantine, run `ccs bar` to launch.');
+    return;
+  }
+
+  // 7. Launch handoff.
+  //    Already-running check: if CCS Bar is running after a (re)install, skip the
+  //    prompt entirely and print a restart hint (the user needs to quit and reopen
+  //    to pick up the new version). --launch with the app already running still
+  //    proceeds — the launch flow opens/activates the app, which is harmless.
+  //
+  //    --launch: skip prompt and launch immediately.
+  //    --no-launch: skip prompt, print guidance.
+  //    stdin-TTY: ask interactively (default yes).
+  //    Non-TTY stdin: print guidance, no prompt.
+  const barIsRunning = await isBarRunning();
+
+  if (barIsRunning && !forceLaunch) {
+    console.log(
+      '[!] CCS Bar is currently running the previous version. Quit and reopen it (or run `ccs bar`) to use the update.'
+    );
+  } else if (forceLaunch) {
+    await launchBar([]);
+  } else if (noLaunch) {
+    console.log('[i] Run `ccs bar` to launch.');
+  } else {
+    const shouldLaunch = await promptLaunch();
+    if (shouldLaunch) {
+      await launchBar([]);
+    } else {
+      // User declined or non-TTY stdin — always print guidance so the user
+      // knows how to start the app after install.
+      console.log('[i] Run `ccs bar` to launch later.');
+    }
+  }
 }

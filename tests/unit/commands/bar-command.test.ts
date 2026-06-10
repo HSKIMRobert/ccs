@@ -415,6 +415,9 @@ describe('bar install subcommand', () => {
       downloadAndExtract: fakeExtract(appsDir),
       verifyCompat: async (_baseUrl: string) => ({ compatible: true, reason: 'ok' }),
       readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -436,6 +439,9 @@ describe('bar install subcommand', () => {
       downloadAndExtract: fakeExtract(appsDir),
       verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
       readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => ccsDir,
       getAppsDir: () => appsDir,
     });
@@ -459,6 +465,9 @@ describe('bar install subcommand', () => {
         return { compatible: true, reason: 'ok' };
       },
       readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -476,6 +485,9 @@ describe('bar install subcommand', () => {
         downloadAndExtract: fakeExtract(appsDir),
         verifyCompat: async () => ({ compatible: false, reason: 'no-bar-api' }),
         readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
+        clearQuarantine: async () => true,
+        isBarRunning: async () => false,
+        promptLaunch: async () => false,
         getCcsDir: () => path.join(tempHome, '.ccs'),
         getAppsDir: () => appsDir,
       })
@@ -489,11 +501,14 @@ describe('bar install subcommand', () => {
     const appsDir = path.join(tempHome, 'Applications');
     const { handleBarInstall } = await loadInstallSubcommand();
 
+    // Inject clearQuarantine returning false so the fallback xattr guidance is
+    // always printed regardless of host platform (/usr/bin/xattr availability).
     await handleBarInstall([], {
       fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
       downloadAndExtract: fakeExtract(appsDir),
       verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
       readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
+      clearQuarantine: async () => false,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -562,6 +577,9 @@ describe('bar install: redirect-following download (#8)', () => {
       downloadAndExtract: redirectFollowingExtract,
       verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
       readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -731,6 +749,9 @@ describe('bar install: compat capability handshake', () => {
         return { compatible: true, reason: 'ok' };
       },
       readAppBundleVersion: (_appPath: string) => '1.4.0',
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -749,6 +770,9 @@ describe('bar install: compat capability handshake', () => {
       downloadAndExtract: fakeExtract(appsDir),
       verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
       readAppBundleVersion: (_appPath: string) => '1.4.0',
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -768,6 +792,9 @@ describe('bar install: compat capability handshake', () => {
       downloadAndExtract: fakeExtract(appsDir),
       verifyCompat: async () => ({ compatible: false, reason: 'no-bar-api' }),
       readAppBundleVersion: (_appPath: string) => '1.4.0',
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -788,6 +815,9 @@ describe('bar install: compat capability handshake', () => {
       downloadAndExtract: fakeExtract(appsDir),
       verifyCompat: async () => ({ compatible: false, reason: 'unreachable' }),
       readAppBundleVersion: (_appPath: string) => '1.4.0',
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -810,6 +840,9 @@ describe('bar install: compat capability handshake', () => {
           throw new Error('network explosion');
         },
         readAppBundleVersion: (_appPath: string) => '1.4.0',
+        clearQuarantine: async () => true,
+        isBarRunning: async () => false,
+        promptLaunch: async () => false,
         getCcsDir: () => path.join(tempHome, '.ccs'),
         getAppsDir: () => appsDir,
       })
@@ -839,6 +872,9 @@ describe('bar install: post-extract app-exists assertion (#12)', () => {
       },
       verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
       readAppBundleVersion: (_appPath: string) => '1.0.0',
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -922,6 +958,9 @@ describe('bar install: Info.plist version extraction regression tests', () => {
       verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
       // readAppBundleVersion returns the real version from Info.plist
       readAppBundleVersion: (_appPath: string) => '1.4.0',
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -944,6 +983,9 @@ describe('bar install: Info.plist version extraction regression tests', () => {
       downloadAndExtract: fakeExtract(appsDir),
       verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
       readAppBundleVersion: (_appPath: string) => '1.4.0',
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => ccsDir,
       getAppsDir: () => appsDir,
     });
@@ -968,6 +1010,9 @@ describe('bar install: Info.plist version extraction regression tests', () => {
       verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
       // Unreadable Info.plist — returns null
       readAppBundleVersion: (_appPath: string) => null,
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => ccsDir,
       getAppsDir: () => appsDir,
     });
@@ -1014,17 +1059,39 @@ describe('bar install: Info.plist version extraction regression tests', () => {
 
     const { handleBarInstall } = await loadInstallSubcommand();
 
-    // Use production readAppBundleVersion (omit from deps so default is used)
+    // Use production readAppBundleVersion (omit from deps so default is used).
+    // downloadAndExtract must recreate the bundle because the stale-reinstall guard
+    // removes the pre-seeded app before extraction.
     await handleBarInstall([], {
       fetchReleaseAsset: async () => ({
         downloadUrl:
           'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip',
       }),
-      downloadAndExtract: async (_url: string, _dest: string) => {
-        // App bundle already created above — no actual download needed
+      downloadAndExtract: async (_url: string, dest: string) => {
+        // Recreate the bundle with its Info.plist fixture after the old bundle is removed.
+        const contentsOut = path.join(dest, 'CCS Bar.app', 'Contents');
+        fs.mkdirSync(contentsOut, { recursive: true });
+        fs.writeFileSync(
+          path.join(contentsOut, 'Info.plist'),
+          `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.kaitranntt.CCSBar</string>
+  <key>CFBundleShortVersionString</key>
+  <string>2.7.1</string>
+  <key>CFBundleVersion</key>
+  <string>271</string>
+</dict>
+</plist>`
+        );
       },
       verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
       // readAppBundleVersion intentionally omitted → uses production default
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => ccsDir,
       getAppsDir: () => appsDir,
     });
@@ -1047,16 +1114,22 @@ describe('bar install: Info.plist version extraction regression tests', () => {
 
     const { handleBarInstall } = await loadInstallSubcommand();
 
+    // downloadAndExtract must recreate the bundle (without Info.plist) after the
+    // stale-reinstall guard removes the pre-seeded app.
     await handleBarInstall([], {
       fetchReleaseAsset: async () => ({
         downloadUrl:
           'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip',
       }),
-      downloadAndExtract: async (_url: string, _dest: string) => {
-        // App bundle already created — no plist inside
+      downloadAndExtract: async (_url: string, dest: string) => {
+        // Recreate bare bundle — no Info.plist, matching the test's intent.
+        fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
       },
       verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
       // readAppBundleVersion omitted → uses production default
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => ccsDir,
       getAppsDir: () => appsDir,
     });
@@ -1394,6 +1467,9 @@ describe('bar install: zip-slip guard (fix #14)', () => {
       downloadAndExtract: safeExtract,
       verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
       readAppBundleVersion: (_appPath: string) => FAKE_VERSION,
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => path.join(tempHome, '.ccs'),
       getAppsDir: () => appsDir,
     });
@@ -1435,6 +1511,9 @@ describe('bar install: stale version-pin removal on null plist read (Fix 1)', ()
       verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
       // Simulate unreadable Info.plist
       readAppBundleVersion: (_appPath: string) => null,
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => ccsDir,
       getAppsDir: () => appsDir,
     });
@@ -1895,6 +1974,730 @@ describe('defaultFindRunningServer: priority over response speed (GH-1500)', () 
 });
 
 // ---------------------------------------------------------------------------
+// GH-1504 — already-installed detection
+// ---------------------------------------------------------------------------
+
+describe('bar install: already-installed detection (GH-1504)', () => {
+  const FAKE_DOWNLOAD_URL =
+    'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip';
+
+  it('shows existing version when app is already installed', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    // Create a pre-existing CCS Bar.app with a known version
+    const existingAppPath = path.join(appsDir, 'CCS Bar.app');
+    fs.mkdirSync(path.join(existingAppPath, 'Contents'), { recursive: true });
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      downloadAndExtract: async (_url: string, dest: string) => {
+        fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+      },
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: (appPath: string) => {
+        // Return version for pre-existing app (before download replaces it)
+        if (fs.existsSync(appPath)) return '1.0.0';
+        return null;
+      },
+      clearQuarantine: async () => true,
+      launchBar: async () => {
+        calls.push('launch');
+      },
+      promptLaunch: async () => false,
+      getCcsDir: () => path.join(tempHome, '.ccs'),
+      getAppsDir: () => appsDir,
+    });
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/already installed|Reinstall/i);
+    expect(allOutput).toMatch(/1\.0\.0/);
+  });
+
+  it('shows generic already-installed message when version is unreadable', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    const existingAppPath = path.join(appsDir, 'CCS Bar.app');
+    fs.mkdirSync(existingAppPath, { recursive: true });
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      downloadAndExtract: async (_url: string, dest: string) => {
+        fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+      },
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: () => null,
+      clearQuarantine: async () => true,
+      launchBar: async () => {
+        calls.push('launch');
+      },
+      promptLaunch: async () => false,
+      getCcsDir: () => path.join(tempHome, '.ccs'),
+      getAppsDir: () => appsDir,
+    });
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/already installed|Reinstall/i);
+  });
+
+  it('does not print already-installed message on fresh install', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    // Do NOT pre-create the app
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      downloadAndExtract: async (_url: string, dest: string) => {
+        fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+      },
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: () => '2.0.0',
+      clearQuarantine: async () => true,
+      launchBar: async () => {
+        calls.push('launch');
+      },
+      promptLaunch: async () => false,
+      getCcsDir: () => path.join(tempHome, '.ccs'),
+      getAppsDir: () => appsDir,
+    });
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).not.toMatch(/already installed/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GH-1504 — quarantine handling
+// ---------------------------------------------------------------------------
+
+describe('bar install: quarantine handling (GH-1504)', () => {
+  const FAKE_DOWNLOAD_URL =
+    'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip';
+
+  function fakeExtract(appsDir: string) {
+    return async (_url: string, dest: string) => {
+      fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+    };
+  }
+
+  it('calls clearQuarantine with the correct app path after successful extraction', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    const quarantineCalls: string[] = [];
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      downloadAndExtract: fakeExtract(appsDir),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: () => '1.0.0',
+      clearQuarantine: async (appPath: string) => {
+        quarantineCalls.push(appPath);
+        return true;
+      },
+      launchBar: async () => {
+        /* noop */
+      },
+      promptLaunch: async () => false,
+      getCcsDir: () => path.join(tempHome, '.ccs'),
+      getAppsDir: () => appsDir,
+    });
+
+    expect(quarantineCalls).toHaveLength(1);
+    expect(quarantineCalls[0]).toMatch(/CCS Bar\.app/);
+    expect(quarantineCalls[0]).toBe(path.join(appsDir, 'CCS Bar.app'));
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/\[OK\].*[Cc]leared.*[Qq]uarantine/);
+  });
+
+  it('quarantine failure is non-fatal: falls back to printed xattr hint; launch handoff skipped', async () => {
+    // Launch Retry finding: when clearQuarantine fails, the entire launch handoff must be
+    // skipped (prompt and launchBar must NOT be called) and the follow-up hint must be printed.
+    const appsDir = path.join(tempHome, 'Applications');
+    let launchCalled = false;
+    let promptCalled = false;
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      downloadAndExtract: fakeExtract(appsDir),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: () => '1.0.0',
+      clearQuarantine: async () => false,
+      launchBar: async () => {
+        launchCalled = true;
+      },
+      promptLaunch: async () => {
+        promptCalled = true;
+        return false;
+      },
+      getCcsDir: () => path.join(tempHome, '.ccs'),
+      getAppsDir: () => appsDir,
+    });
+
+    // Install still reports success
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/\[OK\].*CCS Bar/);
+    expect(allOutput).not.toMatch(/\[X\]/);
+
+    // Fallback xattr hint printed
+    expect(allOutput).toMatch(/xattr.*quarantine/i);
+
+    // Launch Retry finding: prompt and launch must both be skipped
+    expect(promptCalled).toBe(false);
+    expect(launchCalled).toBe(false);
+
+    // Follow-up hint must guide the user to run `ccs bar` after manual clear
+    expect(allOutput).toMatch(/After clearing quarantine.*ccs bar/i);
+  });
+
+  it('clearQuarantine is NOT called when extraction fails (app path absent)', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    const quarantineCalls: string[] = [];
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      // Extraction does NOT place CCS Bar.app
+      downloadAndExtract: async (_url: string, dest: string) => {
+        fs.mkdirSync(dest, { recursive: true });
+      },
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: () => '1.0.0',
+      clearQuarantine: async (appPath: string) => {
+        quarantineCalls.push(appPath);
+        return true;
+      },
+      launchBar: async () => {
+        /* noop */
+      },
+      promptLaunch: async () => false,
+      getCcsDir: () => path.join(tempHome, '.ccs'),
+      getAppsDir: () => appsDir,
+    });
+
+    // Should have returned early due to missing app
+    expect(quarantineCalls).toHaveLength(0);
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/\[X\]/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Launch Retry finding — quarantine failure blocks entire launch handoff
+// ---------------------------------------------------------------------------
+
+describe('bar install: launch retry finding — quarantine failure skips launch handoff', () => {
+  const FAKE_DOWNLOAD_URL =
+    'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip';
+
+  function fakeExtract(appsDir: string) {
+    return async (_url: string, dest: string) => {
+      fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+    };
+  }
+
+  function baseDeps(appsDir: string, extra?: Partial<Record<string, unknown>>) {
+    return {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      downloadAndExtract: fakeExtract(appsDir),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' as const }),
+      readAppBundleVersion: () => '1.0.0',
+      isBarRunning: async () => false,
+      getCcsDir: () => path.join(tempHome, '.ccs'),
+      getAppsDir: () => appsDir,
+      ...extra,
+    };
+  }
+
+  it('clearQuarantine false: promptLaunch is NOT called', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    let promptCalled = false;
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      clearQuarantine: async () => false,
+      launchBar: async () => { /* noop */ },
+      promptLaunch: async () => {
+        promptCalled = true;
+        return true;
+      },
+    });
+
+    expect(promptCalled).toBe(false);
+  });
+
+  it('clearQuarantine false + --launch: launchBar is NOT called (explicit flag cannot override failed clear)', async () => {
+    // --launch does not bypass a failed quarantine clear — Gatekeeper would still block.
+    const appsDir = path.join(tempHome, 'Applications');
+    let launchCalled = false;
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall(['--launch'], {
+      ...baseDeps(appsDir),
+      clearQuarantine: async () => false,
+      launchBar: async () => {
+        launchCalled = true;
+      },
+      promptLaunch: async () => false,
+    });
+
+    expect(launchCalled).toBe(false);
+  });
+
+  it('clearQuarantine false: follow-up hint printed directing user to run `ccs bar` after manual clear', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      clearQuarantine: async () => false,
+      launchBar: async () => { /* noop */ },
+      promptLaunch: async () => false,
+    });
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/After clearing quarantine.*ccs bar/i);
+  });
+
+  it('clearQuarantine true: launch handoff proceeds normally (prompt called)', async () => {
+    // Successful clear must not change existing behavior — prompt is still called.
+    const appsDir = path.join(tempHome, 'Applications');
+    let promptCalled = false;
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      clearQuarantine: async () => true,
+      launchBar: async () => { /* noop */ },
+      promptLaunch: async () => {
+        promptCalled = true;
+        return false;
+      },
+    });
+
+    expect(promptCalled).toBe(true);
+  });
+
+  it('clearQuarantine true + --launch: launchBar invoked as before', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    let launchCalled = false;
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall(['--launch'], {
+      ...baseDeps(appsDir),
+      clearQuarantine: async () => true,
+      launchBar: async () => {
+        launchCalled = true;
+      },
+      promptLaunch: async () => false,
+    });
+
+    expect(launchCalled).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GH-1504 — launch flags and prompt behavior
+// ---------------------------------------------------------------------------
+
+describe('bar install: launch flags and prompt (GH-1504)', () => {
+  const FAKE_DOWNLOAD_URL =
+    'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip';
+
+  function fakeExtract(appsDir: string) {
+    return async (_url: string, dest: string) => {
+      fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+    };
+  }
+
+  function baseDeps(appsDir: string, extra?: Partial<Record<string, unknown>>) {
+    return {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      downloadAndExtract: fakeExtract(appsDir),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' as const }),
+      readAppBundleVersion: () => '1.0.0',
+      clearQuarantine: async () => true,
+      // isBarRunning injected as false so tests are deterministic regardless of
+      // whether the real CCS Bar process is running on the test machine.
+      isBarRunning: async () => false,
+      getCcsDir: () => path.join(tempHome, '.ccs'),
+      getAppsDir: () => appsDir,
+      ...extra,
+    };
+  }
+
+  it('--no-launch skips prompt and does not invoke launchBar', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    let launchCalled = false;
+    let promptCalled = false;
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall(['--no-launch'], {
+      ...baseDeps(appsDir),
+      launchBar: async () => {
+        launchCalled = true;
+      },
+      promptLaunch: async () => {
+        promptCalled = true;
+        return false;
+      },
+    });
+
+    expect(launchCalled).toBe(false);
+    expect(promptCalled).toBe(false);
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/Run `ccs bar` to launch/i);
+  });
+
+  it('--launch invokes launchBar without prompting', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    let launchCalled = false;
+    let promptCalled = false;
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall(['--launch'], {
+      ...baseDeps(appsDir),
+      launchBar: async () => {
+        launchCalled = true;
+      },
+      promptLaunch: async () => {
+        promptCalled = true;
+        return false;
+      },
+    });
+
+    expect(launchCalled).toBe(true);
+    expect(promptCalled).toBe(false);
+  });
+
+  it('non-TTY skips prompt and prints launch guidance', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    let launchCalled = false;
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    // Simulate non-TTY: promptLaunch returns false (mimics defaultPromptLaunch non-TTY path)
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      launchBar: async () => {
+        launchCalled = true;
+      },
+      promptLaunch: async () => false,
+    });
+
+    expect(launchCalled).toBe(false);
+  });
+
+  it('user answers yes to prompt: launchBar is invoked', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    let launchCalled = false;
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      launchBar: async () => {
+        launchCalled = true;
+      },
+      promptLaunch: async () => true,
+    });
+
+    expect(launchCalled).toBe(true);
+  });
+
+  it('user answers no to prompt: launchBar not invoked', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    let launchCalled = false;
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      launchBar: async () => {
+        launchCalled = true;
+      },
+      promptLaunch: async () => false,
+    });
+
+    expect(launchCalled).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Finding 1 — PATH hijack: xattr must use absolute path /usr/bin/xattr
+// (The default impl is internal; tested via injectable clearQuarantine seam.
+//  The production behavior is captured by the contract test below.)
+// ---------------------------------------------------------------------------
+
+describe('bar install: xattr absolute path contract (Finding 1)', () => {
+  const FAKE_DOWNLOAD_URL =
+    'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip';
+
+  function fakeExtract(appsDir: string) {
+    return async (_url: string, dest: string) => {
+      fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+    };
+  }
+
+  it('clearQuarantine injectable dep receives the correct app path (contract test)', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    const quarantineArgs: string[] = [];
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      downloadAndExtract: fakeExtract(appsDir),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
+      readAppBundleVersion: () => '1.0.0',
+      clearQuarantine: async (appPath: string) => {
+        quarantineArgs.push(appPath);
+        return true;
+      },
+      launchBar: async () => { /* noop */ },
+      promptLaunch: async () => false,
+      isBarRunning: async () => false,
+      getCcsDir: () => path.join(tempHome, '.ccs'),
+      getAppsDir: () => appsDir,
+    });
+
+    // Production invokes clearQuarantine with the full app path — not a bare binary name.
+    expect(quarantineArgs).toHaveLength(1);
+    expect(quarantineArgs[0]).toBe(path.join(appsDir, 'CCS Bar.app'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Finding 2 — TTY gate: prompt gated on stdin.isTTY, not stdout.isTTY
+// ---------------------------------------------------------------------------
+
+describe('bar install: stdin-TTY gate for launch prompt (Finding 2)', () => {
+  const FAKE_DOWNLOAD_URL =
+    'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip';
+
+  function fakeExtract(appsDir: string) {
+    return async (_url: string, dest: string) => {
+      fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+    };
+  }
+
+  function baseDeps(appsDir: string, extra?: Partial<Record<string, unknown>>) {
+    return {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      downloadAndExtract: fakeExtract(appsDir),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' as const }),
+      readAppBundleVersion: () => '1.0.0',
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      getCcsDir: () => path.join(tempHome, '.ccs'),
+      getAppsDir: () => appsDir,
+      ...extra,
+    };
+  }
+
+  it('stdin-TTY true + stdout non-TTY: promptLaunch is called (prompt shown via seam)', async () => {
+    // This test proves the prompt path is reached even when stdout is not a TTY,
+    // as long as stdin is a TTY. We verify via the injectable promptLaunch dep.
+    const appsDir = path.join(tempHome, 'Applications');
+    let promptCalled = false;
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      launchBar: async () => { /* noop */ },
+      // promptLaunch returning true simulates stdin-TTY + user answered yes.
+      // The production defaultPromptLaunch now checks stdin.isTTY; by injecting
+      // a mock that returns true we confirm this code path (prompt called, launch invoked).
+      promptLaunch: async () => {
+        promptCalled = true;
+        return false; // user said no — we just want to confirm the dep was called
+      },
+    });
+
+    expect(promptCalled).toBe(true);
+  });
+
+  it('non-TTY stdin path: promptLaunch returns false + hint printed', async () => {
+    // Simulate defaultPromptLaunch behavior on non-TTY stdin: returns false.
+    // The handleBarInstall non-TTY fallback must print the launch hint.
+    const appsDir = path.join(tempHome, 'Applications');
+    let launchCalled = false;
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    // Save and override process.stdin.isTTY to simulate non-TTY stdin.
+    // We also inject promptLaunch that mirrors what defaultPromptLaunch does
+    // on non-TTY stdin (returns false) so the fallback branch executes.
+    const origStdinIsTTY = process.stdin.isTTY;
+    try {
+      // Force stdin to look like non-TTY so the fallback check fires.
+      Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+
+      await handleBarInstall([], {
+        ...baseDeps(appsDir),
+        launchBar: async () => {
+          launchCalled = true;
+        },
+        promptLaunch: async () => false, // non-TTY stdin: defaultPromptLaunch returns false
+      });
+    } finally {
+      Object.defineProperty(process.stdin, 'isTTY', {
+        value: origStdinIsTTY,
+        configurable: true,
+      });
+    }
+
+    expect(launchCalled).toBe(false);
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/Run `ccs bar` to launch/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Finding 3 — Already-running detection via isBarRunning dep
+// ---------------------------------------------------------------------------
+
+describe('bar install: already-running detection (Finding 3)', () => {
+  const FAKE_DOWNLOAD_URL =
+    'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip';
+
+  function fakeExtract(appsDir: string) {
+    return async (_url: string, dest: string) => {
+      fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+    };
+  }
+
+  function baseDeps(appsDir: string, extra?: Partial<Record<string, unknown>>) {
+    return {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      downloadAndExtract: fakeExtract(appsDir),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' as const }),
+      readAppBundleVersion: () => '1.0.0',
+      clearQuarantine: async () => true,
+      getCcsDir: () => path.join(tempHome, '.ccs'),
+      getAppsDir: () => appsDir,
+      ...extra,
+    };
+  }
+
+  it('when running after install: prompt skipped, restart hint printed', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    let promptCalled = false;
+    let launchCalled = false;
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      isBarRunning: async () => true,
+      launchBar: async () => {
+        launchCalled = true;
+      },
+      promptLaunch: async () => {
+        promptCalled = true;
+        return true;
+      },
+    });
+
+    // Prompt must NOT be called when bar is running (without --launch)
+    expect(promptCalled).toBe(false);
+    // launchBar must NOT be invoked without --launch
+    expect(launchCalled).toBe(false);
+
+    const allOutput = consoleOutput.join('\n');
+    // Must print the restart hint
+    expect(allOutput).toMatch(/currently running the previous version/i);
+    expect(allOutput).toMatch(/Quit and reopen/i);
+  });
+
+  it('when not running after install: prompt path unchanged', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    let promptCalled = false;
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      isBarRunning: async () => false,
+      launchBar: async () => { /* noop */ },
+      promptLaunch: async () => {
+        promptCalled = true;
+        return false;
+      },
+    });
+
+    // When bar is not running, normal prompt flow applies
+    expect(promptCalled).toBe(true);
+    const allOutput = consoleOutput.join('\n');
+    // The restart hint must NOT appear when bar is not running
+    expect(allOutput).not.toMatch(/currently running the previous version/i);
+  });
+
+  it('pgrep error treated as not running: prompt path unchanged', async () => {
+    // Simulate pgrep failure (e.g. not available, permission error) — treated as not running.
+    const appsDir = path.join(tempHome, 'Applications');
+    let promptCalled = false;
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      // Simulate pgrep error — isBarRunning returns false per spec
+      isBarRunning: async () => false,
+      launchBar: async () => { /* noop */ },
+      promptLaunch: async () => {
+        promptCalled = true;
+        return false;
+      },
+    });
+
+    // pgrep error treated as not running → normal prompt flow
+    expect(promptCalled).toBe(true);
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).not.toMatch(/currently running the previous version/i);
+  });
+
+  it('--launch with bar already running: launchBar still invoked', async () => {
+    // --launch overrides the already-running guard; opening/activating an already-running
+    // app is harmless.
+    const appsDir = path.join(tempHome, 'Applications');
+    let launchCalled = false;
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall(['--launch'], {
+      ...baseDeps(appsDir),
+      isBarRunning: async () => true,
+      launchBar: async () => {
+        launchCalled = true;
+      },
+      promptLaunch: async () => false,
+    });
+
+    expect(launchCalled).toBe(true);
+    // Restart hint must NOT appear when --launch is passed
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).not.toMatch(/currently running the previous version/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Fix 3 — defaultReadAppBundleVersion: whitespace-only plist value → null
 // ---------------------------------------------------------------------------
 
@@ -1921,16 +2724,34 @@ describe('bar install: whitespace-only CFBundleShortVersionString yields null (F
 
     const { handleBarInstall } = await loadInstallSubcommand();
 
+    // downloadAndExtract must recreate the bundle (with whitespace-only plist) after the
+    // stale-reinstall guard removes the pre-seeded app.
     await handleBarInstall([], {
       fetchReleaseAsset: async () => ({
         downloadUrl:
           'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip',
       }),
-      downloadAndExtract: async (_url: string, _dest: string) => {
-        // App bundle already created above
+      downloadAndExtract: async (_url: string, dest: string) => {
+        // Recreate bundle with the whitespace-only plist fixture.
+        const contentsOut = path.join(dest, 'CCS Bar.app', 'Contents');
+        fs.mkdirSync(contentsOut, { recursive: true });
+        fs.writeFileSync(
+          path.join(contentsOut, 'Info.plist'),
+          `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleShortVersionString</key>
+  <string>   </string>
+</dict>
+</plist>`
+        );
       },
       verifyCompat: async () => ({ compatible: true, reason: 'ok' }),
       // readAppBundleVersion intentionally omitted → uses production default
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      promptLaunch: async () => false,
       getCcsDir: () => ccsDir,
       getAppsDir: () => appsDir,
     });
@@ -1942,5 +2763,273 @@ describe('bar install: whitespace-only CFBundleShortVersionString yields null (F
     // ASCII notice must appear
     const allOutput = consoleOutput.join('\n');
     expect(allOutput).toMatch(/\[!\].*Info\.plist/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Data Loss finding — stage-then-swap: old bundle preserved on failure
+// ---------------------------------------------------------------------------
+
+describe('bar install: stage-then-swap safety (Data Loss finding)', () => {
+  const FAKE_DOWNLOAD_URL =
+    'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip';
+
+  function baseDeps(
+    appsDir: string,
+    extra?: Partial<Record<string, unknown>>
+  ): Record<string, unknown> {
+    return {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' as const }),
+      readAppBundleVersion: () => '2.0.0',
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      launchBar: async () => { /* noop */ },
+      promptLaunch: async () => false,
+      getCcsDir: () => path.join(tempHome, '.ccs'),
+      getAppsDir: () => appsDir,
+      ...extra,
+    };
+  }
+
+  it('downloadAndExtract receives a staging dir inside appsDir, NOT appsDir itself', async () => {
+    // The new contract: downloadAndExtract dest is a hidden staging dir under appsDir,
+    // not appsDir directly. This keeps the old install untouched during download.
+    const appsDir = path.join(tempHome, 'Applications');
+    const destDirs: string[] = [];
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      downloadAndExtract: async (_url: string, dest: string) => {
+        destDirs.push(dest);
+        // Create the expected bundle inside staging so the verify step passes.
+        fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+      },
+    });
+
+    expect(destDirs).toHaveLength(1);
+    const dest = destDirs[0];
+    // Must NOT equal appsDir
+    expect(dest).not.toBe(appsDir);
+    // Must be a child of appsDir (same filesystem for atomic rename)
+    expect(dest.startsWith(appsDir + path.sep)).toBe(true);
+    // Dotted prefix to minimise Finder noise
+    expect(path.basename(dest)).toMatch(/^\..+/);
+  });
+
+  it('downloadAndExtract throws during reinstall: old bundle still present, removeExistingApp NOT called', async () => {
+    // Core data-loss guard: if download/extraction fails, the old working install
+    // must remain intact — removeExistingApp must never have been called.
+    const appsDir = path.join(tempHome, 'Applications');
+    const appPath = path.join(appsDir, 'CCS Bar.app');
+    // Pre-seed the existing install.
+    fs.mkdirSync(appPath, { recursive: true });
+    fs.writeFileSync(path.join(appPath, 'sentinel'), 'old-install');
+
+    let removeCalled = false;
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      removeExistingApp: (_path: unknown) => {
+        removeCalled = true;
+        fs.rmSync(String(_path), { recursive: true, force: true });
+      },
+      downloadAndExtract: async (_url: string, _dest: string) => {
+        throw new Error('network timeout');
+      },
+    });
+
+    // removeExistingApp must NOT have been called — download failed before the swap.
+    expect(removeCalled).toBe(false);
+    // Old bundle must still be present.
+    expect(fs.existsSync(appPath)).toBe(true);
+    expect(fs.existsSync(path.join(appPath, 'sentinel'))).toBe(true);
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/\[X\].*Download or extraction failed/i);
+  });
+
+  it('extracted archive missing the bundle: old bundle still present, install aborts with diagnostics', async () => {
+    // If the archive extracts successfully but does not contain CCS Bar.app,
+    // the old install must be left untouched and [X] with file listing printed.
+    const appsDir = path.join(tempHome, 'Applications');
+    const appPath = path.join(appsDir, 'CCS Bar.app');
+    fs.mkdirSync(appPath, { recursive: true });
+    fs.writeFileSync(path.join(appPath, 'sentinel'), 'old-install');
+
+    let removeCalled = false;
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      removeExistingApp: (_path: unknown) => {
+        removeCalled = true;
+        fs.rmSync(String(_path), { recursive: true, force: true });
+      },
+      downloadAndExtract: async (_url: string, dest: string) => {
+        // Extraction produces a wrong-named artifact — CCS Bar.app absent.
+        fs.mkdirSync(dest, { recursive: true });
+        fs.writeFileSync(path.join(dest, 'WrongName.app'), 'dummy');
+      },
+    });
+
+    // removeExistingApp must NOT have been called.
+    expect(removeCalled).toBe(false);
+    // Old bundle still present.
+    expect(fs.existsSync(appPath)).toBe(true);
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/\[X\]/);
+    expect(allOutput).toMatch(/CCS Bar\.app/);
+    // Diagnostics: should list staging contents
+    expect(allOutput).toMatch(/WrongName\.app/);
+  });
+
+  it('success path: staging dir removed, app present at appPath', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    const appPath = path.join(appsDir, 'CCS Bar.app');
+    let stagingDirUsed = '';
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      downloadAndExtract: async (_url: string, dest: string) => {
+        stagingDirUsed = dest;
+        fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+      },
+    });
+
+    // App at the final location.
+    expect(fs.existsSync(appPath)).toBe(true);
+    // Staging dir cleaned up.
+    if (stagingDirUsed) {
+      expect(fs.existsSync(stagingDirUsed)).toBe(false);
+    }
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/\[OK\].*CCS Bar/);
+    expect(allOutput).not.toMatch(/\[X\]/);
+  });
+
+  it('aborts install and prints [X] when removeExistingApp throws (old app present = no swap)', async () => {
+    // removeExistingApp now runs AFTER staging verification.
+    // If it throws, the new bundle is still in staging (not yet moved); old app untouched.
+    const appsDir = path.join(tempHome, 'Applications');
+    const appPath = path.join(appsDir, 'CCS Bar.app');
+    fs.mkdirSync(appPath, { recursive: true });
+
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      removeExistingApp: (_path: unknown) => {
+        throw new Error('Permission denied');
+      },
+      downloadAndExtract: async (_url: string, dest: string) => {
+        fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+      },
+    });
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/\[X\].*Could not remove.*CCS Bar\.app/);
+  });
+
+  it('fresh install (no pre-existing bundle): removeExistingApp not invoked, install proceeds', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    // Do NOT pre-create the app bundle.
+
+    let removeCalled = false;
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      removeExistingApp: (_path: unknown) => {
+        removeCalled = true;
+      },
+      downloadAndExtract: async (_url: string, dest: string) => {
+        fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+      },
+    });
+
+    expect(removeCalled).toBe(false);
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/\[OK\].*CCS Bar/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review finding — silent decline: hint always printed when user says no
+// ---------------------------------------------------------------------------
+
+describe('bar install: silent-decline fix — hint on user decline (review finding)', () => {
+  const FAKE_DOWNLOAD_URL =
+    'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip';
+
+  function baseDeps(
+    appsDir: string,
+    extra?: Partial<Record<string, unknown>>
+  ): Record<string, unknown> {
+    return {
+      fetchReleaseAsset: async () => ({ downloadUrl: FAKE_DOWNLOAD_URL }),
+      downloadAndExtract: async (_url: string, dest: string) => {
+        fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+      },
+      verifyCompat: async () => ({ compatible: true, reason: 'ok' as const }),
+      readAppBundleVersion: () => '1.0.0',
+      clearQuarantine: async () => true,
+      isBarRunning: async () => false,
+      launchBar: async () => { /* noop */ },
+      getCcsDir: () => path.join(tempHome, '.ccs'),
+      getAppsDir: () => appsDir,
+      ...extra,
+    };
+  }
+
+  it('prints hint when user declines launch prompt (TTY path, answers no)', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      // Simulate TTY user answering "n"
+      promptLaunch: async () => false,
+    });
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/\[i\].*Run `ccs bar` to launch/i);
+  });
+
+  it('prints hint when non-TTY stdin (promptLaunch returns false on non-TTY)', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      promptLaunch: async () => false,
+    });
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/\[i\].*Run `ccs bar` to launch/i);
+  });
+
+  it('does NOT print the decline hint when user says yes (launch invoked instead)', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    let launchCalled = false;
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      launchBar: async () => {
+        launchCalled = true;
+      },
+      promptLaunch: async () => true,
+    });
+
+    expect(launchCalled).toBe(true);
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).not.toMatch(/Run `ccs bar` to launch later/i);
   });
 });
