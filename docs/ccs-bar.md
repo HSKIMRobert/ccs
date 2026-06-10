@@ -31,6 +31,8 @@ ccs bar install
 
 This downloads `CCS-Bar.app.zip` from the floating `ccs-bar-latest` GitHub release and installs `CCS Bar.app` into `~/Applications`. Downloads are restricted to `github.com` and `objects.githubusercontent.com`, and extraction is guarded against zip-slip.
 
+After installation, CCS reads the app version directly from the bundle's `Info.plist` and pins it to `~/.ccs/bar/.version`. It then performs a reachability check against the bar API (`GET /api/bar/summary`). A 404 response means the running CCS server predates CCS Bar support — update CCS to a version that includes CCS Bar, then restart `ccs bar`.
+
 ### Gatekeeper note
 
 The v1 builds use ad-hoc signing, so the first launch may be blocked by Gatekeeper. Either right-click the app and choose Open, or clear the quarantine attribute:
@@ -69,6 +71,7 @@ This removes `~/Applications/CCS Bar.app` and the installed version pin. It is a
 
 ## Troubleshooting
 
+- Install fails with "server predates CCS Bar" or bar API returns 404: the CCS server running does not yet include CCS Bar. Update CCS (`npm i -g ccs@latest` or equivalent), then restart `ccs bar`.
 - Server failed to start: usually a port conflict. Free the port or re-run `ccs bar` to pick a fresh one.
 - App won't open (Gatekeeper): right-click and Open, or clear quarantine with the `xattr` command above.
 - Blank app: the web-server is not running. Re-run `ccs bar` and confirm `~/.ccs/bar.json` exists.

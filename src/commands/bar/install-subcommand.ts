@@ -3,9 +3,14 @@
  * `ccs-bar-latest` GitHub release tag and install to ~/Applications.
  *
  * Intentionally uses a FLOATING tag (not the exact CLI version) so the
- * Swift app can be rebuilt and published independently. After install the
- * handler calls GET /api/overview to verify version compatibility and warns
- * (but does not hard-fail) on mismatch.
+ * Swift app can be rebuilt and published independently. After extraction,
+ * the real app version is read from the bundle's Contents/Info.plist
+ * (CFBundleShortVersionString) and pinned to ~/.ccs/bar/.version.
+ *
+ * Post-install compat check: single GET {baseUrl}/api/bar/summary.
+ * 200 = server serves the bar API (compatible).
+ * 404 = server too old (actionable warning).
+ * Other / unreachable = soft-warn, never hard-fail install.
  *
  * Mirrors the download/version-pin pattern in src/cliproxy/binary-manager.ts.
  */
@@ -45,19 +50,18 @@ const DOWNLOAD_HOST_ALLOWLIST: ReadonlyArray<string> = [
 
 export interface ReleaseAssetResult {
   downloadUrl: string;
-  version: string;
 }
 
 export interface CompatResult {
-  version: string;
   compatible: boolean;
+  reason: 'ok' | 'no-bar-api' | 'unreachable';
 }
 
 export interface InstallDeps {
   /**
-   * Resolve the asset download URL + version string from a GitHub release tag.
+   * Resolve the asset download URL from a GitHub release tag.
    * Production: calls GitHub API releases/tags/{tag}.
-   * Test: mock that returns a fake URL + version.
+   * Test: mock that returns a fake URL.
    */
   fetchReleaseAsset: (tag: string, asset: string) => Promise<ReleaseAssetResult>;
   /**
@@ -66,11 +70,16 @@ export interface InstallDeps {
    */
   downloadAndExtract: (url: string, dest: string) => Promise<void>;
   /**
-   * Call GET {baseUrl}/api/overview and return { version, compatible }.
-   * compatible = server version major === installed app version major.
-   * Returns compatible:false (never true) when versions cannot be compared.
+   * GET {baseUrl}/api/bar/summary — capability handshake.
+   * 200 → compatible; 404 → no-bar-api; else/unreachable → unreachable.
+   * Never hard-fails install.
    */
-  verifyCompat: (baseUrl: string, installedVersion: string) => Promise<CompatResult>;
+  verifyCompat: (baseUrl: string) => Promise<CompatResult>;
+  /**
+   * Read CFBundleShortVersionString from {appPath}/Contents/Info.plist.
+   * Returns null if the file is absent or unreadable.
+   */
+  readAppBundleVersion: (appPath: string) => string | null;
   /** Returns path to ~/.ccs (respects CCS_HOME). */
   getCcsDir: () => string;
   /** Destination directory for the .app bundle (~/Applications by default). */
@@ -131,9 +140,6 @@ async function defaultFetchReleaseAsset(tag: string, asset: string): Promise<Rel
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const release = (await body.json()) as any;
-  const tagName: string = release.tag_name ?? tag;
-  // Strip leading 'v' for the version pin file.
-  const version = tagName.replace(/^v/, '');
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const found = (release.assets as any[]).find((a: { name: string }) => a.name === asset);
@@ -141,7 +147,7 @@ async function defaultFetchReleaseAsset(tag: string, asset: string): Promise<Rel
     throw new Error(`Asset "${asset}" not found in release ${tag}`);
   }
 
-  return { downloadUrl: found.browser_download_url as string, version };
+  return { downloadUrl: found.browser_download_url as string };
 }
 
 /**
@@ -271,56 +277,59 @@ async function defaultDownloadAndExtract(url: string, dest: string): Promise<voi
 }
 
 /**
- * Call GET {baseUrl}/api/overview and compare server version against the
- * installed bar version. Returns compat=false whenever the comparison cannot
- * be made (server unreachable, version strings unparseable, etc.).
+ * Single-request capability handshake: GET {baseUrl}/api/bar/summary.
+ * 200 → server serves the bar API (compatible).
+ * 404 → server is too old and does not serve the bar API.
+ * Any other status or network error → soft-warn (unreachable).
  *
- * Fix for Finding #10: replaces the phantom check that always returned true.
- * Compatible is defined as same semver major (0 vs 0, 1 vs 1, etc.).
+ * The route is loopback-gated server-side; install-time baseUrl is always
+ * loopback (bar.json baseUrl or http://127.0.0.1:3000), so the gate passes.
  */
-async function defaultVerifyCompat(
-  baseUrl: string,
-  installedVersion: string
-): Promise<CompatResult> {
+async function defaultVerifyCompat(baseUrl: string): Promise<CompatResult> {
   try {
     const { request } = await import('undici');
-    const { statusCode, body } = await request(`${baseUrl}/api/overview`, {
+    const { statusCode, body } = await request(`${baseUrl}/api/bar/summary`, {
       headers: { 'User-Agent': 'ccs-cli' },
     });
-    if (statusCode !== 200) {
-      console.log(
-        `[!] Version compatibility check failed: /api/overview returned HTTP ${statusCode}.`
-      );
-      return { version: 'unknown', compatible: false };
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = (await body.json()) as any;
-    const serverVersion: string = (data.version as string) ?? 'unknown';
 
-    if (serverVersion === 'unknown') {
-      console.log('[!] Version compatibility: server did not report a version.');
-      return { version: serverVersion, compatible: false };
+    // Drain the body regardless of status to free the socket.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (body as any).dump?.();
+    } catch {
+      /* ignore drain errors */
     }
 
-    // Parse installed version major from the pinned version string.
-    const installedMajorRaw = installedVersion.split('.')[0];
-    const serverMajorRaw = serverVersion.split('.')[0];
-    const installedMajor = parseInt(installedMajorRaw ?? '', 10);
-    const serverMajor = parseInt(serverMajorRaw ?? '', 10);
-
-    if (isNaN(installedMajor) || isNaN(serverMajor)) {
-      console.log(
-        `[!] Version compatibility: cannot parse major versions ` +
-          `(installed="${installedVersion}", server="${serverVersion}").`
-      );
-      return { version: serverVersion, compatible: false };
+    if (statusCode === 200) {
+      return { compatible: true, reason: 'ok' };
     }
-
-    const compatible = installedMajor === serverMajor;
-    return { version: serverVersion, compatible };
+    if (statusCode === 404) {
+      return { compatible: false, reason: 'no-bar-api' };
+    }
+    return { compatible: false, reason: 'unreachable' };
   } catch {
-    // Server unreachable — warn but do not claim compatible.
-    return { version: 'unknown', compatible: false };
+    // Network error or server not running.
+    return { compatible: false, reason: 'unreachable' };
+  }
+}
+
+/**
+ * Read CFBundleShortVersionString from {appPath}/Contents/Info.plist.
+ * The plist is XML text post-codesign (verified on the installed app).
+ * Returns null on any error (missing file, binary plist, parse failure).
+ */
+function defaultReadAppBundleVersion(appPath: string): string | null {
+  try {
+    const plistPath = path.join(appPath, 'Contents', 'Info.plist');
+    const contents = fs.readFileSync(plistPath, 'utf8');
+    const match = /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/.exec(
+      contents
+    );
+    if (!match || !match[1]) return null;
+    const v = match[1].trim();
+    return v || null;
+  } catch {
+    return null;
   }
 }
 
@@ -357,12 +366,13 @@ export async function handleBarInstall(
   const fetchReleaseAsset = deps.fetchReleaseAsset ?? defaultFetchReleaseAsset;
   const downloadAndExtract = deps.downloadAndExtract ?? defaultDownloadAndExtract;
   const verifyCompat = deps.verifyCompat ?? defaultVerifyCompat;
+  const readAppBundleVersion = deps.readAppBundleVersion ?? defaultReadAppBundleVersion;
   const ccsDir = (deps.getCcsDir ?? defaultGetCcsDir)();
   const appsDir = (deps.getAppsDir ?? defaultGetAppsDir)();
 
   console.log('[i] Fetching CCS Bar release info...');
 
-  // 1. Resolve the floating tag → download URL + version.
+  // 1. Resolve the floating tag → download URL.
   let releaseInfo: ReleaseAssetResult;
   try {
     releaseInfo = await fetchReleaseAsset(BAR_RELEASE_TAG, BAR_ASSET_NAME);
@@ -373,8 +383,8 @@ export async function handleBarInstall(
     return;
   }
 
-  const { downloadUrl, version } = releaseInfo;
-  console.log(`[i] Installing CCS Bar v${version} from ${BAR_RELEASE_TAG}...`);
+  const { downloadUrl } = releaseInfo;
+  console.log(`[i] Installing CCS Bar from ${BAR_RELEASE_TAG}...`);
 
   // 2. Download and extract into ~/Applications.
   try {
@@ -402,18 +412,33 @@ export async function handleBarInstall(
     return;
   }
 
-  // 4. Pin the installed version to ~/.ccs/bar/.version.
-  try {
-    pinBarVersion(ccsDir, version);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[!] Could not write version pin: ${msg}`);
-    // Non-fatal — continue.
+  // 4. Read the real version from the extracted bundle's Info.plist.
+  const installedVersion = readAppBundleVersion(appPath);
+
+  if (installedVersion !== null) {
+    // Pin the real version string.
+    try {
+      pinBarVersion(ccsDir, installedVersion);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[!] Could not write version pin: ${msg}`);
+      // Non-fatal — continue.
+    }
+    console.log(`[OK] CCS Bar v${installedVersion} installed to ${appsDir}/${BAR_APP_NAME}`);
+  } else {
+    // Info.plist unreadable — best-effort remove any stale version pin from a previous install,
+    // so `ccs bar version` does not show an outdated version string.
+    try {
+      fs.rmSync(path.join(ccsDir, 'bar', '.version'), { force: true });
+    } catch {
+      /* non-fatal — ignore */
+    }
+    // No pin written; ASCII notice; no crash.
+    console.log(`[OK] CCS Bar installed to ${appsDir}/${BAR_APP_NAME}`);
+    console.log('[!] Could not read app version from Info.plist.');
   }
 
-  console.log(`[OK] CCS Bar v${version} installed to ${appsDir}/${BAR_APP_NAME}`);
-
-  // 5. Version-compat handshake via /api/overview.
+  // 5. Capability handshake via GET /api/bar/summary.
   //    Read bar.json for baseUrl if present; otherwise fall back to localhost:3000.
   const barJsonPath = path.join(ccsDir, 'bar.json');
   let baseUrl = 'http://127.0.0.1:3000';
@@ -426,19 +451,21 @@ export async function handleBarInstall(
   }
 
   try {
-    // Pass the pinned version so verifyCompat can do a real major-version comparison.
-    const compat = await verifyCompat(baseUrl, version);
-    if (!compat.compatible) {
+    const compat = await verifyCompat(baseUrl);
+    if (compat.reason === 'ok') {
+      console.log('[OK] Server bar API reachable.');
+    } else if (compat.reason === 'no-bar-api') {
       console.log(
-        `[!] Version mismatch: CCS server reports v${compat.version}, ` +
-          `app is v${version}. Some features may not work until you restart ` +
-          '`ccs bar` or update CCS.'
+        '[!] CCS server does not serve the bar API (/api/bar/summary returned 404).' +
+          ' Update CCS, then restart `ccs bar`.'
       );
     } else {
-      console.log(`[OK] Version compatibility confirmed (server: v${compat.version}).`);
+      // unreachable — soft-warn
+      console.log('[!] Could not verify server compatibility (server may not be running).');
+      console.log('[i] Run `ccs bar` to start the server and recheck.');
     }
   } catch {
-    console.log('[!] Could not verify version compatibility (server may not be running).');
+    console.log('[!] Could not verify server compatibility (server may not be running).');
     console.log('[i] Run `ccs bar` to start the server and recheck.');
   }
 

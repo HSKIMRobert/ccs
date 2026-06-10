@@ -2,11 +2,22 @@
  * `ccs bar` command dispatcher
  *
  * Mirrors the pattern in src/commands/docker/index.ts.
- * Subcommands: launch (default), install, uninstall, version / --version.
+ * Subcommands: launch (default), install, uninstall, version / --version, help / --help / -h.
  */
+
+import { hasAnyFlag } from '../arg-extractor';
 
 export async function handleBarCommand(args: string[]): Promise<void> {
   const subcommand = args[0];
+
+  // --help / -h anywhere in args (e.g. `ccs bar install --help`) → show help.
+  // Mirrors docker/index.ts: hasAnyFlag(normalizedArgs, ['--help', '-h']).
+  // Also dispatch bare `help` subcommand for symmetry.
+  if (hasAnyFlag(args, ['--help', '-h']) || subcommand === 'help') {
+    const { showHelp } = await import('./help-subcommand');
+    await showHelp();
+    return;
+  }
 
   // --version / version are aliases for the version subcommand
   if (subcommand === '--version' || subcommand === 'version') {
@@ -39,7 +50,7 @@ export async function handleBarCommand(args: string[]): Promise<void> {
   const handler = commandHandlers[subcommand];
   if (!handler) {
     console.error(`[X] Unknown bar subcommand: ${subcommand}`);
-    console.error('[i] Usage: ccs bar [launch|install|uninstall|--version]');
+    console.error('[i] Usage: ccs bar [launch|install|uninstall|version|--help]');
     return;
   }
 
