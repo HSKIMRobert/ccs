@@ -2767,10 +2767,10 @@ describe('bar install: whitespace-only CFBundleShortVersionString yields null (F
 });
 
 // ---------------------------------------------------------------------------
-// Review finding — stale reinstall: old bundle removed before extraction
+// Data Loss finding — stage-then-swap: old bundle preserved on failure
 // ---------------------------------------------------------------------------
 
-describe('bar install: stale reinstall guard — removeExistingApp (review finding)', () => {
+describe('bar install: stage-then-swap safety (Data Loss finding)', () => {
   const FAKE_DOWNLOAD_URL =
     'https://github.com/kaitranntt/ccs/releases/download/ccs-bar-latest/CCS-Bar.app.zip';
 
@@ -2792,36 +2792,134 @@ describe('bar install: stale reinstall guard — removeExistingApp (review findi
     };
   }
 
-  it('removes old bundle before calling downloadAndExtract on reinstall', async () => {
-    // Pre-seed a fake CCS Bar.app so the already-installed path is exercised.
+  it('downloadAndExtract receives a staging dir inside appsDir, NOT appsDir itself', async () => {
+    // The new contract: downloadAndExtract dest is a hidden staging dir under appsDir,
+    // not appsDir directly. This keeps the old install untouched during download.
     const appsDir = path.join(tempHome, 'Applications');
-    const appPath = path.join(appsDir, 'CCS Bar.app');
-    fs.mkdirSync(appPath, { recursive: true });
-
-    let appExistedAtDownload = true; // pessimistic default
+    const destDirs: string[] = [];
     const { handleBarInstall } = await loadInstallSubcommand();
 
     await handleBarInstall([], {
       ...baseDeps(appsDir),
-      // Default removeExistingApp (fs.rmSync) is used — it will remove the dir.
       downloadAndExtract: async (_url: string, dest: string) => {
-        // Assert: old bundle must be gone when extraction is invoked.
-        appExistedAtDownload = fs.existsSync(appPath);
-        // Place a fresh bundle so the post-extract assertion passes.
+        destDirs.push(dest);
+        // Create the expected bundle inside staging so the verify step passes.
         fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
       },
     });
 
-    expect(appExistedAtDownload).toBe(false);
+    expect(destDirs).toHaveLength(1);
+    const dest = destDirs[0];
+    // Must NOT equal appsDir
+    expect(dest).not.toBe(appsDir);
+    // Must be a child of appsDir (same filesystem for atomic rename)
+    expect(dest.startsWith(appsDir + path.sep)).toBe(true);
+    // Dotted prefix to minimise Finder noise
+    expect(path.basename(dest)).toMatch(/^\..+/);
   });
 
-  it('aborts install and does NOT call downloadAndExtract when removeExistingApp throws', async () => {
-    // Pre-seed the old bundle so the removal path is triggered.
+  it('downloadAndExtract throws during reinstall: old bundle still present, removeExistingApp NOT called', async () => {
+    // Core data-loss guard: if download/extraction fails, the old working install
+    // must remain intact — removeExistingApp must never have been called.
+    const appsDir = path.join(tempHome, 'Applications');
+    const appPath = path.join(appsDir, 'CCS Bar.app');
+    // Pre-seed the existing install.
+    fs.mkdirSync(appPath, { recursive: true });
+    fs.writeFileSync(path.join(appPath, 'sentinel'), 'old-install');
+
+    let removeCalled = false;
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      removeExistingApp: (_path: unknown) => {
+        removeCalled = true;
+        fs.rmSync(String(_path), { recursive: true, force: true });
+      },
+      downloadAndExtract: async (_url: string, _dest: string) => {
+        throw new Error('network timeout');
+      },
+    });
+
+    // removeExistingApp must NOT have been called — download failed before the swap.
+    expect(removeCalled).toBe(false);
+    // Old bundle must still be present.
+    expect(fs.existsSync(appPath)).toBe(true);
+    expect(fs.existsSync(path.join(appPath, 'sentinel'))).toBe(true);
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/\[X\].*Download or extraction failed/i);
+  });
+
+  it('extracted archive missing the bundle: old bundle still present, install aborts with diagnostics', async () => {
+    // If the archive extracts successfully but does not contain CCS Bar.app,
+    // the old install must be left untouched and [X] with file listing printed.
+    const appsDir = path.join(tempHome, 'Applications');
+    const appPath = path.join(appsDir, 'CCS Bar.app');
+    fs.mkdirSync(appPath, { recursive: true });
+    fs.writeFileSync(path.join(appPath, 'sentinel'), 'old-install');
+
+    let removeCalled = false;
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      removeExistingApp: (_path: unknown) => {
+        removeCalled = true;
+        fs.rmSync(String(_path), { recursive: true, force: true });
+      },
+      downloadAndExtract: async (_url: string, dest: string) => {
+        // Extraction produces a wrong-named artifact — CCS Bar.app absent.
+        fs.mkdirSync(dest, { recursive: true });
+        fs.writeFileSync(path.join(dest, 'WrongName.app'), 'dummy');
+      },
+    });
+
+    // removeExistingApp must NOT have been called.
+    expect(removeCalled).toBe(false);
+    // Old bundle still present.
+    expect(fs.existsSync(appPath)).toBe(true);
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/\[X\]/);
+    expect(allOutput).toMatch(/CCS Bar\.app/);
+    // Diagnostics: should list staging contents
+    expect(allOutput).toMatch(/WrongName\.app/);
+  });
+
+  it('success path: staging dir removed, app present at appPath', async () => {
+    const appsDir = path.join(tempHome, 'Applications');
+    const appPath = path.join(appsDir, 'CCS Bar.app');
+    let stagingDirUsed = '';
+    const { handleBarInstall } = await loadInstallSubcommand();
+
+    await handleBarInstall([], {
+      ...baseDeps(appsDir),
+      downloadAndExtract: async (_url: string, dest: string) => {
+        stagingDirUsed = dest;
+        fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
+      },
+    });
+
+    // App at the final location.
+    expect(fs.existsSync(appPath)).toBe(true);
+    // Staging dir cleaned up.
+    if (stagingDirUsed) {
+      expect(fs.existsSync(stagingDirUsed)).toBe(false);
+    }
+
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/\[OK\].*CCS Bar/);
+    expect(allOutput).not.toMatch(/\[X\]/);
+  });
+
+  it('aborts install and prints [X] when removeExistingApp throws (old app present = no swap)', async () => {
+    // removeExistingApp now runs AFTER staging verification.
+    // If it throws, the new bundle is still in staging (not yet moved); old app untouched.
     const appsDir = path.join(tempHome, 'Applications');
     const appPath = path.join(appsDir, 'CCS Bar.app');
     fs.mkdirSync(appPath, { recursive: true });
 
-    let downloadCalled = false;
     const { handleBarInstall } = await loadInstallSubcommand();
 
     await handleBarInstall([], {
@@ -2829,12 +2927,10 @@ describe('bar install: stale reinstall guard — removeExistingApp (review findi
       removeExistingApp: (_path: unknown) => {
         throw new Error('Permission denied');
       },
-      downloadAndExtract: async (_url: string, _dest: string) => {
-        downloadCalled = true;
+      downloadAndExtract: async (_url: string, dest: string) => {
+        fs.mkdirSync(path.join(dest, 'CCS Bar.app'), { recursive: true });
       },
     });
-
-    expect(downloadCalled).toBe(false);
 
     const allOutput = consoleOutput.join('\n');
     expect(allOutput).toMatch(/\[X\].*Could not remove.*CCS Bar\.app/);

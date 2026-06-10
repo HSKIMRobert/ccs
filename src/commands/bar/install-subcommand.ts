@@ -513,10 +513,58 @@ export async function handleBarInstall(
   const { downloadUrl } = releaseInfo;
   console.log(`[i] Installing CCS Bar from ${BAR_RELEASE_TAG}...`);
 
-  // 1b. Stale reinstall guard: remove the existing bundle BEFORE extraction so a
-  //     malformed archive that lacks the expected bundle cannot silently leave the
-  //     old version in place.  The removal window is intentionally small — release
-  //     info is already resolved so we are committed to downloading.
+  // 1b. Stage-then-swap: extract into a hidden staging dir on the same filesystem
+  //     so the rename to appPath is atomic-ish. The old bundle is only removed
+  //     AFTER the new one is verified in staging — a transient download/extraction
+  //     failure during reinstall therefore leaves the previous working install intact.
+  fs.mkdirSync(appsDir, { recursive: true });
+  let stagingDir: string;
+  try {
+    stagingDir = fs.mkdtempSync(path.join(appsDir, '.ccs-bar-staging-'));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[X] Could not create staging directory in ${appsDir}: ${msg}`);
+    return;
+  }
+
+  // Helper: remove staging dir, ignoring errors (best-effort cleanup).
+  function cleanupStaging(): void {
+    try {
+      fs.rmSync(stagingDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // 2. Download and extract into staging, NOT appsDir.
+  try {
+    await downloadAndExtract(downloadUrl, stagingDir);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[X] Download or extraction failed: ${msg}`);
+    cleanupStaging();
+    return;
+  }
+
+  // 3. Finding #12: assert that the expected .app bundle was actually extracted
+  //    into the staging dir before touching the old install.
+  const stagedApp = path.join(stagingDir, BAR_APP_NAME);
+  if (!fs.existsSync(stagedApp)) {
+    // Report what was actually extracted to help diagnose archive issues.
+    let extracted: string[] = [];
+    try {
+      extracted = fs.readdirSync(stagingDir);
+    } catch {
+      /* ignore */
+    }
+    const found = extracted.length > 0 ? extracted.join(', ') : '(none)';
+    console.error(`[X] Extraction succeeded but "${BAR_APP_NAME}" was not found in staging.`);
+    console.error(`[i] Files found in staging: ${found}`);
+    cleanupStaging();
+    return;
+  }
+
+  // 3b. New bundle verified in staging — now safe to remove the old install.
   if (fs.existsSync(appPath)) {
     try {
       removeExistingApp(appPath);
@@ -524,34 +572,23 @@ export async function handleBarInstall(
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[X] Could not remove the existing CCS Bar.app: ${msg}`);
       console.error('[i] Close any running instance and try again.');
+      cleanupStaging();
       return;
     }
   }
 
-  // 2. Download and extract into ~/Applications.
+  // 3c. Atomic-ish rename: move staged bundle into the final location.
   try {
-    await downloadAndExtract(downloadUrl, appsDir);
+    fs.renameSync(stagedApp, appPath);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[X] Download or extraction failed: ${msg}`);
+    console.error(`[X] Could not move staged app into place: ${msg}`);
+    cleanupStaging();
     return;
   }
 
-  // 3. Finding #12: assert that the expected .app bundle was actually extracted
-  //    before reporting success.
-  if (!fs.existsSync(appPath)) {
-    // Report what was actually extracted to help diagnose archive issues.
-    let extracted: string[] = [];
-    try {
-      extracted = fs.readdirSync(appsDir);
-    } catch {
-      /* ignore */
-    }
-    const found = extracted.length > 0 ? extracted.join(', ') : '(none)';
-    console.error(`[X] Extraction succeeded but "${BAR_APP_NAME}" was not found in ${appsDir}.`);
-    console.error(`[i] Files found in ${appsDir}: ${found}`);
-    return;
-  }
+  // Staging dir is now empty (bundle was moved out); remove it.
+  cleanupStaging();
 
   // 4. Read the real version from the extracted bundle's Info.plist.
   const installedVersion = readAppBundleVersion(appPath);
