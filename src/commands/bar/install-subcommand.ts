@@ -19,6 +19,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { getCcsDir } from '../../config/config-loader-facade';
+import { hasAnyFlag } from '../arg-extractor';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -84,6 +85,24 @@ export interface InstallDeps {
   getCcsDir: () => string;
   /** Destination directory for the .app bundle (~/Applications by default). */
   getAppsDir: () => string;
+  /**
+   * Clear the macOS Gatekeeper quarantine attribute from the installed app.
+   * Run via `xattr -dr com.apple.quarantine <appPath>` (execFile, not shell-string).
+   * Returns true on success, false if xattr is unavailable or the call fails (non-fatal).
+   * Injectable for tests — avoids touching the real system.
+   */
+  clearQuarantine: (appPath: string) => Promise<boolean>;
+  /**
+   * Invoke handleBarLaunch after a successful install when the user consents.
+   * Injectable so tests can assert invocation without starting a real server.
+   */
+  launchBar: (args: string[]) => Promise<void>;
+  /**
+   * Ask the user whether to launch CCS Bar now (TTY-only).
+   * Returns true on yes/default, false on no or non-TTY.
+   * Injectable for tests.
+   */
+  promptLaunch: () => Promise<boolean>;
 }
 
 // ---------------------------------------------------------------------------
@@ -341,6 +360,54 @@ function defaultGetAppsDir(): string {
   return path.join(os.homedir(), 'Applications');
 }
 
+/**
+ * Clear the macOS Gatekeeper quarantine attribute from the installed app.
+ * Uses `xattr -dr com.apple.quarantine <appPath>` via execFile (not shell-string)
+ * so the path is passed as an argument, not interpolated into a shell command.
+ * Returns true on success, false on any error (non-fatal — install already succeeded).
+ */
+async function defaultClearQuarantine(appPath: string): Promise<boolean> {
+  try {
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+    await execFileAsync('xattr', ['-dr', 'com.apple.quarantine', appPath]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function defaultLaunchBar(args: string[]): Promise<void> {
+  const { handleBarLaunch } = await import('./launch-subcommand');
+  await handleBarLaunch(args);
+}
+
+/**
+ * Ask the user whether to launch CCS Bar now.
+ * Only prompts when stdout is a TTY. Non-TTY: return false (caller prints guidance).
+ * Default answer is yes (Enter = launch).
+ */
+async function defaultPromptLaunch(): Promise<boolean> {
+  if (!process.stdout.isTTY) {
+    return false;
+  }
+  const readline = await import('readline');
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: true,
+  });
+  return new Promise((resolve) => {
+    rl.question('Launch CCS Bar now? [Y/n] ', (answer: string) => {
+      rl.close();
+      const normalized = answer.trim().toLowerCase();
+      // Empty (Enter) or 'y'/'yes' → launch
+      resolve(normalized === '' || normalized === 'y' || normalized === 'yes');
+    });
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Version pin helpers
 // ---------------------------------------------------------------------------
@@ -360,17 +427,35 @@ function pinBarVersion(ccsDir: string, version: string): void {
 // ---------------------------------------------------------------------------
 
 export async function handleBarInstall(
-  _args: string[],
+  args: string[],
   deps: Partial<InstallDeps> = {}
 ): Promise<void> {
+  // Parse --launch / --no-launch flags before delegating to deps.
+  const forceLaunch = hasAnyFlag(args, ['--launch']);
+  const noLaunch = hasAnyFlag(args, ['--no-launch']);
+
   const fetchReleaseAsset = deps.fetchReleaseAsset ?? defaultFetchReleaseAsset;
   const downloadAndExtract = deps.downloadAndExtract ?? defaultDownloadAndExtract;
   const verifyCompat = deps.verifyCompat ?? defaultVerifyCompat;
   const readAppBundleVersion = deps.readAppBundleVersion ?? defaultReadAppBundleVersion;
+  const clearQuarantine = deps.clearQuarantine ?? defaultClearQuarantine;
+  const launchBar = deps.launchBar ?? defaultLaunchBar;
+  const promptLaunch = deps.promptLaunch ?? defaultPromptLaunch;
   const ccsDir = (deps.getCcsDir ?? defaultGetCcsDir)();
   const appsDir = (deps.getAppsDir ?? defaultGetAppsDir)();
 
-  console.log('[i] Fetching CCS Bar release info...');
+  // 0. Already-installed detection: show the current version before proceeding.
+  const appPath = path.join(appsDir, BAR_APP_NAME);
+  if (fs.existsSync(appPath)) {
+    const existingVersion = readAppBundleVersion(appPath);
+    if (existingVersion !== null) {
+      console.log(`[i] CCS Bar v${existingVersion} is already installed. Reinstalling...`);
+    } else {
+      console.log('[i] CCS Bar is already installed. Reinstalling...');
+    }
+  } else {
+    console.log('[i] Fetching CCS Bar release info...');
+  }
 
   // 1. Resolve the floating tag → download URL.
   let releaseInfo: ReleaseAssetResult;
@@ -397,7 +482,6 @@ export async function handleBarInstall(
 
   // 3. Finding #12: assert that the expected .app bundle was actually extracted
   //    before reporting success.
-  const appPath = path.join(appsDir, BAR_APP_NAME);
   if (!fs.existsSync(appPath)) {
     // Report what was actually extracted to help diagnose archive issues.
     let extracted: string[] = [];
@@ -438,7 +522,20 @@ export async function handleBarInstall(
     console.log('[!] Could not read app version from Info.plist.');
   }
 
-  // 5. Capability handshake via GET /api/bar/summary.
+  // 5. Quarantine handling: run `xattr -dr com.apple.quarantine` automatically.
+  //    This clears the Gatekeeper quarantine flag that ad-hoc builds receive on download.
+  //    On success: print [OK] confirmation. On failure: fall back to printed guidance.
+  const quarantineCleared = await clearQuarantine(appPath);
+  if (quarantineCleared) {
+    console.log('[OK] Cleared Gatekeeper quarantine.');
+  } else {
+    console.log('[i] Gatekeeper note (ad-hoc build):');
+    console.log('    If macOS says the app is "damaged" or "unverified", run:');
+    console.log(`      xattr -dr com.apple.quarantine "${appPath}"`);
+    console.log('    Or right-click the app and select Open.');
+  }
+
+  // 6. Capability handshake via GET /api/bar/summary.
   //    Read bar.json for baseUrl if present; otherwise fall back to localhost:3000.
   const barJsonPath = path.join(ccsDir, 'bar.json');
   let baseUrl = 'http://127.0.0.1:3000';
@@ -469,10 +566,24 @@ export async function handleBarInstall(
     console.log('[i] Run `ccs bar` to start the server and recheck.');
   }
 
-  // 6. Print Gatekeeper guidance for ad-hoc/unsigned builds.
-  console.log('');
-  console.log('[i] Gatekeeper note (ad-hoc build):');
-  console.log('    If macOS says the app is "damaged" or "unverified", run:');
-  console.log(`      xattr -dr com.apple.quarantine "${path.join(appsDir, BAR_APP_NAME)}"`);
-  console.log('    Or right-click the app and select Open.');
+  // 7. Launch handoff.
+  //    --launch: skip prompt and launch immediately.
+  //    --no-launch: skip prompt, print guidance.
+  //    TTY: ask interactively (default yes).
+  //    Non-TTY: print guidance, no prompt.
+  if (forceLaunch) {
+    await launchBar([]);
+  } else if (noLaunch) {
+    console.log('[i] Run `ccs bar` to launch.');
+  } else {
+    const shouldLaunch = await promptLaunch();
+    if (shouldLaunch) {
+      await launchBar([]);
+    } else {
+      // Either user said no or non-TTY
+      if (!process.stdout.isTTY) {
+        console.log('[i] Run `ccs bar` to launch.');
+      }
+    }
+  }
 }
