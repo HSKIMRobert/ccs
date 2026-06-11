@@ -48,6 +48,7 @@ import {
   handleCatalogReset,
   handleCatalogJson,
 } from './catalog-subcommand';
+import { handlePoolSubcommand } from './pool-subcommand';
 
 /**
  * Parse --backend flag from args
@@ -183,6 +184,11 @@ export async function handleCliproxyCommand(args: string[]): Promise<void> {
       return;
     }
     await handleQuotaStatus(verbose, providerFilter);
+    return;
+  }
+
+  if (command === 'pool') {
+    await handlePoolSubcommand(remainingArgs.slice(1));
     return;
   }
 
