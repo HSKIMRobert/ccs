@@ -230,6 +230,17 @@ export async function execClaudeWithCLIProxy(
       console.error(`    Use "ccs cliproxy edit ${variantName}" to modify composite variants`);
       process.exit(1);
     } else {
+      // Run the one-time stale-pin migration on the pre-existing settings file
+      // BEFORE writing the user's chosen pin. ensureProviderSettingsFile sets the
+      // migration marker, so the explicit --config pick survives the next launch
+      // even when it equals a historical default. Without this, the --config flow
+      // exits before the only ensureProviderSettingsFile call site (later in this
+      // function), so a later plain launch would strip the just-written pin.
+      // Skipped for custom-settings variants: those have no claude.settings
+      // migration and are written verbatim.
+      if (!cfg.customSettingsPath) {
+        ensureProviderSettingsFile(provider);
+      }
       await configureProviderModel(provider, true, cfg.customSettingsPath);
       process.exit(0);
     }

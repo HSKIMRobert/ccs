@@ -48,6 +48,12 @@ export function RoutingGuidanceCard({
   const currentStrategy = state?.strategy ?? 'round-robin';
   const poolEnabled = state?.poolRouting?.enabled ?? false;
   const poolMaxRetry = state?.poolRouting?.maxRetryCredentials;
+  // Undefined manageable means local (managed); only false signals a remote
+  // proxy where the local pool flag may not reflect the running proxy.
+  const poolManageable = state?.poolRouting?.manageable ?? true;
+  const poolLocalOnly = !poolManageable;
+  const poolLocalOnlyMessage =
+    state?.poolRouting?.message ?? t('routingGuidance.poolRoutingLocalOnly');
   const currentAffinityEnabled = sessionAffinityState?.enabled ?? false;
   const currentAffinityTtl = sessionAffinityState?.ttl ?? '1h';
   const sessionAffinityManageable = sessionAffinityState?.manageable ?? true;
@@ -174,26 +180,45 @@ export function RoutingGuidanceCard({
           </div>
         </div>
 
+        {poolEnabled && poolManageable ? (
+          <div
+            role="status"
+            className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[10px] leading-4 text-amber-700 dark:text-amber-300"
+          >
+            {t('routingGuidance.poolRoutingApplyWarning')}
+          </div>
+        ) : null}
+
         <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/20 px-2 py-1.5">
           <div className="min-w-0">
             <div className="text-[10px] font-medium text-foreground">
               {t('routingGuidance.poolRouting')}
             </div>
             <div className="text-[10px] text-muted-foreground">
-              {poolEnabled && poolMaxRetry !== undefined
-                ? t('routingGuidance.poolMaxRetry', { count: poolMaxRetry })
-                : t('routingGuidance.drainOrderHint')}
+              {poolLocalOnly
+                ? poolLocalOnlyMessage
+                : poolEnabled
+                  ? t('routingGuidance.drainOrderHint')
+                  : t('routingGuidance.poolRoutingOffHint')}
             </div>
           </div>
           <Badge
-            variant={poolEnabled ? 'secondary' : 'outline'}
+            variant={poolLocalOnly ? 'outline' : poolEnabled ? 'secondary' : 'outline'}
             title={
-              poolEnabled
-                ? t('routingGuidance.poolRoutingManaged')
-                : t('routingGuidance.poolRoutingOffHint')
+              poolLocalOnly
+                ? poolLocalOnlyMessage
+                : poolEnabled
+                  ? t('routingGuidance.poolRoutingManaged')
+                  : t('routingGuidance.poolRoutingOffHint')
             }
           >
-            {poolEnabled ? t('routingGuidance.poolRoutingOn') : t('routingGuidance.poolRoutingOff')}
+            {poolLocalOnly
+              ? t('routingGuidance.localOnly')
+              : poolEnabled
+                ? `${t('routingGuidance.poolRoutingOn')} · ${t('routingGuidance.poolMaxRetry', {
+                    count: poolMaxRetry ?? 0,
+                  })}`
+                : t('routingGuidance.poolRoutingOff')}
           </Badge>
         </div>
 
@@ -267,18 +292,22 @@ export function RoutingGuidanceCard({
             {state ? <Badge variant="outline">{state.target}</Badge> : null}
             {state ? (
               <Badge
-                variant={poolEnabled ? 'secondary' : 'outline'}
+                variant={poolLocalOnly ? 'outline' : poolEnabled ? 'secondary' : 'outline'}
                 title={
-                  poolEnabled
-                    ? t('routingGuidance.poolRoutingManaged')
-                    : t('routingGuidance.poolRoutingOffHint')
+                  poolLocalOnly
+                    ? poolLocalOnlyMessage
+                    : poolEnabled
+                      ? t('routingGuidance.poolRoutingManaged')
+                      : t('routingGuidance.poolRoutingOffHint')
                 }
               >
                 {t('routingGuidance.poolRouting')}:{' '}
-                {poolEnabled
-                  ? t('routingGuidance.poolRoutingOn')
-                  : t('routingGuidance.poolRoutingOff')}
-                {poolEnabled && poolMaxRetry !== undefined
+                {poolLocalOnly
+                  ? t('routingGuidance.localOnly')
+                  : poolEnabled
+                    ? t('routingGuidance.poolRoutingOn')
+                    : t('routingGuidance.poolRoutingOff')}
+                {!poolLocalOnly && poolEnabled && poolMaxRetry !== undefined
                   ? ` · ${t('routingGuidance.poolMaxRetry', { count: poolMaxRetry })}`
                   : ''}
               </Badge>
@@ -339,6 +368,14 @@ export function RoutingGuidanceCard({
               {isSaving ? 'Saving...' : `Use ${selected}`}
             </Button>
           </div>
+          {poolEnabled && poolManageable ? (
+            <p
+              role="status"
+              className="max-w-xs text-[11px] leading-4 text-amber-700 dark:text-amber-400 xl:text-right"
+            >
+              {t('routingGuidance.poolRoutingApplyWarning')}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground xl:col-span-2">

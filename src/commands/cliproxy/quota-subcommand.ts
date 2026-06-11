@@ -907,7 +907,8 @@ export async function handleQuotaStatus(
       runtime.render(result);
       // Pool context: drain order + per-account state (available/cooling/paused).
       // QuotaSupportedProvider ids are all valid CLIProxyProvider values.
-      renderProviderPoolSection(provider as CLIProxyProvider, poolSettings);
+      // Async: folds in live in-proxy 429 cooldowns when pool routing is on.
+      await renderProviderPoolSection(provider as CLIProxyProvider, poolSettings);
       continue;
     }
 

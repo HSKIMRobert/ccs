@@ -37,6 +37,13 @@ async function withIsolatedHome<T>(fn: (homeDir: string) => Promise<T> | T): Pro
   }
 }
 
+const SETTINGS_ON: PoolRoutingSettings = {
+  poolEnabled: true,
+  strategy: 'fill-first',
+  sessionAffinityEnabled: true,
+  sessionAffinityTtl: '1h',
+};
+
 async function loadPoolState() {
   return import(`../pool-state?pool-state=${Date.now()}`);
 }
@@ -257,6 +264,160 @@ describe('resolvePoolState - drain order', () => {
       // Selector follows the on-disk priority: b (5) before a (1).
       expect(pool.drainOrder.order).toEqual(['b@x.com', 'a@x.com']);
       expect(pool.drainOrder.hasDrift).toBe(true);
+    });
+  });
+});
+
+describe('resolvePoolState - in-proxy cooldown classification', () => {
+  it('classifies an injected proxy cooldown as cooling with source "proxy"', async () => {
+    await withIsolatedHome(async () => {
+      const { resolvePoolState } = await loadPoolState();
+      const until = 2_000_000;
+      const pool = resolvePoolState({
+        provider: 'claude',
+        settings: SETTINGS_ON,
+        accounts: [account({ id: 'a@x.com', tokenFile: 'claude-a.json' })],
+        proxyCooldowns: [{ tokenFile: 'claude-a.json', cooldownUntil: until }],
+        now: 1_000_000,
+      });
+      expect(pool.states[0].state).toBe('cooling');
+      expect(pool.states[0].cooldownUntil).toBe(until);
+      expect(pool.states[0].cooldownSource).toBe('proxy');
+    });
+  });
+
+  it('treats a proxy cooldown with no next_retry_after as cooling (no reset time)', async () => {
+    await withIsolatedHome(async () => {
+      const { resolvePoolState } = await loadPoolState();
+      const pool = resolvePoolState({
+        provider: 'claude',
+        settings: SETTINGS_ON,
+        accounts: [account({ id: 'a@x.com', tokenFile: 'claude-a.json' })],
+        proxyCooldowns: [{ tokenFile: 'claude-a.json' }],
+        now: 1_000_000,
+      });
+      expect(pool.states[0].state).toBe('cooling');
+      expect(pool.states[0].cooldownUntil).toBeUndefined();
+      expect(pool.states[0].cooldownSource).toBe('proxy');
+    });
+  });
+
+  it('proxy cooldown wins over a persisted quota cooldown for the same account', async () => {
+    await withIsolatedHome(async (homeDir) => {
+      const quotaPausedPath = path.join(homeDir, '.ccs', 'cliproxy', 'quota-paused.json');
+      fs.mkdirSync(path.dirname(quotaPausedPath), { recursive: true });
+      fs.writeFileSync(
+        quotaPausedPath,
+        JSON.stringify({
+          entries: [
+            {
+              provider: 'claude',
+              accountId: 'a@x.com',
+              pausedAt: '2026-06-10T12:00:00.000Z',
+              until: 1_500_000,
+              reason: 'quota_exhausted',
+            },
+          ],
+        })
+      );
+
+      const { resolvePoolState } = await loadPoolState();
+      const pool = resolvePoolState({
+        provider: 'claude',
+        settings: SETTINGS_ON,
+        accounts: [account({ id: 'a@x.com', tokenFile: 'claude-a.json' })],
+        proxyCooldowns: [{ tokenFile: 'claude-a.json', cooldownUntil: 9_000_000 }],
+        now: 1_000_000,
+      });
+      // Proxy (live routing truth) wins: source 'proxy', its reset time, not the
+      // persisted quota-paused.json one.
+      expect(pool.states[0].cooldownSource).toBe('proxy');
+      expect(pool.states[0].cooldownUntil).toBe(9_000_000);
+    });
+  });
+
+  it('leaves accounts available when no proxy cooldown is provided (graceful degradation)', async () => {
+    await withIsolatedHome(async () => {
+      const { resolvePoolState, hasProxySourcedCooling } = await loadPoolState();
+      const pool = resolvePoolState({
+        provider: 'claude',
+        settings: SETTINGS_ON,
+        accounts: [account({ id: 'a@x.com', tokenFile: 'claude-a.json' })],
+        // proxyCooldowns omitted -> CCS-side view only.
+        now: 1_000_000,
+      });
+      expect(pool.states[0].state).toBe('available');
+      expect(hasProxySourcedCooling(pool)).toBe(false);
+    });
+  });
+
+  it('hasProxySourcedCooling reports true only when a proxy-sourced cooling exists', async () => {
+    await withIsolatedHome(async () => {
+      const { resolvePoolState, hasProxySourcedCooling } = await loadPoolState();
+      const pool = resolvePoolState({
+        provider: 'claude',
+        settings: SETTINGS_ON,
+        accounts: [
+          account({ id: 'a@x.com', tokenFile: 'claude-a.json' }),
+          account({ id: 'b@x.com', tokenFile: 'claude-b.json' }),
+        ],
+        proxyCooldowns: [{ tokenFile: 'claude-b.json', cooldownUntil: 2_000_000 }],
+        now: 1_000_000,
+      });
+      expect(hasProxySourcedCooling(pool)).toBe(true);
+    });
+  });
+});
+
+describe('resolvePoolStateWithProxyCooldowns - fetch + degradation', () => {
+  it('skips the proxy fetch and stays available when pool routing is OFF', async () => {
+    await withIsolatedHome(async () => {
+      const { resolvePoolStateWithProxyCooldowns } = await loadPoolState();
+      let fetched = false;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async () => {
+        fetched = true;
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
+      try {
+        const pool = await resolvePoolStateWithProxyCooldowns({
+          provider: 'claude',
+          settings: SETTINGS_OFF,
+          accounts: [account({ id: 'a@x.com', tokenFile: 'claude-a.json' })],
+          now: 1_000_000,
+        });
+        expect(pool.states[0].state).toBe('available');
+        // Pool OFF -> no management API call at all.
+        expect(fetched).toBe(false);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  it('honours injected proxyCooldowns without fetching, even when pool is ON', async () => {
+    await withIsolatedHome(async () => {
+      const { resolvePoolStateWithProxyCooldowns } = await loadPoolState();
+      let fetched = false;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async () => {
+        fetched = true;
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
+      try {
+        const pool = await resolvePoolStateWithProxyCooldowns({
+          provider: 'claude',
+          settings: SETTINGS_ON,
+          accounts: [account({ id: 'a@x.com', tokenFile: 'claude-a.json' })],
+          proxyCooldowns: [{ tokenFile: 'claude-a.json', cooldownUntil: 2_000_000 }],
+          now: 1_000_000,
+        });
+        expect(pool.states[0].cooldownSource).toBe('proxy');
+        // Injected cooldowns short-circuit the fetch.
+        expect(fetched).toBe(false);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
   });
 });

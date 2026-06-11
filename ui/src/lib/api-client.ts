@@ -512,6 +512,14 @@ export type RoutingStrategy = 'round-robin' | 'fill-first';
 export interface CliproxyPoolRoutingState {
   enabled: boolean;
   maxRetryCredentials?: number;
+  /**
+   * Whether the pool flag reflects the actual proxy. For a remote proxy target
+   * the pool flag is local-only and may not be applied to the remote, so the
+   * backend sets this to false. Undefined is treated as manageable (local).
+   */
+  manageable?: boolean;
+  /** Explanation surfaced when manageable is false (remote target). */
+  message?: string;
 }
 
 export interface CliproxyRoutingState {

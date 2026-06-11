@@ -29,8 +29,29 @@ export const MIN_PRIORITY = 1;
 /** Management API path for patching auth file fields */
 const AUTH_FILES_FIELDS_PATH = '/v0/management/auth-files/fields';
 
+/** Management API path for listing auth files (and their runtime status). */
+const AUTH_FILES_PATH = '/v0/management/auth-files';
+
 /** Timeout for management API calls in ms */
 const MGMT_TIMEOUT_MS = 5000;
+
+/**
+ * One in-proxy cooldown reading, keyed by auth file basename.
+ *
+ * Source of truth: GET /v0/management/auth-files. Verified field names from
+ * CLIProxyAPIPlus internal/api/handlers/management/auth_files.go buildAuthFileEntry:
+ *   - "name"             -> the token file basename
+ *   - "unavailable"      -> bool, set when a credential is cooling after a 429
+ *   - "next_retry_after" -> RFC3339 timestamp, present only when non-zero
+ * CLIProxyAPI (the base upstream) exposes the same fields via its own
+ * auth-files handler (sdk/cliproxy/auth/types.go: Unavailable / NextRetryAfter).
+ */
+export interface ProxyAuthCooldown {
+  /** Token file basename (matches AccountInfo.tokenFile). */
+  tokenFile: string;
+  /** Epoch ms when the in-proxy cooldown is eligible to lift, if known. */
+  cooldownUntil?: number;
+}
 
 /**
  * Tier rank for priority derivation.
@@ -258,6 +279,29 @@ export async function writeAuthFilePriorityViaApi(
     throw new Error(`Priority must be >= ${MIN_PRIORITY}, got ${priority}`);
   }
 
+  return patchAuthFilePriority(tokenFile, priority);
+}
+
+/**
+ * Remove the priority attribute via CLIProxy management API (proxy running).
+ * Sends PATCH /v0/management/auth-files/fields with priority:0, which the
+ * management layer treats as "delete the attribute" (verified upstream:
+ * CLIProxyAPIPlus syncAuthFilePriorityAttribute deletes the attribute when the
+ * incoming priority is 0 or absent, which then persists the auth file without a
+ * top-level priority field).
+ *
+ * Using the API path is mandatory while the proxy is running: a direct file
+ * write would be clobbered by the proxy's whole-file MarkResult persist.
+ *
+ * @param tokenFile File name (basename, e.g. "antigravity-foo.json")
+ * @returns true on success, false on failure
+ */
+export async function clearAuthFilePriorityViaApi(tokenFile: string): Promise<boolean> {
+  return patchAuthFilePriority(tokenFile, 0);
+}
+
+/** Shared PATCH-fields call for setting (>=1) or clearing (0) a file's priority. */
+async function patchAuthFilePriority(tokenFile: string, priority: number): Promise<boolean> {
   const target = getProxyTarget();
   const url = buildProxyUrl(target, AUTH_FILES_FIELDS_PATH);
   const headers = buildManagementHeaders(target, { 'Content-Type': 'application/json' });
@@ -281,6 +325,105 @@ export async function writeAuthFilePriorityViaApi(
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+/**
+ * Remove the priority field directly from an auth JSON file (proxy stopped).
+ * No-op (returns false) when the file has no priority field. Preserves all
+ * other fields; uses the same atomic temp-rename as writeAuthFilePriorityDirect.
+ *
+ * @returns true if a priority field was present and removed, false otherwise
+ */
+export function clearAuthFilePriorityDirect(tokenFile: string): boolean {
+  const authDir = getAuthDir();
+  const filePath = path.join(authDir, tokenFile);
+
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Auth file not found: ${tokenFile}`);
+  }
+
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const data = JSON.parse(content) as Record<string, unknown>;
+
+  if (!('priority' in data)) {
+    return false;
+  }
+
+  delete data.priority;
+
+  const tempPath = `${filePath}.tmp.${process.pid}`;
+  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2) + '\n', { mode: 0o600 });
+  fs.renameSync(tempPath, filePath);
+  return true;
+}
+
+/** Result of clearing residual priorities across a set of auth files. */
+export interface ClearDrainOrderPrioritiesResult {
+  /** Token files where a priority field was present and removed. */
+  cleared: string[];
+  /** Token files that had no priority field (nothing to do). */
+  alreadyClear: string[];
+  /** Token files that failed, with the reason. */
+  failed: Array<{ tokenFile: string; reason: string }>;
+  /** Whether the management API path was used (proxy was running). */
+  usedManagementApi: boolean;
+}
+
+/**
+ * Clear residual on-disk priority fields for the given auth files.
+ *
+ * Mirrors applyDrainOrder's dual write path:
+ * - Proxy running: PATCH priority:0 via the management API (the only safe path;
+ *   a direct write is clobbered by the proxy's whole-file persist).
+ * - Proxy stopped: delete the field directly with an atomic temp-rename.
+ *
+ * Idempotent: files with no priority field are reported as alreadyClear, not
+ * failures. The running path always reports the file as cleared on a 200 (the
+ * API treats a missing-attribute delete as a successful no-op), so this is safe
+ * to run repeatedly.
+ *
+ * @param tokenFiles Auth file basenames to clear.
+ * @param proxyRunning Whether the proxy is currently running.
+ */
+export async function clearDrainOrderPriorities(
+  tokenFiles: string[],
+  proxyRunning: boolean
+): Promise<ClearDrainOrderPrioritiesResult> {
+  const result: ClearDrainOrderPrioritiesResult = {
+    cleared: [],
+    alreadyClear: [],
+    failed: [],
+    usedManagementApi: proxyRunning,
+  };
+
+  for (const tokenFile of tokenFiles) {
+    if (proxyRunning) {
+      // Skip the API round-trip when the file already has no priority on disk.
+      if (readAuthFilePriority(tokenFile) === undefined) {
+        result.alreadyClear.push(tokenFile);
+        continue;
+      }
+      const ok = await clearAuthFilePriorityViaApi(tokenFile);
+      if (ok) {
+        result.cleared.push(tokenFile);
+      } else {
+        result.failed.push({ tokenFile, reason: 'management API PATCH failed' });
+      }
+    } else {
+      try {
+        const removed = clearAuthFilePriorityDirect(tokenFile);
+        if (removed) {
+          result.cleared.push(tokenFile);
+        } else {
+          result.alreadyClear.push(tokenFile);
+        }
+      } catch (err) {
+        result.failed.push({ tokenFile, reason: (err as Error).message });
+      }
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -495,4 +638,77 @@ export function resolveEffectiveDrainOrder(
   );
 
   return { mode, entries, hasDrift };
+}
+
+/** Raw auth-file entry shape we parse out of the management listing. */
+interface RawManagementAuthFile {
+  name?: unknown;
+  unavailable?: unknown;
+  next_retry_after?: unknown;
+}
+
+/**
+ * Fetch in-proxy cooldowns from the running CLIProxy.
+ *
+ * Pool routing turns cooling ON, so when a credential hits a 429 the proxy
+ * marks it Unavailable and rotates to a healthy one. That cooldown lives inside
+ * the proxy process (not in CCS's quota-paused.json), so the only way the quota
+ * Pool section can explain a session hop is to read it here.
+ *
+ * GET /v0/management/auth-files returns { files: [{ name, unavailable,
+ * next_retry_after, ... }] }. We classify any entry with unavailable=true as a
+ * cooling credential and parse next_retry_after (RFC3339) into epoch ms when
+ * present.
+ *
+ * Degrades silently to an empty array on any failure (proxy not running,
+ * endpoint missing on an older binary, malformed/unknown response shape,
+ * timeout): the caller falls back to its CCS-side cooldown view with no error
+ * spam in quota output. Latency is bounded by a single request and MGMT_TIMEOUT_MS.
+ *
+ * @returns One entry per auth file the proxy reports unavailable.
+ */
+export async function fetchProxyAuthCooldowns(): Promise<ProxyAuthCooldown[]> {
+  const target = getProxyTarget();
+  const url = buildProxyUrl(target, AUTH_FILES_PATH);
+  const headers = buildManagementHeaders(target);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), MGMT_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
+    if (!response.ok) {
+      return [];
+    }
+
+    const data = (await response.json()) as { files?: unknown };
+    if (!Array.isArray(data.files)) {
+      return [];
+    }
+
+    const cooldowns: ProxyAuthCooldown[] = [];
+    for (const raw of data.files as RawManagementAuthFile[]) {
+      // Defensive parse: only entries the proxy explicitly flags unavailable.
+      if (!raw || raw.unavailable !== true) {
+        continue;
+      }
+      const name = typeof raw.name === 'string' ? raw.name : undefined;
+      if (!name) {
+        continue;
+      }
+      let cooldownUntil: number | undefined;
+      if (typeof raw.next_retry_after === 'string') {
+        const parsed = Date.parse(raw.next_retry_after);
+        if (Number.isFinite(parsed)) {
+          cooldownUntil = parsed;
+        }
+      }
+      cooldowns.push({ tokenFile: name, cooldownUntil });
+    }
+    return cooldowns;
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }

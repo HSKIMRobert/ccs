@@ -3,7 +3,10 @@
  * account states must be NAMED differently because they map to different client
  * failure modes), reset formatting, and drain-order mode labels.
  */
-import { describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { describeAccountState, formatCooldownReset, modeLabel } from '../pool-state-renderer';
 import type { PoolAccountState } from '../../../cliproxy/accounts/pool-state';
 
@@ -30,7 +33,10 @@ describe('describeAccountState', () => {
 
     expect(available.label).toBe('available');
     expect(available.tone).toBe('available');
-    expect(paused.label).toContain('paused');
+    // The pause label must NOT claim "manual" - a pause can be automatic (ban
+    // detection, cross-provider isolation, expired-but-unrestored cooldown).
+    expect(paused.label).toBe('paused (manual or safety)');
+    expect(paused.label).not.toBe('paused (manual)');
     expect(paused.tone).toBe('paused');
     expect(cooling.label).toContain('cooling until');
     expect(cooling.tone).toBe('cooling');
@@ -76,5 +82,143 @@ describe('modeLabel', () => {
     expect(modeLabel('manual')).toBe('manual (--set)');
     expect(modeLabel('tier')).toBe('tier-derived (--by-tier)');
     expect(modeLabel('file')).toBe('file order');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renderProviderPoolSection - integration (resume hint, file-mode drift copy,
+// pool-on cooling honesty note). Uses an isolated CCS_HOME and captures console.
+// ---------------------------------------------------------------------------
+
+describe('renderProviderPoolSection', () => {
+  let tempHome: string;
+  let originalCcsHome: string | undefined;
+  let logSpy: ReturnType<typeof spyOn>;
+  let lines: string[];
+
+  function writeAuthFile(fileName: string, fields: Record<string, unknown> = {}): void {
+    const authDir = path.join(tempHome, '.ccs', 'cliproxy', 'auth');
+    fs.mkdirSync(authDir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(
+      path.join(authDir, fileName),
+      JSON.stringify({ type: 'claude', ...fields }, null, 2),
+      { mode: 0o600 }
+    );
+  }
+
+  const SETTINGS_OFF = {
+    poolEnabled: false,
+    strategy: 'round-robin',
+    sessionAffinityEnabled: false,
+    sessionAffinityTtl: '1h',
+  } as const;
+
+  const SETTINGS_ON = {
+    poolEnabled: true,
+    strategy: 'fill-first',
+    sessionAffinityEnabled: true,
+    sessionAffinityTtl: '1h',
+  } as const;
+
+  beforeEach(() => {
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-pool-renderer-'));
+    originalCcsHome = process.env.CCS_HOME;
+    process.env.CCS_HOME = tempHome;
+    process.exitCode = 0;
+    lines = [];
+    logSpy = spyOn(console, 'log').mockImplementation((msg?: unknown) => {
+      if (typeof msg === 'string') lines.push(msg);
+    });
+  });
+
+  afterEach(() => {
+    logSpy.mockRestore();
+    process.exitCode = 0;
+    if (originalCcsHome !== undefined) {
+      process.env.CCS_HOME = originalCcsHome;
+    } else {
+      delete process.env.CCS_HOME;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it('emits a resume hint pointing at the real command when an account is paused', async () => {
+    writeAuthFile('claude-a.json', { email: 'a@x.com' });
+    writeAuthFile('claude-b.json', { email: 'b@x.com' });
+
+    const { registerAccount, pauseAccount } = await import(
+      `../../../cliproxy/accounts/registry?renderer-resume=${Date.now()}`
+    );
+    registerAccount('claude', 'claude-a.json', 'a@x.com');
+    registerAccount('claude', 'claude-b.json', 'b@x.com');
+    pauseAccount('claude', 'a@x.com');
+
+    const { renderProviderPoolSection } = await import(
+      `../pool-state-renderer?renderer-resume=${Date.now()}`
+    );
+    await renderProviderPoolSection('claude', SETTINGS_OFF, 1_000_000);
+
+    const output = lines.join('\n');
+    // The hint names the actual resume subcommand (ccs cliproxy resume <account>).
+    expect(output).toContain('Resume:');
+    expect(output).toContain('ccs cliproxy resume <account>');
+  });
+
+  it('does NOT emit a resume hint when no account is paused', async () => {
+    writeAuthFile('claude-a.json', { email: 'a@x.com' });
+    const { registerAccount } = await import(
+      `../../../cliproxy/accounts/registry?renderer-no-resume=${Date.now()}`
+    );
+    registerAccount('claude', 'claude-a.json', 'a@x.com');
+
+    const { renderProviderPoolSection } = await import(
+      `../pool-state-renderer?renderer-no-resume=${Date.now()}`
+    );
+    await renderProviderPoolSection('claude', SETTINGS_OFF, 1_000_000);
+
+    expect(lines.join('\n')).not.toContain('Resume:');
+  });
+
+  it('uses honest file-mode drift copy (no "stored order") when residual priorities exist', async () => {
+    // Residual on-disk priorities, but no stored drain config -> file mode drift.
+    writeAuthFile('claude-a.json', { email: 'a@x.com', priority: 1 });
+    writeAuthFile('claude-b.json', { email: 'b@x.com', priority: 5 });
+
+    const { registerAccount } = await import(
+      `../../../cliproxy/accounts/registry?renderer-drift=${Date.now()}`
+    );
+    registerAccount('claude', 'claude-a.json', 'a@x.com');
+    registerAccount('claude', 'claude-b.json', 'b@x.com');
+
+    const { renderProviderPoolSection } = await import(
+      `../pool-state-renderer?renderer-drift=${Date.now()}`
+    );
+    await renderProviderPoolSection('claude', SETTINGS_OFF, 1_000_000);
+
+    const output = lines.join('\n');
+    expect(output).toContain('Drift:');
+    // File mode has no stored order, so the copy must not claim one nor tell the
+    // user to "re-apply with --set/--by-tier" (which re-adopts managed ordering).
+    expect(output).toContain('residual priorities');
+    expect(output).toContain('--reset');
+    expect(output).not.toContain('stored order does not match');
+    expect(output).not.toContain('re-apply with --set/--by-tier');
+  });
+
+  it('prints the in-proxy-cooldown honesty note when pool is ON but no proxy data is available', async () => {
+    writeAuthFile('claude-a.json', { email: 'a@x.com' });
+    const { registerAccount } = await import(
+      `../../../cliproxy/accounts/registry?renderer-note=${Date.now()}`
+    );
+    registerAccount('claude', 'claude-a.json', 'a@x.com');
+
+    const { renderProviderPoolSection } = await import(
+      `../pool-state-renderer?renderer-note=${Date.now()}`
+    );
+    // No proxy is running in the test home, so the fetch degrades to no data and
+    // the honesty note must be printed instead of implying every account is fine.
+    await renderProviderPoolSection('claude', SETTINGS_ON, 1_000_000);
+
+    expect(lines.join('\n')).toContain('live in-proxy 429 cooldowns are not shown here');
   });
 });

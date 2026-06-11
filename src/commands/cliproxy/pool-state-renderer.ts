@@ -12,11 +12,13 @@
 
 import { subheader, color, dim, warn } from '../../utils/ui';
 import {
-  resolvePoolState,
+  resolvePoolStateWithProxyCooldowns,
+  hasProxySourcedCooling,
   POOL_TIER_AWARE_PROVIDERS,
   type PoolAccountState,
   type PoolRoutingSettings,
   type PoolDrainOrderMode,
+  type PoolState,
 } from '../../cliproxy/accounts/pool-state';
 import {
   getConfiguredCliproxyRoutingStrategy,
@@ -95,7 +97,11 @@ export function describeAccountState(
       return { label: `cooling until ${reset}${src}`, tone: 'cooling' };
     }
     case 'paused':
-      return { label: 'paused (manual)', tone: 'paused' };
+      // A pause can be manual (the user) OR automatic (ban detection,
+      // cross-provider isolation, an expired-but-not-restored quota cooldown).
+      // The classifier cannot tell which without a stored reason, so the label
+      // must not claim "manual". See pool-state.ts classifyAccount.
+      return { label: 'paused (manual or safety)', tone: 'paused' };
     case 'available':
     default:
       return { label: 'available', tone: 'available' };
@@ -115,15 +121,82 @@ export function modeLabel(mode: PoolDrainOrderMode): string {
 }
 
 /**
+ * Render the drift warning. The honest copy depends on whether a stored order
+ * exists: in file mode there is no stored order (the user reset or never set
+ * one), so referencing a "stored order" or telling them to "re-apply" would be
+ * false. File-mode drift means residual on-disk priorities (e.g. left by a prior
+ * managed order) still steer the selector, and the fix is to clear them.
+ */
+function renderDrainOrderDrift(provider: CLIProxyProvider, pool: PoolState): void {
+  if (!pool.drainOrder.hasDrift) {
+    return;
+  }
+
+  if (pool.drainOrder.mode === 'file') {
+    console.log(
+      `    ${warn(
+        `Drift: residual priorities from a previous managed order still steer the selector;\n` +
+          `    clear them with "ccs cliproxy accounts order ${provider} --reset" (or re-auth the accounts).`
+      )}`
+    );
+    return;
+  }
+
+  console.log(
+    `    ${warn(
+      `Drift: stored order does not match auth files; run "ccs cliproxy accounts order ${provider}" to inspect, then re-apply with --set/--by-tier.`
+    )}`
+  );
+}
+
+/**
+ * Render the honesty note about cooling visibility.
+ *
+ * - Pool OFF: cooling is disabled at the proxy (stock stability mode), so no
+ *   account ever shows a quota cooldown here. State that plainly.
+ * - Pool ON but no live proxy reading available (proxy stopped/older binary, or
+ *   the listing returned no cooling entries): the in-proxy 429 cooldowns that
+ *   actually drive session hops are not visible, so say so rather than implying
+ *   every account is healthy.
+ */
+function renderCoolingNote(pool: PoolState, settings: PoolRoutingSettings): void {
+  if (!settings.poolEnabled) {
+    const anyCooling = pool.states.some((s) => s.state === 'cooling');
+    if (!anyCooling) {
+      console.log(
+        dim(
+          '    Note: cooling is off (stock stability mode); accounts never show a quota cooldown here.'
+        )
+      );
+    }
+    return;
+  }
+
+  // Pool ON: only omit the caveat once we actually have live proxy-sourced
+  // cooling data to show. Otherwise the states reflect CCS-side checks only.
+  if (!hasProxySourcedCooling(pool)) {
+    console.log(
+      dim(
+        '    Note: live in-proxy 429 cooldowns are not shown here; states reflect CCS-side checks only.'
+      )
+    );
+  }
+}
+
+/**
  * Render the pool context section for one provider. Returns silently (renders
  * nothing) when the provider has no accounts, so quota output stays clean.
+ *
+ * Async because it folds in live in-proxy 429 cooldowns (the real session-hop
+ * mechanism when pool routing is ON) via a single bounded management API read;
+ * that read degrades silently when the proxy is stopped, remote, or older.
  */
-export function renderProviderPoolSection(
+export async function renderProviderPoolSection(
   provider: CLIProxyProvider,
   settings: PoolRoutingSettings,
   now: number = Date.now()
-): void {
-  const pool = resolvePoolState({ provider, settings, now });
+): Promise<void> {
+  const pool = await resolvePoolStateWithProxyCooldowns({ provider, settings, now });
 
   if (pool.states.length === 0) {
     return;
@@ -155,16 +228,7 @@ export function renderProviderPoolSection(
     console.log(`    Order:    ${dim(orderMode)} ${dim('(no active accounts)')}`);
   }
 
-  // Drift: stored config order diverges from what is on disk. Re-auth drops the
-  // priority attribute and --reset leaves residuals, so warn instead of showing
-  // a "next account" that silently disagrees with the selector.
-  if (pool.drainOrder.hasDrift) {
-    console.log(
-      `    ${warn(
-        `Drift: stored order does not match auth files; run "ccs cliproxy accounts order ${provider}" to inspect, then re-apply with --set/--by-tier.`
-      )}`
-    );
-  }
+  renderDrainOrderDrift(provider, pool);
 
   // Per-account state. Render in drain order first, then any accounts not in the
   // order (paused accounts are excluded from the order but still listed).
@@ -188,16 +252,13 @@ export function renderProviderPoolSection(
     console.log(`      - ${account.accountId}${defaultMark}: ${rendered}`);
   }
 
-  // Honest note when cooling is impossible to observe (cooling flip off).
-  if (!settings.poolEnabled) {
-    const anyCooling = pool.states.some((s) => s.state === 'cooling');
-    if (!anyCooling) {
-      console.log(
-        dim(
-          '    Note: cooling is off (stock stability mode); accounts never show a quota cooldown here.'
-        )
-      );
-    }
+  renderCoolingNote(pool, settings);
+
+  // Resume hint: a pause can be manual OR automatic (ban detection,
+  // cross-provider isolation, expired-but-unrestored quota cooldown). Point the
+  // user at the real resume command so they can recover whichever caused it.
+  if (pool.states.some((s) => s.state === 'paused')) {
+    console.log(`    ${dim(`Resume:       ccs cliproxy resume <account>`)}`);
   }
 
   // Reset/management hints. Dim hint matches the order subcommand's "To update:"

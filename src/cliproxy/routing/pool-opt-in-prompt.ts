@@ -20,7 +20,11 @@ import {
   POOL_ROUTING_VERIFIED_PROVIDERS,
   POOL_MAX_RETRY_CREDENTIALS,
 } from './routing-strategy';
-import { loadOrCreateUnifiedConfig, mutateConfig } from '../../config/config-loader-facade';
+import {
+  loadOrCreateUnifiedConfig,
+  mutateConfig,
+  hasUnifiedConfig,
+} from '../../config/config-loader-facade';
 import { CLIPROXY_DEFAULT_PORT } from '../config/port-manager';
 import { getConfigPathForPort } from '../config/path-resolver';
 import { getAuthDir } from '../config/path-resolver';
@@ -63,6 +67,10 @@ export function isPoolPromptDismissed(): boolean {
  * Mark the pool routing prompt as permanently dismissed (user said no explicitly).
  */
 export function dismissPoolPrompt(): void {
+  // Defense in depth: never write the unified config on a legacy install — that
+  // would create config.yaml and silently flip isUnifiedMode().  maybeOfferPoolRouting
+  // already gates the only caller, but this keeps the exported helper safe too.
+  if (!hasUnifiedConfig()) return;
   mutateConfig((cfg) => {
     if (!cfg.cliproxy) return;
     cfg.cliproxy.pool_routing = {
@@ -134,6 +142,23 @@ export async function maybeOfferPoolRouting(
     return { prompted: false, enabled: false, skipped: true, skipReason: 'not-at-transition' };
   }
 
+  // Legacy install guard: on a profiles.json/config.json-only install there is no
+  // unified config.yaml.  Both accept (enablePoolRouting) and decline
+  // (dismissPoolPrompt) write the unified config, which would create config.yaml
+  // and silently flip isUnifiedMode() outside the deliberate `ccs migrate` flow,
+  // orphaning the user's config.json profiles.  Skip entirely before any prompt
+  // or dismissal persistence.  Mirrors the guards in create-command.ts and
+  // account-flow.ts and the hazard documented in pool-onboarding-hint.ts.
+  if (!hasUnifiedConfig()) {
+    console.log(
+      info(
+        '[i] Multiple accounts detected, but pool routing needs the unified config. ' +
+          "Run 'ccs migrate' first, then 'ccs cliproxy pool --enable'."
+      )
+    );
+    return { prompted: false, enabled: false, skipped: true, skipReason: 'legacy-config' };
+  }
+
   // Only for providers where pool routing is verified
   if (!POOL_ROUTING_VERIFIED_PROVIDERS.has(provider)) {
     return {
@@ -176,6 +201,19 @@ export async function maybeOfferPoolRouting(
   // Non-TTY (piped input / CI): skip silently
   if (!process.stdin.isTTY || !process.stderr.isTTY) {
     return { prompted: false, enabled: false, skipped: true, skipReason: 'non-tty' };
+  }
+
+  // Automation bypass: InteractivePrompt.confirm auto-returns true when --yes/-y
+  // is in argv or CCS_YES=1 is set, regardless of the default:false.  This is an
+  // INSTANCE-GLOBAL routing/cooling consent decision; a generic automation flag
+  // must never grant it.  Skip WITHOUT printing the prompt and WITHOUT persisting
+  // dismissal, so a future interactive run still offers the opt-in.
+  if (
+    process.env.CCS_YES === '1' ||
+    process.argv.includes('--yes') ||
+    process.argv.includes('-y')
+  ) {
+    return { prompted: false, enabled: false, skipped: true, skipReason: 'automation-bypass' };
   }
 
   // Gather all providers with 2+ accounts for disclosure
@@ -226,6 +264,14 @@ export async function maybeOfferPoolRouting(
   const result = enablePoolRouting(port, { configPath, authDir });
 
   console.log('');
+  if (result.failed) {
+    // Config regeneration failed and the flag was rolled back: pool routing is
+    // NOT active.  Surface the recovery copy and report enabled:false so callers
+    // (and quota/dashboard) do not claim pool ON.
+    console.log(warn(result.message));
+    console.log('');
+    return { prompted: true, enabled: false, skipped: false };
+  }
   if (result.changed) {
     console.log(info(result.message));
   }

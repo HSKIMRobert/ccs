@@ -793,6 +793,118 @@ describe('Phase 3: cross-lane email overlap guard', () => {
     consoleErrorSpy.mockRestore();
   });
 
+  // ── Account-profile lane enumeration (isolated CLAUDE_CONFIG_DIR lanes) ──
+  // The ambient ~/.claude check alone misses the isolated lanes of CCS account
+  // profiles — exactly the multi-account population the guard protects. These
+  // tests prove the guard also reads each profile lane's .claude.json email.
+
+  /** Write a profiles.json account entry + its instance-lane .claude.json email. */
+  function seedAccountLane(ccsDir: string, name: string, email: string | null): void {
+    const profilesPath = path.join(ccsDir, 'profiles.json');
+    let payload: { version: string; profiles: Record<string, unknown>; default: string | null };
+    try {
+      payload = JSON.parse(fs.readFileSync(profilesPath, 'utf-8'));
+    } catch {
+      payload = { version: '2.0.0', profiles: {}, default: null };
+    }
+    payload.profiles[name] = {
+      type: 'account',
+      created: new Date().toISOString(),
+      last_used: null,
+    };
+    fs.writeFileSync(profilesPath, JSON.stringify(payload, null, 2), 'utf8');
+
+    const instanceDir = path.join(ccsDir, 'instances', name);
+    fs.mkdirSync(instanceDir, { recursive: true });
+    if (email !== null) {
+      fs.writeFileSync(
+        path.join(instanceDir, '.claude.json'),
+        JSON.stringify({ oauthAccount: { emailAddress: email } }, null, 2),
+        'utf8'
+      );
+    }
+  }
+
+  it('warns when a CCS account-profile lane email matches, even though ambient ~/.claude is logged out', () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    seedAccountLane(ccsDir, 'work', 'lane@example.com');
+
+    // Ambient default lane is logged OUT — old guard would stay silent.
+    const spy = spyOn(claudeDetector, 'getClaudeAuthStatus').mockReturnValue({
+      loggedIn: false,
+      email: null,
+      authMethod: null,
+      apiProvider: null,
+      orgId: null,
+      orgName: null,
+      subscriptionType: null,
+    });
+    const consoleErrorSpy = spyOn(console, 'error').mockImplementation((msg?: unknown) => {
+      if (typeof msg === 'string') stderrOutput.push(msg);
+    });
+
+    checkCrossLaneEmailOverlap('agy', 'lane@example.com');
+
+    const combined = stderrOutput.join('\n');
+    expect(combined).toContain('cross-lane email overlap');
+    // The matching profile lane is named so the user knows which lane overlaps.
+    expect(combined).toContain('profile "work"');
+
+    spy.mockRestore();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('does not warn when no account-profile lane email matches', () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    seedAccountLane(ccsDir, 'work', 'someone-else@example.com');
+
+    const spy = spyOn(claudeDetector, 'getClaudeAuthStatus').mockReturnValue({
+      loggedIn: false,
+      email: null,
+      authMethod: null,
+      apiProvider: null,
+      orgId: null,
+      orgName: null,
+      subscriptionType: null,
+    });
+    const consoleErrorSpy = spyOn(console, 'error').mockImplementation((msg?: unknown) => {
+      if (typeof msg === 'string') stderrOutput.push(msg);
+    });
+
+    checkCrossLaneEmailOverlap('agy', 'mine@example.com');
+
+    expect(stderrOutput.join('\n')).not.toContain('cross-lane');
+
+    spy.mockRestore();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('silently skips an account-profile lane with a missing/unreadable .claude.json', () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    // Account profile exists but its lane has no .claude.json (email === null).
+    seedAccountLane(ccsDir, 'broken', null);
+
+    const spy = spyOn(claudeDetector, 'getClaudeAuthStatus').mockReturnValue({
+      loggedIn: false,
+      email: null,
+      authMethod: null,
+      apiProvider: null,
+      orgId: null,
+      orgName: null,
+      subscriptionType: null,
+    });
+    const consoleErrorSpy = spyOn(console, 'error').mockImplementation((msg?: unknown) => {
+      if (typeof msg === 'string') stderrOutput.push(msg);
+    });
+
+    // Must not warn and must not throw on the unreadable lane.
+    expect(() => checkCrossLaneEmailOverlap('agy', 'lane@example.com')).not.toThrow();
+    expect(stderrOutput.join('\n')).not.toContain('cross-lane');
+
+    spy.mockRestore();
+    consoleErrorSpy.mockRestore();
+  });
+
   // ── 15. Safety invariant: disablePoolRouting always restores cooling=true ─
   it('safety invariant: disablePoolRouting ALWAYS writes disable-cooling: true', async () => {
     const { enablePoolRouting, disablePoolRouting } = await import(
@@ -1278,5 +1390,196 @@ describe('Phase 3: routing-subcommand pool-active warning regression', () => {
 
     consoleSpy.mockRestore();
     affinitySpy.mockRestore();
+  });
+});
+
+// ── PR #1514 review fixes ────────────────────────────────────────────────────
+// Legacy-config gate, automation bypass, enable rollback-on-regenerate-failure,
+// remote pool-state manageable flag, and apply-message pool override note.
+
+describe('PR #1514: maybeOfferPoolRouting legacy-config and automation guards', () => {
+  let tempHome: string;
+  let originalCcsHome: string | undefined;
+
+  beforeEach(() => {
+    tempHome = createTestHome();
+    originalCcsHome = process.env.CCS_HOME;
+    process.env.CCS_HOME = tempHome;
+    invalidateSharedConfigCache();
+  });
+
+  afterEach(() => {
+    if (originalCcsHome !== undefined) {
+      process.env.CCS_HOME = originalCcsHome;
+    } else {
+      delete process.env.CCS_HOME;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+    delete process.env.CCS_YES;
+  });
+
+  // Fix index 5: legacy profiles.json-only install (no config.yaml) must skip the
+  // prompt before any prompting OR dismissal persistence, so we never implicitly
+  // create config.yaml and silently flip isUnifiedMode().
+  it('skips with legacy-config and does not create config.yaml (decline path not reached)', async () => {
+    // Remove the config.yaml createTestHome wrote so hasUnifiedConfig() is false.
+    const configYaml = path.join(tempHome, '.ccs', 'config.yaml');
+    fs.rmSync(configYaml, { force: true });
+    invalidateSharedConfigCache();
+
+    const result = await poolOptInModule.maybeOfferPoolRouting('claude', 1);
+
+    expect(result.skipped).toBe(true);
+    expect(result.skipReason).toBe('legacy-config');
+    // Critical: the dismissal/accept paths (which write config.yaml) must NOT run.
+    expect(fs.existsSync(configYaml)).toBe(false);
+  });
+
+  // Fix index 9: --yes / CCS_YES must NOT auto-accept this instance-global consent.
+  // It must skip WITHOUT printing the prompt and WITHOUT persisting dismissal.
+  it('skips with automation-bypass under CCS_YES=1 without prompting or dismissing', async () => {
+    process.env.CCS_YES = '1';
+
+    // 2 accounts so we are past the post-add count check and reach the TTY/bypass guards.
+    const ccsDir = path.join(tempHome, '.ccs');
+    const accountsPath = path.join(ccsDir, 'cliproxy', 'accounts.json');
+    const authDir = path.join(ccsDir, 'cliproxy', 'auth');
+    fs.mkdirSync(path.dirname(accountsPath), { recursive: true });
+    fs.mkdirSync(authDir, { recursive: true });
+    fs.writeFileSync(
+      accountsPath,
+      JSON.stringify({
+        providers: {
+          claude: {
+            default: 'a1',
+            accounts: {
+              a1: { email: 'a@b.com', tokenFile: 'a.json', nickname: 'a', createdAt: 0 },
+              a2: { email: 'c@d.com', tokenFile: 'c.json', nickname: 'c', createdAt: 0 },
+            },
+          },
+        },
+      }),
+      'utf-8'
+    );
+    fs.writeFileSync(path.join(authDir, 'a.json'), '{}', 'utf-8');
+    fs.writeFileSync(path.join(authDir, 'c.json'), '{}', 'utf-8');
+
+    // Force TTY so only the automation guard (not the non-tty guard) can fire.
+    const origStdinTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+    const origStderrTTY = Object.getOwnPropertyDescriptor(process.stderr, 'isTTY');
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    Object.defineProperty(process.stderr, 'isTTY', { value: true, configurable: true });
+
+    // confirm must NEVER be called on the bypass path.
+    const confirmSpy = spyOn(promptModule.InteractivePrompt, 'confirm').mockResolvedValue(true);
+
+    const result = await poolOptInModule.maybeOfferPoolRouting('claude', 1, 8317);
+
+    expect(result.skipped).toBe(true);
+    expect(result.skipReason).toBe('automation-bypass');
+    expect(result.enabled).toBe(false);
+    expect(confirmSpy).not.toHaveBeenCalled();
+    // Dismissal must NOT be persisted (future interactive run should still offer).
+    expect(poolOptInModule.isPoolPromptDismissed()).toBe(false);
+
+    confirmSpy.mockRestore();
+    if (origStdinTTY) {
+      Object.defineProperty(process.stdin, 'isTTY', origStdinTTY);
+    } else {
+      delete (process.stdin as { isTTY?: boolean }).isTTY;
+    }
+    if (origStderrTTY) {
+      Object.defineProperty(process.stderr, 'isTTY', origStderrTTY);
+    } else {
+      delete (process.stderr as { isTTY?: boolean }).isTTY;
+    }
+  });
+});
+
+describe('PR #1514: enablePoolRouting rollback on regenerate failure', () => {
+  let tempHome: string;
+  let originalCcsHome: string | undefined;
+
+  beforeEach(() => {
+    tempHome = createTestHome();
+    originalCcsHome = process.env.CCS_HOME;
+    process.env.CCS_HOME = tempHome;
+    invalidateSharedConfigCache();
+  });
+
+  afterEach(() => {
+    if (originalCcsHome !== undefined) {
+      process.env.CCS_HOME = originalCcsHome;
+    } else {
+      delete process.env.CCS_HOME;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  // Fix index 6: if regenerateConfig throws, the pool_routing.enabled flag must be
+  // rolled back so status surfaces do not lie, and a recovery message is returned.
+  // Force a real fs failure (no mock): place a regular FILE where the config
+  // directory must be, so regenerateConfig's mkdirSync(dirname) throws ENOTDIR.
+  it('rolls back enabled flag and returns failure recovery copy when regenerate throws', async () => {
+    const ts = Date.now();
+    const { enablePoolRouting } = await import(`../routing/routing-strategy?p1514fail=${ts}`);
+    const { loadOrCreateUnifiedConfig } = await import(
+      `../../config/config-loader-facade?p1514fail=${ts}`
+    );
+    const ccsDir = path.join(tempHome, '.ccs');
+    const cliproxyDir = path.join(ccsDir, 'cliproxy');
+    fs.mkdirSync(cliproxyDir, { recursive: true });
+    // Block the config dir: create a FILE named "blocked" then aim the config path
+    // at blocked/config.yaml so mkdirSync(dirname) hits ENOTDIR.
+    const blockedFile = path.join(cliproxyDir, 'blocked');
+    fs.writeFileSync(blockedFile, 'not a dir', 'utf-8');
+    const configPath = path.join(blockedFile, 'config.yaml');
+    const authDir = path.join(cliproxyDir, 'auth');
+
+    const result = enablePoolRouting(8317, { configPath, authDir });
+
+    expect(result.failed).toBe(true);
+    expect(result.changed).toBe(false);
+    expect(result.message).toContain('[X] Could not write CLIProxy config');
+    expect(result.message).toContain('ccs cliproxy pool --enable');
+
+    // The flag must be rolled back to NOT-enabled so status surfaces do not lie.
+    const cfg = loadOrCreateUnifiedConfig();
+    expect(cfg.cliproxy?.pool_routing?.enabled).not.toBe(true);
+  });
+
+  // Repair path: when the flag is already true (a prior regenerate failed),
+  // pool --enable must re-run regenerateConfig instead of a dead no-op.
+  it('already-enabled path re-runs regenerateConfig (idempotent repair)', async () => {
+    const ts = Date.now();
+    // Persist enabled=true WITHOUT a regenerated config.yaml (simulate prior failure).
+    const { mutateConfig, invalidateConfigCache } = await import(
+      `../../config/config-loader-facade?p1514repair=${ts}`
+    );
+    mutateConfig((cfg: { cliproxy?: { pool_routing?: Record<string, unknown> } }) => {
+      cfg.cliproxy = cfg.cliproxy ?? {};
+      cfg.cliproxy.pool_routing = { enabled: true, max_retry_credentials: 3 };
+    });
+    invalidateConfigCache();
+    invalidateSharedConfigCache();
+
+    const { enablePoolRouting } = await import(`../routing/routing-strategy?p1514repair=${ts}`);
+    const ccsDir = path.join(tempHome, '.ccs');
+    const configPath = path.join(ccsDir, 'cliproxy', 'config.yaml');
+    const authDir = path.join(ccsDir, 'cliproxy', 'auth');
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.mkdirSync(authDir, { recursive: true });
+    // Config does NOT exist yet — the repair must create it.
+    expect(fs.existsSync(configPath)).toBe(false);
+
+    const result = enablePoolRouting(8317, { configPath, authDir });
+
+    // Idempotent (changed=false) but the config was regenerated with pool rails.
+    expect(result.changed).toBe(false);
+    expect(result.failed).toBeFalsy();
+    expect(fs.existsSync(configPath)).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('disable-cooling: false');
+    expect(content).toContain('strategy: fill-first');
   });
 });

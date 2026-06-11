@@ -17,7 +17,7 @@ import {
   computeTierDrainOrder,
   applyDrainOrder,
   resolveEffectiveDrainOrder,
-  readAuthFilePriority,
+  clearDrainOrderPriorities,
   tieBreakKey,
   type DrainOrderEntry,
   type DrainOrderInput,
@@ -122,9 +122,11 @@ async function handleOrderShow(provider: CLIProxyProvider): Promise<void> {
   const effective = resolveEffectiveDrainOrder(provider, accounts);
 
   if (effective.mode === 'file') {
-    // File order: no priority writes; show stable file order. Reached when no
-    // config is stored, or when a stored manual order has only stale IDs.
-    printFileOrderView(provider, accounts);
+    // File order: no priority writes. Render from the resolver's output so the
+    // displayed order matches what the selector actually drains, honouring any
+    // residual on-disk priorities (e.g. left by `order --reset`). Reached when
+    // no config is stored, or when a stored manual order has only stale IDs.
+    printFileOrderView(provider, effective.entries, effective.hasDrift);
     return;
   }
 
@@ -160,20 +162,25 @@ async function handleOrderShow(provider: CLIProxyProvider): Promise<void> {
   console.log('');
 }
 
-function readFilePriorityNote(tokenFile: string): string {
-  try {
-    const p = readAuthFilePriority(tokenFile);
-    return p !== undefined ? dim(` [priority: ${p}]`) : '';
-  } catch {
-    return '';
-  }
+function filePriorityNote(entry: DrainOrderEntry): string {
+  return entry.currentPriority !== undefined ? dim(` [priority: ${entry.currentPriority}]`) : '';
 }
 
 /**
- * Render the stable file-order view (no priority writes). Used when no drain
- * order config is stored, or when a stored manual order has only stale IDs.
+ * Render the file-order view from the shared resolver's output. No priority
+ * writes; used when no drain order config is stored, or when a stored manual
+ * order has only stale IDs.
+ *
+ * Entries arrive already sorted in selector pick order (on-disk priority desc,
+ * tokenFile asc on tie), so the displayed order matches what CLIProxy actually
+ * drains even when residual priorities exist (e.g. left by `order --reset`). The
+ * mode label and drift warning are kept honest for that residual case.
  */
-function printFileOrderView(provider: CLIProxyProvider, accounts: DrainOrderInput[]): void {
+function printFileOrderView(
+  provider: CLIProxyProvider,
+  entries: DrainOrderEntry[],
+  hasDrift: boolean
+): void {
   if (!TIER_AWARE_PROVIDERS.has(provider)) {
     console.log(
       info(
@@ -182,17 +189,27 @@ function printFileOrderView(provider: CLIProxyProvider, accounts: DrainOrderInpu
       )
     );
   }
-  console.log(`  Mode:  ${dim('file order (no priority set)')}`);
+  // Under drift, "no priority set" would be a lie - residual on-disk priorities
+  // are present and are what the selector follows. Label accordingly.
+  const label = hasDrift
+    ? 'file order (residual priorities present)'
+    : 'file order (no priority set)';
+  console.log(`  Mode:  ${dim(label)}`);
+  if (hasDrift) {
+    console.log('');
+    console.log(
+      warn(
+        `Drift detected: residual on-disk priorities steer the selector;\n` +
+          `    clear them with --reset (or re-auth the accounts) to return to plain file order.`
+      )
+    );
+  }
   console.log('');
-  console.log(subheader('Active accounts (file order):'));
-  // Sort by tokenFile ascending to match the Go selector's stable order.
-  // Upstream sorts by Auth.ID byte order and only lowercases on Windows (see tieBreakKey).
-  const sortedByFile = accounts
-    .slice()
-    .sort((a, b) => (tieBreakKey(a.tokenFile) < tieBreakKey(b.tokenFile) ? -1 : 1));
-  sortedByFile.forEach((a, idx) => {
-    const pri = readFilePriorityNote(a.tokenFile);
-    console.log(`  ${String(idx + 1).padStart(3)}  ${color(a.accountId, 'command')}${pri}`);
+  console.log(subheader('Active accounts (selector pick order):'));
+  // Entries are already in selector pick order from the resolver; render as-is.
+  entries.forEach((entry, idx) => {
+    const pri = filePriorityNote(entry);
+    console.log(`  ${String(idx + 1).padStart(3)}  ${color(entry.accountId, 'command')}${pri}`);
   });
   console.log('');
   console.log(
@@ -463,20 +480,113 @@ async function handleOrderSet(provider: CLIProxyProvider, setArg: string): Promi
 }
 
 /**
- * Reset drain order to file order (removes persisted config, no priority writes).
+ * Reset drain order to file order: remove the persisted config AND clear the
+ * residual priority field from the provider's auth files so the selector
+ * actually returns to plain file order.
+ *
+ * Clearing the field uses the same dual write path as --set/--by-tier:
+ * - Proxy running: PATCH priority:0 via the management API (the management layer
+ *   treats 0 as delete). A direct file write here would be clobbered by the
+ *   proxy's whole-file MarkResult persist, so the API path is mandatory.
+ * - Proxy stopped: delete the field directly with an atomic temp-rename.
+ *
+ * Remote targets are refused with guidance (same as --set/--by-tier), and an
+ * ambiguous proxy state (alive but not yet serving HTTP) is refused to avoid a
+ * clobbered write.
  */
 async function handleOrderReset(provider: CLIProxyProvider): Promise<void> {
-  const cleared = clearDrainOrderConfig(provider);
-  if (cleared) {
-    console.log(ok(`Drain order reset to file order for ${provider}.`));
+  const configCleared = clearDrainOrderConfig(provider);
+
+  // Collect the auth files that may carry residual priorities. Use
+  // getProviderAccounts() so file-copied fleets (not yet in accounts.json) are
+  // covered too; clearing is idempotent for files with no priority field.
+  const tokenFiles = getProviderAccounts(provider).map((a) => a.tokenFile);
+
+  if (tokenFiles.length === 0) {
+    if (configCleared) {
+      console.log(ok(`Drain order reset to file order for ${provider}.`));
+    } else {
+      console.log(info(`No drain order config found for ${provider}. Already in file order.`));
+    }
+    console.log('');
+    return;
+  }
+
+  // Remote targets: refuse with guidance - clearing priorities needs management
+  // API access that is not wired for remote proxies in v1.
+  const proxyTarget = getProxyTarget();
+  if (proxyTarget.isRemote) {
+    if (configCleared) {
+      console.log(ok(`Drain order config cleared for ${provider} (mode reset to file order).`));
+    } else {
+      console.log(info(`No drain order config found for ${provider}.`));
+    }
     console.log(
-      dim(
-        '  Note: existing priority values in auth files are not removed.\n' +
-          '  CLIProxy will continue using them until they are overwritten or files are re-created.'
+      warn(
+        `Remote proxy target detected. Residual auth-file priorities were NOT cleared;\n` +
+          `    drain order management for remote proxies is not supported in v1. Run this\n` +
+          `    command on the host running CLIProxy to clear them.`
       )
     );
+    console.log('');
+    process.exitCode = 1;
+    return;
+  }
+
+  const localPort = resolveLifecyclePort();
+  const proxyStatus = await detectRunningProxy(localPort);
+
+  // Ambiguous state: proxy alive but not yet serving HTTP. A direct write could
+  // be clobbered; refuse rather than risk a half-cleared state.
+  if (proxyStatus.running && !proxyStatus.verified) {
+    if (configCleared) {
+      console.log(ok(`Drain order config cleared for ${provider} (mode reset to file order).`));
+    }
+    console.log(
+      fail(
+        'Proxy state ambiguous - residual priorities not cleared. Retry in a moment or stop the proxy first.'
+      )
+    );
+    console.log('');
+    process.exitCode = 1;
+    return;
+  }
+
+  const proxyRunning = proxyStatus.running && proxyStatus.verified;
+  if (proxyRunning) {
+    console.log(
+      info('Proxy is running - clearing priorities via management API (avoids clobber race).')
+    );
+  } else {
+    console.log(info('Proxy is stopped - clearing priorities directly in auth files.'));
+  }
+
+  const result = await clearDrainOrderPriorities(tokenFiles, proxyRunning);
+
+  if (configCleared || result.cleared.length > 0) {
+    console.log(ok(`Drain order reset to file order for ${provider}.`));
   } else {
     console.log(info(`No drain order config found for ${provider}. Already in file order.`));
+  }
+
+  if (result.cleared.length > 0) {
+    console.log(ok(`Cleared residual priority from ${result.cleared.length} auth file(s).`));
+  }
+  if (result.alreadyClear.length > 0) {
+    console.log(
+      info(`${result.alreadyClear.length} auth file(s) had no priority set (nothing to clear).`)
+    );
+  }
+  if (result.failed.length > 0) {
+    for (const f of result.failed) {
+      console.log(fail(`Failed to clear priority for ${f.tokenFile}: ${f.reason}`));
+    }
+    console.log(
+      dim(
+        '  Residual priorities remain on the failed files above and will still steer the selector.'
+      )
+    );
+    process.exitCode = 1;
   }
   console.log('');
 }

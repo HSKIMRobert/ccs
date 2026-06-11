@@ -721,3 +721,215 @@ describe('resolveEffectiveDrainOrder', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// clearAuthFilePriorityDirect + clearDrainOrderPriorities
+// (the missing half of `order --reset`: actually strip residual priorities)
+// ---------------------------------------------------------------------------
+
+describe('clearAuthFilePriorityDirect', () => {
+  it('removes the priority field and preserves all other fields', async () => {
+    await withIsolatedHome(async (homeDir) => {
+      const authDir = path.join(homeDir, '.ccs', 'cliproxy', 'auth');
+      writeAuthFile(authDir, 'a.json', { email: 'a@x.com', priority: 4, keep: 'me' });
+
+      const { clearAuthFilePriorityDirect } = await loadDrainOrder();
+      const removed = clearAuthFilePriorityDirect('a.json');
+
+      expect(removed).toBe(true);
+      const data = readAuthFile(authDir, 'a.json');
+      expect('priority' in data).toBe(false);
+      expect(data.keep).toBe('me');
+      expect(data.email).toBe('a@x.com');
+    });
+  });
+
+  it('returns false (no-op) when the file has no priority field', async () => {
+    await withIsolatedHome(async (homeDir) => {
+      const authDir = path.join(homeDir, '.ccs', 'cliproxy', 'auth');
+      writeAuthFile(authDir, 'a.json', { email: 'a@x.com' });
+
+      const { clearAuthFilePriorityDirect } = await loadDrainOrder();
+      expect(clearAuthFilePriorityDirect('a.json')).toBe(false);
+    });
+  });
+
+  it('throws when the file does not exist', async () => {
+    await withIsolatedHome(async () => {
+      const { clearAuthFilePriorityDirect } = await loadDrainOrder();
+      expect(() => clearAuthFilePriorityDirect('ghost.json')).toThrow();
+    });
+  });
+});
+
+describe('clearDrainOrderPriorities - direct path (proxy stopped)', () => {
+  it('clears residual priorities from all files via direct write', async () => {
+    await withIsolatedHome(async (homeDir) => {
+      const authDir = path.join(homeDir, '.ccs', 'cliproxy', 'auth');
+      writeAuthFile(authDir, 'a.json', { email: 'a@x.com', priority: 3 });
+      writeAuthFile(authDir, 'b.json', { email: 'b@x.com' }); // already clear
+
+      const { clearDrainOrderPriorities } = await loadDrainOrder();
+      const result = await clearDrainOrderPriorities(['a.json', 'b.json'], false);
+
+      expect(result.usedManagementApi).toBe(false);
+      expect(result.cleared).toEqual(['a.json']);
+      expect(result.alreadyClear).toEqual(['b.json']);
+      expect(result.failed).toHaveLength(0);
+      expect('priority' in readAuthFile(authDir, 'a.json')).toBe(false);
+    });
+  });
+
+  it('records a failure for a missing file', async () => {
+    await withIsolatedHome(async () => {
+      const { clearDrainOrderPriorities } = await loadDrainOrder();
+      const result = await clearDrainOrderPriorities(['ghost.json'], false);
+      expect(result.failed).toHaveLength(1);
+      expect(result.cleared).toHaveLength(0);
+    });
+  });
+});
+
+describe('clearDrainOrderPriorities - management API path (proxy running)', () => {
+  it('PATCHes priority:0 (delete) for files with a residual priority and skips clear ones', async () => {
+    await withIsolatedHome(async (homeDir) => {
+      const authDir = path.join(homeDir, '.ccs', 'cliproxy', 'auth');
+      writeAuthFile(authDir, 'a.json', { email: 'a@x.com', priority: 3 });
+      writeAuthFile(authDir, 'b.json', { email: 'b@x.com' }); // already clear -> no API call
+
+      const calls: Array<{ url: string; body: unknown }> = [];
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        calls.push({ url, body: JSON.parse(String(init?.body ?? '{}')) });
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
+
+      try {
+        const { clearDrainOrderPriorities } = await loadDrainOrder();
+        const result = await clearDrainOrderPriorities(['a.json', 'b.json'], true);
+
+        expect(result.usedManagementApi).toBe(true);
+        expect(result.cleared).toEqual(['a.json']);
+        expect(result.alreadyClear).toEqual(['b.json']);
+        expect(result.failed).toHaveLength(0);
+
+        // Only a.json (which had a residual priority) triggered an API call,
+        // and it patched priority:0 (the delete sentinel).
+        expect(calls).toHaveLength(1);
+        expect(calls[0].url).toContain('/v0/management/auth-files/fields');
+        expect(calls[0].body).toEqual({ name: 'a.json', priority: 0 });
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  it('records a failure when the PATCH returns a non-ok status', async () => {
+    await withIsolatedHome(async (homeDir) => {
+      const authDir = path.join(homeDir, '.ccs', 'cliproxy', 'auth');
+      writeAuthFile(authDir, 'a.json', { email: 'a@x.com', priority: 3 });
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async () => new Response('nope', { status: 500 })) as typeof fetch;
+
+      try {
+        const { clearDrainOrderPriorities } = await loadDrainOrder();
+        const result = await clearDrainOrderPriorities(['a.json'], true);
+        expect(result.cleared).toHaveLength(0);
+        expect(result.failed).toHaveLength(1);
+        expect(result.failed[0].tokenFile).toBe('a.json');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fetchProxyAuthCooldowns - live in-proxy 429 cooldowns
+// ---------------------------------------------------------------------------
+
+describe('fetchProxyAuthCooldowns', () => {
+  it('classifies unavailable entries as cooldowns and parses next_retry_after', async () => {
+    await withIsolatedHome(async () => {
+      const next = '2026-06-11T12:00:00.000Z';
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async () =>
+        new Response(
+          JSON.stringify({
+            files: [
+              { name: 'cooling.json', unavailable: true, next_retry_after: next },
+              { name: 'no-retry.json', unavailable: true },
+              { name: 'healthy.json', unavailable: false },
+            ],
+          }),
+          { status: 200 }
+        )) as typeof fetch;
+
+      try {
+        const { fetchProxyAuthCooldowns } = await loadDrainOrder();
+        const cooldowns = await fetchProxyAuthCooldowns();
+
+        // Only the two unavailable entries are returned; healthy.json is excluded.
+        expect(cooldowns.map((c: { tokenFile: string }) => c.tokenFile).sort()).toEqual([
+          'cooling.json',
+          'no-retry.json',
+        ]);
+        const cooling = cooldowns.find(
+          (c: { tokenFile: string }) => c.tokenFile === 'cooling.json'
+        );
+        expect(cooling?.cooldownUntil).toBe(Date.parse(next));
+        const noRetry = cooldowns.find(
+          (c: { tokenFile: string }) => c.tokenFile === 'no-retry.json'
+        );
+        expect(noRetry?.cooldownUntil).toBeUndefined();
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  it('degrades silently to [] on a non-ok response', async () => {
+    await withIsolatedHome(async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async () => new Response('err', { status: 404 })) as typeof fetch;
+      try {
+        const { fetchProxyAuthCooldowns } = await loadDrainOrder();
+        expect(await fetchProxyAuthCooldowns()).toEqual([]);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  it('degrades silently to [] on a network error', async () => {
+    await withIsolatedHome(async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async () => {
+        throw new TypeError('network down');
+      }) as typeof fetch;
+      try {
+        const { fetchProxyAuthCooldowns } = await loadDrainOrder();
+        expect(await fetchProxyAuthCooldowns()).toEqual([]);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  it('degrades silently to [] on an unexpected response shape', async () => {
+    await withIsolatedHome(async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async () =>
+        new Response(JSON.stringify({ unexpected: 'shape' }), { status: 200 })) as typeof fetch;
+      try {
+        const { fetchProxyAuthCooldowns } = await loadDrainOrder();
+        expect(await fetchProxyAuthCooldowns()).toEqual([]);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+});

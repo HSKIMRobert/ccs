@@ -46,16 +46,43 @@ export const POOL_ROUTING_VERIFIED_PROVIDERS = new Set(['claude', 'agy']);
  */
 export const POOL_ROUTING_MIN_VERSION = '6.9.45';
 
+/**
+ * Pool-active override warning text.  When pool routing is enabled the generator
+ * forces fill-first/affinity/cooling and ignores the stored strategy/affinity, so
+ * an apply via API or dashboard will not take effect.  The CLI prints this same
+ * text before applying; appending it to the apply result message lets dashboard
+ * and API consumers surface the same caveat (the CLI warns, the dashboard did not).
+ */
+function poolActiveOverrideNote(kind: 'strategy' | 'affinity'): string {
+  const what = kind === 'strategy' ? 'stored strategy' : 'stored affinity setting';
+  return (
+    `[!] Pool routing is active. The ${what} will not take effect\n` +
+    `    until pool routing is disabled: ccs cliproxy pool --disable`
+  );
+}
+
+/** Whether pool routing is enabled in the local unified config. */
+function isLocalPoolRoutingEnabled(): boolean {
+  return loadOrCreateUnifiedConfig().cliproxy?.pool_routing?.enabled === true;
+}
+
 export interface EnablePoolRoutingResult {
   /** Whether the pool routing state actually changed */
   changed: boolean;
   /** Whether an existing explicit user routing setting was preserved */
   preservedExplicitSetting: boolean;
+  /**
+   * True when the config could not be regenerated and the pool flag was rolled
+   * back.  Pool routing is NOT active; the message carries recovery guidance.
+   */
+  failed?: boolean;
   message: string;
 }
 
 export interface DisablePoolRoutingResult {
   changed: boolean;
+  /** True when the config could not be regenerated and the flag was rolled back. */
+  failed?: boolean;
   message: string;
 }
 
@@ -145,7 +172,24 @@ export function enablePoolRouting(
 ): EnablePoolRoutingResult {
   const config = loadOrCreateUnifiedConfig();
   const already = config.cliproxy?.pool_routing?.enabled === true;
+  const configPath = options.configPath ?? getConfigPathForPort(port);
+  const authDir = options.authDir ?? getAuthDir();
+
+  // Already-enabled repair path: the flag may have been persisted by a prior call
+  // whose regenerateConfig threw (leaving config.yaml non-pool while the flag says
+  // enabled).  Re-run regenerateConfig so `pool --enable` is an idempotent repair
+  // command rather than a no-op that can never fix a half-applied state.
   if (already) {
+    try {
+      regenerateConfig(port, { configPath, authDir });
+    } catch (err) {
+      return {
+        changed: false,
+        preservedExplicitSetting: false,
+        failed: true,
+        message: `[X] Could not write CLIProxy config: ${(err as Error).message}.\n    Pool routing is flagged enabled but the config was not regenerated.\n    Fix the file permission and re-run: ccs cliproxy pool --enable`,
+      };
+    }
     return {
       changed: false,
       preservedExplicitSetting: false,
@@ -185,9 +229,26 @@ export function enablePoolRouting(
     };
   });
 
-  const configPath = options.configPath ?? getConfigPathForPort(port);
-  const authDir = options.authDir ?? getAuthDir();
-  regenerateConfig(port, { configPath, authDir });
+  // The flag is persisted before regenerateConfig.  If regeneration throws, roll
+  // the flag back so status surfaces (pool --enable, quota, dashboard) do not
+  // report pool ON while config.yaml still runs non-pool routing.
+  try {
+    regenerateConfig(port, { configPath, authDir });
+  } catch (err) {
+    mutateConfig((cfg) => {
+      if (!cfg.cliproxy) return;
+      cfg.cliproxy.pool_routing = {
+        ...cfg.cliproxy.pool_routing,
+        enabled: false,
+      };
+    });
+    return {
+      changed: false,
+      preservedExplicitSetting,
+      failed: true,
+      message: `[X] Could not write CLIProxy config: ${(err as Error).message}.\n    Pool routing was not enabled; fix the file permission and re-run: ccs cliproxy pool --enable`,
+    };
+  }
 
   return {
     changed: true,
@@ -218,6 +279,8 @@ export function disablePoolRouting(
 ): DisablePoolRoutingResult {
   const config = loadOrCreateUnifiedConfig();
   const wasEnabled = config.cliproxy?.pool_routing?.enabled === true;
+  const configPath = options.configPath ?? getConfigPathForPort(port);
+  const authDir = options.authDir ?? getAuthDir();
   if (!wasEnabled) {
     return {
       changed: false,
@@ -236,9 +299,19 @@ export function disablePoolRouting(
     };
   });
 
-  const configPath = options.configPath ?? getConfigPathForPort(port);
-  const authDir = options.authDir ?? getAuthDir();
-  regenerateConfig(port, { configPath, authDir });
+  // The flag is already cleared (matching user intent).  If regeneration throws we
+  // keep enabled:false rather than rolling back to true — re-asserting pool ON
+  // would reintroduce the single-account blackout the disable path exists to
+  // prevent.  Surface the failure so the user can fix permissions and re-run.
+  try {
+    regenerateConfig(port, { configPath, authDir });
+  } catch (err) {
+    return {
+      changed: true,
+      failed: true,
+      message: `[X] Could not write CLIProxy config: ${(err as Error).message}.\n    Pool routing is flagged disabled but the config was not regenerated.\n    Fix the file permission and re-run: ccs cliproxy pool --disable`,
+    };
+  }
 
   return {
     changed: true,
@@ -262,6 +335,16 @@ const GO_DURATION_PATTERN = new RegExp(`^${GO_DURATION_SEGMENT}+$`);
 export interface CliproxyPoolRoutingState {
   enabled: boolean;
   maxRetryCredentials?: number;
+  /**
+   * Whether CCS can manage pool routing for this target.  enablePoolRouting only
+   * writes LOCAL config files, so a remote proxy is never affected by the local
+   * pool flag.  For remote targets this is false and `enabled` reflects the local
+   * config only (not the remote proxy's behaviour).  Omitted (treated as true)
+   * for local targets.  Mirrors CliproxySessionAffinityState.manageable.
+   */
+  manageable?: boolean;
+  /** Explanation surfaced when manageable is false (remote target). */
+  message?: string;
 }
 
 export interface CliproxyRoutingState {
@@ -270,7 +353,11 @@ export interface CliproxyRoutingState {
   target: 'local' | 'remote';
   reachable: boolean;
   message?: string;
-  /** Pool routing mode (proxy-wide). Present for both local and remote targets. */
+  /**
+   * Pool routing mode. For local targets `enabled` reflects the active proxy
+   * config. For remote targets `manageable` is false and `enabled` reflects only
+   * the local config (the remote proxy is not affected by it).
+   */
   poolRouting?: CliproxyPoolRoutingState;
 }
 
@@ -417,12 +504,24 @@ export async function readCliproxyRoutingState(): Promise<CliproxyRoutingState> 
   const poolRouting = getCliproxyPoolRoutingState();
 
   if (target.isRemote) {
+    // Do NOT attach the local pool flag as if it described the remote proxy.
+    // enablePoolRouting only writes local config files; the remote proxy keeps
+    // its own routing/cooling. Surface manageable:false + a message so the
+    // dashboard renders "local only / not applied" instead of claiming the
+    // remote proxy is pool-managed. Mirrors readCliproxySessionAffinityState.
     return {
       strategy: await fetchLiveCliproxyRoutingStrategy(),
       source: 'live',
       target: 'remote',
       reachable: true,
-      poolRouting,
+      poolRouting: {
+        enabled: poolRouting.enabled,
+        maxRetryCredentials: poolRouting.maxRetryCredentials,
+        manageable: false,
+        message:
+          'Pool routing is managed from the local config only and does not affect this remote proxy. ' +
+          'Configure cooling and routing on the host running CLIProxy instead.',
+      },
     };
   }
 
@@ -497,6 +596,11 @@ export async function applyCliproxyRoutingStrategy(
     };
   }
 
+  // Pool routing overrides the stored strategy at config-generation time, so the
+  // apply will not take effect until pool routing is disabled.  Append the same
+  // note the CLI prints so dashboard/API consumers see the override too.
+  const poolNote = isLocalPoolRoutingEnabled() ? `\n\n${poolActiveOverrideNote('strategy')}` : '';
+
   mutateConfig((config) => {
     if (config.cliproxy) {
       config.cliproxy.routing = { ...config.cliproxy.routing, strategy };
@@ -512,7 +616,7 @@ export async function applyCliproxyRoutingStrategy(
       target: 'local',
       reachable: true,
       applied: 'live-and-config',
-      message: 'Updated the running proxy and saved the local startup default.',
+      message: 'Updated the running proxy and saved the local startup default.' + poolNote,
     };
   } catch {
     return {
@@ -521,7 +625,8 @@ export async function applyCliproxyRoutingStrategy(
       target: 'local',
       reachable: false,
       applied: 'config-only',
-      message: 'Saved the local startup default. It will apply the next time CLIProxy starts.',
+      message:
+        'Saved the local startup default. It will apply the next time CLIProxy starts.' + poolNote,
     };
   }
 }
@@ -552,6 +657,10 @@ export async function applyCliproxySessionAffinitySettings(
     current.ttl ??
     DEFAULT_CLIPROXY_SESSION_AFFINITY_TTL;
 
+  // Pool routing overrides the stored session-affinity at config-generation time;
+  // append the same override note the CLI prints so dashboard/API consumers see it.
+  const poolNote = isLocalPoolRoutingEnabled() ? `\n\n${poolActiveOverrideNote('affinity')}` : '';
+
   mutateConfig((config) => {
     if (config.cliproxy) {
       config.cliproxy.routing = {
@@ -572,9 +681,11 @@ export async function applyCliproxySessionAffinitySettings(
     reachable,
     manageable: true,
     applied: 'config-only',
-    message: reachable
-      ? 'Saved the local startup default. Running local CLIProxy may hot-reload the session-affinity setting, but CCS does not verify live selector state yet.'
-      : 'Saved the local startup default. It will apply the next time local CLIProxy starts.',
+    message:
+      (reachable
+        ? 'Saved the local startup default. Running local CLIProxy may hot-reload the session-affinity setting, but CCS does not verify live selector state yet.'
+        : 'Saved the local startup default. It will apply the next time local CLIProxy starts.') +
+      poolNote,
   };
 }
 

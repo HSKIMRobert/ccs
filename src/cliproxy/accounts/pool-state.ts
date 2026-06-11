@@ -15,6 +15,10 @@
  * with "it ran out of quota".
  *
  * Cooldown source precedence:
+ * - The in-proxy cooldown (read from GET /v0/management/auth-files) is the real
+ *   hop mechanism when pool routing is ON: the proxy cools a credential on a 429
+ *   and rotates. It wins over everything else because it is the live routing
+ *   truth that actually caused the session to move.
  * - The proxy/monitor process writes quota-paused.json (cross-process truth).
  *   When pool routing's cooling flip is OFF (stock disable-cooling: true) there
  *   is simply no cooldown data to show; this resolver reports that honestly.
@@ -23,10 +27,18 @@
  *   both exist, because that is the routing truth across processes.
  */
 
-import { resolveEffectiveDrainOrder, type DrainOrderInput } from './drain-order';
+import {
+  resolveEffectiveDrainOrder,
+  fetchProxyAuthCooldowns,
+  type DrainOrderInput,
+  type ProxyAuthCooldown,
+} from './drain-order';
 import { getProviderAccounts } from './query';
 import { readQuotaCooldownEntries } from './account-safety';
 import { getCooldownUntil } from '../quota/quota-manager';
+import { getProxyTarget } from '../proxy/proxy-target-resolver';
+import { detectRunningProxy } from '../proxy/proxy-detector';
+import { resolveLifecyclePort } from '../config/port-manager';
 import type { AccountInfo, AccountTier } from './types';
 import type { CLIProxyProvider } from '../types';
 
@@ -54,9 +66,11 @@ export interface PoolAccountState {
   cooldownUntil?: number;
   /**
    * For state 'cooling': where the cooldown reading came from.
-   * 'persisted' = quota-paused.json (cross-process), 'memory' = in-process map.
+   * 'proxy'     = live in-proxy 429 cooldown (GET /v0/management/auth-files),
+   * 'persisted' = quota-paused.json (cross-process),
+   * 'memory'    = in-process quota-manager map.
    */
-  cooldownSource?: 'persisted' | 'memory';
+  cooldownSource?: 'proxy' | 'persisted' | 'memory';
   /** ISO timestamp the account was paused (manual pause), when state is 'paused'. */
   pausedAt?: string;
 }
@@ -103,23 +117,34 @@ export interface ResolvePoolStateInput {
   accounts?: AccountInfo[];
   /** Override for tests; defaults to Date.now(). */
   now?: number;
+  /**
+   * Live in-proxy cooldowns (GET /v0/management/auth-files), keyed nowhere -
+   * passed as a flat list and indexed by tokenFile internally. When provided,
+   * an entry takes precedence over CCS-side cooldown views for the matching
+   * auth file. Defaults to none (CCS-side classification only).
+   */
+  proxyCooldowns?: ProxyAuthCooldown[];
 }
 
 /**
  * Classify a single account's pool state.
  *
  * Precedence:
- * 1. A persisted quota cooldown whose pausedAt matches the account's pausedAt is
+ * 1. A live in-proxy cooldown (proxy reports the credential unavailable after a
+ *    429) -> 'cooling' source 'proxy'. This is the actual hop mechanism when
+ *    pool routing is ON, so it wins over the CCS-side views below.
+ * 2. A persisted quota cooldown whose pausedAt matches the account's pausedAt is
  *    a quota cooldown -> 'cooling' (cross-process truth wins).
- * 2. A paused account without a matching cooldown record is a manual/safety pause
+ * 3. A paused account without a matching cooldown record is a manual/safety pause
  *    -> 'paused'.
- * 3. An unpaused account with an in-memory cooldown still in effect -> 'cooling'.
- * 4. Otherwise -> 'available'.
+ * 4. An unpaused account with an in-memory cooldown still in effect -> 'cooling'.
+ * 5. Otherwise -> 'available'.
  */
 function classifyAccount(
   provider: CLIProxyProvider,
   account: AccountInfo,
   cooldownByAccount: Map<string, { until: number; pausedAt: string }>,
+  proxyCooldownByTokenFile: Map<string, ProxyAuthCooldown>,
   now: number
 ): PoolAccountState {
   const base: PoolAccountState = {
@@ -129,6 +154,22 @@ function classifyAccount(
     isDefault: account.isDefault,
     state: 'available',
   };
+
+  // Live in-proxy cooldown wins: this is the credential the proxy actually
+  // rotated out on a 429. A missing/zero next_retry_after still means cooling;
+  // we just cannot show a reset time for it.
+  const proxyCooldown = proxyCooldownByTokenFile.get(account.tokenFile);
+  if (
+    proxyCooldown &&
+    (proxyCooldown.cooldownUntil === undefined || proxyCooldown.cooldownUntil > now)
+  ) {
+    return {
+      ...base,
+      state: 'cooling',
+      cooldownUntil: proxyCooldown.cooldownUntil,
+      cooldownSource: 'proxy',
+    };
+  }
 
   const persisted = cooldownByAccount.get(account.id);
 
@@ -194,6 +235,10 @@ function resolveDrainOrder(
 
 /**
  * Resolve the full observable pool state for a provider.
+ *
+ * Synchronous: callers that want live in-proxy 429 cooldowns surfaced (the real
+ * hop mechanism when pool routing is ON) pass them in via input.proxyCooldowns,
+ * or use resolvePoolStateWithProxyCooldowns() which fetches them first.
  */
 export function resolvePoolState(input: ResolvePoolStateInput): PoolState {
   const { provider, settings } = input;
@@ -207,8 +252,14 @@ export function resolvePoolState(input: ResolvePoolStateInput): PoolState {
     cooldownByAccount.set(entry.accountId, { until: entry.until, pausedAt: entry.pausedAt });
   }
 
+  // Index live in-proxy cooldowns by token file (the proxy reports by file name).
+  const proxyCooldownByTokenFile = new Map<string, ProxyAuthCooldown>();
+  for (const entry of input.proxyCooldowns ?? []) {
+    proxyCooldownByTokenFile.set(entry.tokenFile, entry);
+  }
+
   const states = accounts.map((account) =>
-    classifyAccount(provider, account, cooldownByAccount, now)
+    classifyAccount(provider, account, cooldownByAccount, proxyCooldownByTokenFile, now)
   );
 
   // Drain order is computed over accounts that are in rotation (not paused).
@@ -221,4 +272,45 @@ export function resolvePoolState(input: ResolvePoolStateInput): PoolState {
   const drainOrder = resolveDrainOrder(provider, activeAccounts);
 
   return { provider, states, drainOrder, settings };
+}
+
+/**
+ * Whether any account was classified 'cooling' from the live in-proxy source.
+ * Used by the renderer to decide whether the "in-proxy cooldowns not shown"
+ * honesty note still applies.
+ */
+export function hasProxySourcedCooling(pool: PoolState): boolean {
+  return pool.states.some((s) => s.state === 'cooling' && s.cooldownSource === 'proxy');
+}
+
+/**
+ * Resolve pool state and, when pool routing is ON and the local proxy is
+ * reachable, fold in live in-proxy 429 cooldowns (the actual session-hop
+ * mechanism). Remote targets and a stopped/older proxy degrade silently to the
+ * synchronous CCS-side view with no error output.
+ *
+ * Kept separate from resolvePoolState() so the pure, synchronous resolver stays
+ * test-friendly and free of network/process detection.
+ */
+export async function resolvePoolStateWithProxyCooldowns(
+  input: ResolvePoolStateInput
+): Promise<PoolState> {
+  // Only the local proxy exposes a management API we can read here; remote
+  // drain/cooldown management is out of scope (v1), so skip the fetch.
+  const shouldFetch = input.settings.poolEnabled && !getProxyTarget().isRemote;
+
+  let proxyCooldowns: ProxyAuthCooldown[] | undefined = input.proxyCooldowns;
+  if (proxyCooldowns === undefined && shouldFetch) {
+    try {
+      const proxyStatus = await detectRunningProxy(resolveLifecyclePort());
+      if (proxyStatus.running && proxyStatus.verified) {
+        proxyCooldowns = await fetchProxyAuthCooldowns();
+      }
+    } catch {
+      // Degrade silently: keep the CCS-side cooldown view.
+      proxyCooldowns = undefined;
+    }
+  }
+
+  return resolvePoolState({ ...input, proxyCooldowns });
 }

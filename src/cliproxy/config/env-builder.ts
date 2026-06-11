@@ -591,6 +591,26 @@ function migrateClaudeStaleModelPins(env: Record<string, string>): boolean {
 }
 
 /**
+ * Read-level equivalent of the stale-pin migration for paths that must not
+ * mutate the settings file (e.g. the remote env builder).  Returns a copy of
+ * the env with any value equal to a historical default dropped per-key, while
+ * user-custom pins are preserved.  Same per-key Sets as the local migration, so
+ * local / --config / remote read paths agree on which pins are stale.
+ *
+ * No marker is consulted or written: this is purely a read-time filter, so it
+ * is idempotent across launches without a one-shot guard.
+ */
+function filterClaudeStaleModelPins(env: Record<string, string>): Record<string, string> {
+  const result = { ...env };
+  for (const [key, staleValues] of Object.entries(CLAUDE_STALE_MODEL_DEFAULTS)) {
+    if (staleValues.has(result[key])) {
+      delete result[key];
+    }
+  }
+  return result;
+}
+
+/**
  * Copy bundled settings template to user directory if not exists
  * Called during installation/first run
  */
@@ -783,6 +803,17 @@ export function getRemoteEnvVars(
           migrateDeprecatedModelNames(settingsPath, provider, settings);
           migrateIFlowPlaceholderModel(settingsPath, provider, settings);
           userEnvVars = settings.env as Record<string, string>;
+          // claude is model-neutral. The local launch path runs the one-time
+          // stale-pin migration (ensureProviderSettings), but the remote path
+          // never rewrites the file, so a remote-only user whose settings still
+          // carry an old auto-written default would stay pinned. Filter stale
+          // defaults at read level so values equal to a historical default are
+          // dropped while user-custom pins survive. Priority 1 (explicit custom
+          // settings path) is intentionally left untouched: an explicitly passed
+          // settings file is the user's deliberate choice.
+          if (provider === 'claude') {
+            userEnvVars = filterClaudeStaleModelPins(userEnvVars);
+          }
         }
       } catch {
         // Invalid JSON - fall through to base config

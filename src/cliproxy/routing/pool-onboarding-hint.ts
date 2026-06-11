@@ -166,7 +166,7 @@ export function maybeShowPoolOnboardingHint(profileCount?: number): OnboardingHi
 
     console.log(
       info(
-        `You have ${count} Claude profiles. 'ccs claude' pool auto-continues on limits (accounts share quota). Docs: ${POOL_DOCS_LINK}`
+        `You have ${count} Claude profiles. Pool routing can auto-continue 'ccs claude' when one account hits its limit. Enable: ccs cliproxy pool --enable  Docs: ${POOL_DOCS_LINK}`
       )
     );
 
