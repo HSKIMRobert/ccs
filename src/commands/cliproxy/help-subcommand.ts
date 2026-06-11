@@ -63,6 +63,9 @@ export async function showHelp(): Promise<void> {
         ['routing set <mode>', 'Explicitly set round-robin or fill-first'],
         ['routing affinity', 'Show local session-affinity status and TTL'],
         ['routing affinity <on|off> [--ttl <duration>]', 'Toggle local session-affinity settings'],
+        ['pool', 'Show pool routing status (fill-first + affinity + 429 cooldown)'],
+        ['pool --enable', 'Enable pool routing (writes cooling/affinity/retry-cap to config)'],
+        ['pool --disable', 'Disable pool routing and restore non-pool config'],
       ],
     ],
     [
