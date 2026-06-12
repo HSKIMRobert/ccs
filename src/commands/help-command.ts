@@ -122,12 +122,17 @@ export async function showProviderShortcutHelp(
   writeLine('');
   writeLine(`  ${providerEntry?.summary || 'CLIProxy OAuth provider shortcut'}.`);
   writeLine('');
+  const configSummary =
+    provider === 'claude'
+      ? 'Pin a model for this session (optional; use /model inside Claude Code instead)'
+      : 'Open the provider config flow';
+
   writeCommandTable(
     'Common Commands',
     [
       { name: `ccs ${provider} --auth`, summary: 'Authenticate the provider account via CLIProxy' },
       { name: `ccs ${provider} --accounts`, summary: 'List or manage stored CLIProxy accounts' },
-      { name: `ccs ${provider} --config`, summary: 'Open the provider config flow' },
+      { name: `ccs ${provider} --config`, summary: configSummary },
       { name: `ccs ${provider} "task"`, summary: 'Run Claude through this provider shortcut' },
     ],
     writeLine
