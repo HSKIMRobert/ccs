@@ -7,19 +7,15 @@
  *    base URL so requests are routed to the OpenAI-compatible endpoint of the
  *    upstream provider.
  *
- * 2. Anthropic passthrough - some providers (e.g. Kimi, Anthropic API
- *    mirrors) expose an Anthropic-compatible `/v1/messages` endpoint and
- *    REJECT OpenAI-format requests (e.g. Kimi returns 403 when the
- *    User-Agent is not a recognized coding agent or when the request is
- *    not an Anthropic-style body). For these profiles we preserve the
- *    incoming Anthropic body and forward it directly to the
- *    `/v1/messages` endpoint of the provider.
+ * 2. Anthropic passthrough - some providers (e.g. Kimi coding endpoints)
+ *    expose an Anthropic-compatible `/v1/messages` endpoint and reject
+ *    OpenAI-format requests. For these profiles we preserve the incoming
+ *    Anthropic body and forward it directly to the provider's
+ *    `/v1/messages` endpoint.
  *
  * Passthrough is enabled when:
  *   - `CCS_OPENAI_PROXY_PASSTHROUGH=1` is set in the profile env, OR
- *   - The base URL already ends with `/v1` or `/v1/` (i.e. the provider
- *     explicitly exposes an Anthropic-style `/v1` prefix), OR
- *   - The base URL is the official Anthropic API.
+ *   - The base URL is a known Anthropic-style provider host.
  */
 
 function normalizePathname(pathname: string): string {
@@ -33,21 +29,13 @@ function ensureSupportedProtocol(parsed: URL): void {
   }
 }
 
-function isAnthropicApiHost(hostname: string): boolean {
+function isAnthropicPassthroughHost(hostname: string): boolean {
   const normalized = hostname.toLowerCase();
   return (
     normalized === 'api.anthropic.com' ||
     normalized.endsWith('.anthropic.com') ||
     normalized === 'api.kimi.com' ||
-    normalized.endsWith('.kimi.com') ||
-    normalized === 'api.minimax.com' ||
-    normalized.endsWith('.minimax.com') ||
-    normalized === 'api.minimax.io' ||
-    normalized.endsWith('.minimax.io') ||
-    normalized === 'api.minimaxi.com' ||
-    normalized.endsWith('.minimaxi.com') ||
-    normalized === 'api.minimaxi.chat' ||
-    normalized.endsWith('.minimaxi.chat')
+    normalized.endsWith('.kimi.com')
   );
 }
 
@@ -74,16 +62,7 @@ export function isAnthropicPassthroughProfile(
     return false;
   }
   ensureSupportedProtocol(parsed);
-  if (isAnthropicApiHost(parsed.hostname)) {
-    return true;
-  }
-  const pathname = normalizePathname(parsed.pathname);
-  // If the base URL already includes the Anthropic `/v1` prefix, treat
-  // the upstream as an Anthropic-style endpoint rather than an OpenAI one.
-  if (pathname === '/v1' || pathname === '/v1/' || pathname.endsWith('/v1')) {
-    return true;
-  }
-  return false;
+  return isAnthropicPassthroughHost(parsed.hostname);
 }
 
 /**

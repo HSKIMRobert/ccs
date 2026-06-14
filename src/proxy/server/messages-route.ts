@@ -10,7 +10,7 @@ import {
 import { ProxySseStreamTransformer } from '../transformers/sse-stream-transformer';
 import { isAnthropicPassthroughProfile, resolveOpenAIChatCompletionsUrl } from '../upstream-url';
 import { createLogger } from '../../services/logging';
-import { pipeWebResponseToNode, readJsonBody, readRawBody, writeJson } from './http-helpers';
+import { pipeWebResponseToNode, readRawBody, writeJson } from './http-helpers';
 
 const REQUEST_TIMEOUT_MS = 600_000;
 const DIRECT_OPENAI_REASONING_CHAT_MODEL = /^(?:gpt-5|o[134])(?:[-.]|$)/;
@@ -32,26 +32,27 @@ class ProxyInputError extends Error {
  */
 function buildUpstreamHeaders(
   profile: OpenAICompatProfileConfig,
-  incomingHeaders: http.IncomingHttpHeaders
+  incomingHeaders: http.IncomingHttpHeaders,
+  options: { preserveUserAgent?: boolean } = {}
 ): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${profile.apiKey}`,
+    'User-Agent': 'CCS-OpenAI-Compat-Proxy/1.0',
   };
 
-  // Preserve the original User-Agent (or x-stainless-user-agent fallback) so
-  // providers that require a recognized coding-agent identifier continue to
-  // accept the request.
-  const rawUserAgent = pickHeaderValue(incomingHeaders, ['user-agent', 'x-stainless-user-agent']);
-  headers['User-Agent'] = rawUserAgent?.trim() || 'CCS-OpenAI-Compat-Proxy/1.0';
+  if (options.preserveUserAgent) {
+    // Preserve the original User-Agent (or x-stainless-user-agent fallback) so
+    // providers that require a recognized coding-agent identifier accept the
+    // passthrough request.
+    const rawUserAgent = pickHeaderValue(incomingHeaders, ['user-agent', 'x-stainless-user-agent']);
+    headers['User-Agent'] = rawUserAgent?.trim() || headers['User-Agent'];
+  }
 
   return headers;
 }
 
-function pickHeaderValue(
-  headers: http.IncomingHttpHeaders,
-  names: string[]
-): string | undefined {
+function pickHeaderValue(headers: http.IncomingHttpHeaders, names: string[]): string | undefined {
   for (const name of names) {
     const value = headers[name];
     if (typeof value === 'string' && value.length > 0) {
@@ -186,7 +187,11 @@ function shapeUpstreamChatPayload(
 function buildUpstreamRequest(
   profile: OpenAICompatProfileConfig,
   rawBody: unknown,
-  options: { passthrough?: boolean } = {}
+  options: {
+    passthrough?: boolean;
+    rawBodyText?: string;
+    route?: ReturnType<typeof resolveProxyRequestRoute>;
+  } = {}
 ): { body: string; route: ReturnType<typeof resolveProxyRequestRoute> } {
   // In passthrough mode we forward the incoming Anthropic body verbatim to
   // the upstream provider, skipping both the Anthropic→OpenAI translation
@@ -196,27 +201,11 @@ function buildUpstreamRequest(
     if (rawBody === undefined || rawBody === null) {
       throw new ProxyInputError('Missing request body');
     }
-    let body: string;
-    if (typeof rawBody === 'string') {
-      body = rawBody;
-    } else {
-      try {
-        body = JSON.stringify(rawBody);
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : 'Failed to serialize passthrough body';
-        throw new ProxyInputError(message);
-      }
+    const body = options.rawBodyText ?? JSON.stringify(rawBody);
+    if (!body.trim()) {
+      throw new ProxyInputError('Missing request body');
     }
-    // For routing we still need to inspect the body to figure out which
-    // profile/model to use, but we do NOT rewrite it. We pass a minimal
-    // request shape that the router understands.
-    const minimalRequest: ProxyOpenAIRequest = {
-      model: extractModelFromRawBody(rawBody),
-      messages: [],
-      stream: false,
-    };
-    const route = resolveProxyRequestRoute(profile, minimalRequest);
+    const route = options.route ?? resolveProxyRequestRoute(profile, buildRoutingRequest(rawBody));
     return { body, route };
   }
 
@@ -240,14 +229,116 @@ function buildUpstreamRequest(
   return { body: JSON.stringify(body), route };
 }
 
-function extractModelFromRawBody(rawBody: unknown): string {
-  if (rawBody && typeof rawBody === 'object') {
-    const candidate = (rawBody as Record<string, unknown>).model;
-    if (typeof candidate === 'string' && candidate.trim().length > 0) {
-      return candidate;
-    }
+function parseJsonBodyText(rawBodyText: string): unknown {
+  const raw = rawBodyText.trim();
+  if (!raw) {
+    return {};
   }
-  return '';
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new ProxyInputError('Invalid JSON in request body');
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function routingTextContent(content: unknown): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return '';
+  }
+
+  return content
+    .map((part) => {
+      const parsed = asRecord(part);
+      if (!parsed) {
+        return '';
+      }
+      if (parsed.type === 'text' && typeof parsed.text === 'string') {
+        return parsed.text;
+      }
+      if (parsed.type === 'image') {
+        return '[image]';
+      }
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function routingMessages(messages: unknown): ProxyOpenAIRequest['messages'] {
+  if (!Array.isArray(messages)) {
+    return [];
+  }
+
+  return messages.flatMap((message): ProxyOpenAIRequest['messages'] => {
+    const parsed = asRecord(message);
+    const role = parsed?.role;
+    if (role !== 'system' && role !== 'user' && role !== 'assistant' && role !== 'tool') {
+      return [];
+    }
+
+    return [
+      {
+        role,
+        content: routingTextContent(parsed?.content),
+      },
+    ];
+  });
+}
+
+function routingTools(tools: unknown): ProxyOpenAIRequest['tools'] | undefined {
+  if (!Array.isArray(tools)) {
+    return undefined;
+  }
+
+  const normalized = tools.flatMap((tool): NonNullable<ProxyOpenAIRequest['tools']> => {
+    const parsed = asRecord(tool);
+    const fn = asRecord(parsed?.function);
+    if (parsed?.type !== 'function' || typeof fn?.name !== 'string') {
+      return [];
+    }
+    return [
+      {
+        type: 'function',
+        function: {
+          name: fn.name,
+          description: typeof fn.description === 'string' ? fn.description : undefined,
+          parameters: asRecord(fn.parameters) ?? {},
+        },
+      },
+    ];
+  });
+
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function buildRoutingRequest(rawBody: unknown): ProxyOpenAIRequest {
+  const parsed = asRecord(rawBody);
+  const model = typeof parsed?.model === 'string' ? parsed.model : undefined;
+  const thinking = asRecord(parsed?.thinking);
+  const thinkingEnabled = thinking?.type === 'enabled' || thinking?.type === 'adaptive';
+
+  return {
+    model,
+    stream: parsed?.stream === true,
+    messages: routingMessages(parsed?.messages),
+    tools: routingTools(parsed?.tools),
+    reasoning: thinkingEnabled
+      ? {
+          enabled: true,
+          effort: 'high',
+        }
+      : undefined,
+  };
 }
 
 export function extractIncomingProxyToken(headers: http.IncomingHttpHeaders): string | null {
@@ -283,11 +374,12 @@ function buildFetchInit(
   body: string,
   signal: AbortSignal,
   incomingHeaders: http.IncomingHttpHeaders,
+  preserveUserAgent: boolean,
   insecureDispatcher?: Dispatcher
 ): RequestInit {
   const init: RequestInit = {
     method: 'POST',
-    headers: buildUpstreamHeaders(profile, incomingHeaders),
+    headers: buildUpstreamHeaders(profile, incomingHeaders, { preserveUserAgent }),
     body,
     signal,
   };
@@ -396,17 +488,21 @@ export async function handleProxyMessagesRequest(
   logger.stage('auth', 'auth.ok', 'Proxy auth validated');
 
   let timeoutMs = REQUEST_TIMEOUT_MS;
-  // Decide whether this profile should use Anthropic passthrough. The flag
-  // is taken from the active profile config; routing to a different profile
-  // via scenarios/explicit-selectors can override the active profile's
-  // passthrough decision at routing time.
-  const passthrough = profile.passthrough === true;
   try {
-    const rawBody = passthrough ? await readRawBody(req) : await readJsonBody(req);
+    const rawBodyText = await readRawBody(req);
+    const rawBody = parseJsonBodyText(rawBodyText);
+    const initialRoute = resolveProxyRequestRoute(profile, buildRoutingRequest(rawBody));
+    const passthrough = isAnthropicPassthroughProfile(initialRoute.profile.baseUrl, {
+      forcePassthrough: initialRoute.profile.passthrough === true,
+    });
     logger.stage('transform', 'request.transform.start', 'Transforming inbound proxy body', {
       passthrough,
     });
-    const upstream = buildUpstreamRequest(profile, rawBody, { passthrough });
+    const upstream = buildUpstreamRequest(profile, rawBody, {
+      passthrough,
+      rawBodyText,
+      route: passthrough ? initialRoute : undefined,
+    });
     logger.stage('route', 'request.routed', 'Resolved proxy upstream route', {
       profileName: upstream.route.profile.profileName,
       provider: upstream.route.profile.provider,
@@ -458,9 +554,7 @@ export async function handleProxyMessagesRequest(
         passthrough,
       });
       const upstreamUrl = resolveOpenAIChatCompletionsUrl(upstream.route.profile.baseUrl, {
-        passthrough: isAnthropicPassthroughProfile(upstream.route.profile.baseUrl, {
-          forcePassthrough: upstream.route.profile.passthrough === true,
-        }),
+        passthrough,
       });
       const upstreamResponse = await fetch(
         upstreamUrl,
@@ -469,6 +563,7 @@ export async function handleProxyMessagesRequest(
           upstream.body,
           controller.signal,
           req.headers,
+          passthrough,
           dispatcher
         )
       );

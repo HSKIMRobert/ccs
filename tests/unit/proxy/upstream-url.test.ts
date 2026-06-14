@@ -56,26 +56,30 @@ describe('Anthropic passthrough URL resolution', () => {
     ).toBe('https://api.kimi.com/coding/v1/models');
   });
 
-  it('auto-detects Kimi and MiniMax hosts as Anthropic-style', () => {
+  it('auto-detects known Anthropic-style hosts', () => {
     expect(isAnthropicPassthroughProfile('https://api.kimi.com/coding/')).toBe(true);
     expect(isAnthropicPassthroughProfile('https://api.kimi.com/coding/v1')).toBe(true);
-    expect(isAnthropicPassthroughProfile('https://api.minimax.com/anthropic')).toBe(true);
     expect(isAnthropicPassthroughProfile('https://api.anthropic.com')).toBe(true);
   });
 
-  it('auto-detects base URLs that end in /v1 as Anthropic-style', () => {
-    expect(isAnthropicPassthroughProfile('https://example.test/v1')).toBe(true);
-    expect(isAnthropicPassthroughProfile('https://example.test/v1/')).toBe(true);
-    expect(isAnthropicPassthroughProfile('https://example.test/api/v1')).toBe(true);
+  it('does not treat generic /v1 roots as Anthropic-style passthrough', () => {
+    expect(isAnthropicPassthroughProfile('https://example.test/v1')).toBe(false);
+    expect(isAnthropicPassthroughProfile('https://example.test/v1/')).toBe(false);
+    expect(isAnthropicPassthroughProfile('https://example.test/api/v1')).toBe(false);
+    expect(isAnthropicPassthroughProfile('https://api.openai.com/v1')).toBe(false);
+    expect(isAnthropicPassthroughProfile('https://api.minimax.io/v1')).toBe(false);
   });
 
   it('does not auto-detect OpenAI-style base URLs as Anthropic-style', () => {
     expect(isAnthropicPassthroughProfile('https://api.fireworks.ai/inference')).toBe(false);
-    expect(isAnthropicPassthroughProfile('https://api.openai.com/v1')).toBe(true);
-    // The OpenAI base URL happens to end in /v1, so it is treated as
-    // Anthropic-style. This is acceptable because the OpenAI Chat
-    // Completions endpoint is also exposed under /v1/chat/completions
-    // which works either way; the auto-detect errs on the side of
-    // preserving the user's explicit URL shape.
+    expect(isAnthropicPassthroughProfile('https://api.openai.com/v1')).toBe(false);
+  });
+
+  it('honors explicit force passthrough for unknown mirrors', () => {
+    expect(
+      isAnthropicPassthroughProfile('https://anthropic-mirror.example.test/v1', {
+        forcePassthrough: true,
+      })
+    ).toBe(true);
   });
 });
