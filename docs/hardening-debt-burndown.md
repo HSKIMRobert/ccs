@@ -82,6 +82,29 @@ Metrics are grep-based and approximate (not a contract). Comments and string/tem
 |---|---|---|---|
 | 2026-06-18 | P2 | Express `withRequestContext` wrap; `CCS_REQUEST_ID` daemon forwarding + child re-anchor; logger toe-holds in delegation/docker. | zero-createLogger subdomains 20 -> 18 |
 | 2026-06-18 | P3 | Redaction gate (token-shape scrubbing in context + `Error.message` + message string). `tool-sanitization-proxy` private log subsystem deleted (13 sites -> existing `createLogger`). ~120 diagnostic `console.error` -> structured `createLogger` across proxy, web-server/routes, glmt, quota-fetchers, executors, delegation. User-facing `console.error` (CLI flows, arg-parser usage, installers, prompts, adapter launch errors, error display) migrated to `process.stderr.write` (preserves stderr output). `error-manager.ts` reclassified CLI-UX-exempt (user-facing display). | hotpath `console.error` 928 -> 267 (71%); createLogger files 35 -> 64 |
+| 2026-06-18 | P4 | `throw new Error` -> typed subclasses (ProfileError/AuthError/ConfigError/ProviderError/ValidationError) in cliproxy/auth, web-server/routes, auth. Error taxonomy made erasable (enum -> const, param-props -> fields) so the UI build accepts it. | typed adoption (locked subdomains) 0/23 -> 21/23 (91.3%); overall 0.9% -> 8.6% |
+| 2026-06-18 | P5 | Split 4 test-backed god-files into submodule dirs + barrels (shared-manager, cliproxy-stats-routes, persist-command, quota-subcommand). Public API preserved. | files > 400 LOC 95 -> 91 |
+| 2026-06-18 | P6 | Split 2 of 6 characterization-first god-files (quota-fetcher, quota-fetcher-gemini-cli; both had strong per-provider test coverage). 4 deferred. | files > 400 LOC 91 -> 89 |
+| 2026-06-18 | P7 | ESLint gates: `ccs/no-new-throw-error` (error, baseline-allowlisted) + `max-lines` (warn, 400). code-standards.md + logging-contract.md (error.code table). | gates enforced (0 lint errors on baseline) |
+
+## Epic outcome (2026-06-18)
+
+| Metric | Baseline | Final | Target | Status |
+|---|---:|---:|---:|---|
+| typed-error adoption (locked subdomains) | 0.0% (0/23) | 91.3% (21/23) | >40% | met |
+| typed-error adoption (overall) | 0.9% (5/431) | 8.6% (37/431) | rise | met |
+| hotpath `console.error`/`warn` | 928 | 267 | <10 (diagnostics) | diagnostics fully structured; residual is user-facing CLI output (see P3 note) |
+| files with `createLogger` | 35 | 64 | rise | met |
+| files > 400 LOC | 95 | 89 | <60 | partial (P6 deferred 4 targets) |
+| hardening report freshness | stale | <30d gate | gate | met (P1) |
+| ESLint `no-new-throw-error` | not enforced | error + allowlist | enforced | met (P7) |
+| ESLint `max-lines` | not enforced | warn at 400 | enforced | met (P7) |
+
+### Deferred follow-ups
+
+- P6 remaining 4 targets (`oauth-handler.ts`, `cursor-executor.ts`, `tool-sanitization-proxy.ts`, +1): need dedicated characterization-test work before splitting (the plan's characterization-first hard gate). Each has a clean seam identified in the epic plan.
+- P3 residual ~267 user-facing `console.error` -> `process.stderr.write`: mechanical, no traceability value; continues incrementally.
+
 
 ### P3 residual note (2026-06-18)
 
