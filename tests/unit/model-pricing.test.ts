@@ -65,6 +65,30 @@ describe('model-pricing', () => {
       expect(pricing.inputPerMillion).toBe(0.6);
     });
 
+    it('should price current provider preset defaults without fallback rates', () => {
+      const fallback = getModelPricing('unknown-model-xyz');
+
+      expect(getModelPricing('glm-5.2')).toMatchObject({
+        inputPerMillion: 1.4,
+        outputPerMillion: 4.4,
+        cacheReadPerMillion: 0.26,
+      });
+      expect(getModelPricing('MiniMax-M3')).toMatchObject({
+        inputPerMillion: 0.3,
+        outputPerMillion: 1.2,
+        cacheReadPerMillion: 0.06,
+      });
+      expect(getModelPricing('MiniMax-M3', { serviceTier: 'priority' })).toMatchObject({
+        inputPerMillion: 0.45,
+        outputPerMillion: 1.8,
+        cacheReadPerMillion: 0.09,
+      });
+
+      expect(getModelPricing('glm-5.2')).not.toEqual(fallback);
+      expect(getModelPricing('MiniMax-M3')).not.toEqual(fallback);
+      expect(getModelPricing('kimi-for-coding')).not.toEqual(fallback);
+    });
+
     it('should not use fallback pricing for known Qwen catalog IDs', () => {
       const fallback = getModelPricing('unknown-model-xyz');
       const catalogIds = ['qwen3-235b', 'qwen3-vl-plus', 'qwen3-32b'];

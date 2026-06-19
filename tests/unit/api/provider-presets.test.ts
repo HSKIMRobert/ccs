@@ -29,6 +29,14 @@ describe('provider-presets', () => {
     expect(preset?.id).toBe('km');
   });
 
+  it('tracks current provider default model updates', () => {
+    expect(getPresetById('glm')?.defaultModel).toBe('glm-5.2');
+    expect(getPresetById('glmt')?.defaultModel).toBe('glm-5.2');
+    expect(getPresetById('km')?.defaultModel).toBe('kimi-for-coding');
+    expect(getPresetById('kimi')?.defaultModel).toBe('kimi-for-coding');
+    expect(getPresetById('mm')?.defaultModel).toBe('MiniMax-M3');
+  });
+
   it('resolves llama.cpp preset with local-provider sentinel token', () => {
     const preset = getPresetById('llamacpp');
     expect(preset?.id).toBe('llamacpp');
@@ -110,7 +118,11 @@ describe('provider-presets', () => {
     for (const preset of PROVIDER_PRESETS) {
       if (!preset.icon) continue;
 
-      const iconPath = resolve(import.meta.dir, '../../../ui/public', preset.icon.replace(/^\/+/, ''));
+      const iconPath = resolve(
+        import.meta.dir,
+        '../../../ui/public',
+        preset.icon.replace(/^\/+/, '')
+      );
       expect(existsSync(iconPath)).toBe(true);
     }
   });

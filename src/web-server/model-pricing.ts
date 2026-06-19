@@ -531,8 +531,14 @@ const PRICING_REGISTRY: Record<string, ModelPricing> = {
   },
 
   // ---------------------------------------------------------------------------
-  // GLM Models (Zhipu AI / Z.AI) - Source: OpenRouter verified pricing
+  // GLM Models (Zhipu AI / Z.AI) - Source: Official Z.AI pricing
   // ---------------------------------------------------------------------------
+  'glm-5.2': {
+    inputPerMillion: 1.4,
+    outputPerMillion: 4.4,
+    cacheCreationPerMillion: 0.0,
+    cacheReadPerMillion: 0.26,
+  },
   'glm-5': {
     inputPerMillion: 1.0,
     outputPerMillion: 3.2,
@@ -678,8 +684,22 @@ const PRICING_REGISTRY: Record<string, ModelPricing> = {
   },
 
   // ---------------------------------------------------------------------------
-  // MiniMax Models - Source: https://platform.minimax.io/docs/pricing/pay-as-you-go
+  // MiniMax Models - Source: https://platform.minimax.io/docs/guides/pricing-paygo
   // ---------------------------------------------------------------------------
+  'MiniMax-M3': {
+    inputPerMillion: 0.3,
+    outputPerMillion: 1.2,
+    cacheCreationPerMillion: 0.0,
+    cacheReadPerMillion: 0.06,
+    serviceTiers: {
+      priority: {
+        inputPerMillion: 0.45,
+        outputPerMillion: 1.8,
+        cacheCreationPerMillion: 0.0,
+        cacheReadPerMillion: 0.09,
+      },
+    },
+  },
   'MiniMax-M2.5': {
     inputPerMillion: 0.3,
     outputPerMillion: 1.2,
