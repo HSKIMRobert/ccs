@@ -1,14 +1,13 @@
 /**
- * Regression tests for the `ccs api create --cliproxy-provider claude` bridge path.
+ * Regression tests for the `ccs api create --cliproxy-provider <provider>` bridge path.
  *
- * PR #1554 fixed the main CLIProxy env-builder to use the root URL for the built-in
- * claude provider. This file locks the same rule on the parallel api-create bridge path
+ * The bridge path must use the same route rules as the main CLIProxy env-builder
  * (resolveCliproxyBridgeProfile / listCliproxyBridgeProviders) so both paths stay
- * consistent.
+ * consistent across backends.
  *
- * Background: CLIProxyAPI registers /v1/messages at the ROOT. The /api/provider/<x>
- * prefix is a Plus-only route for non-Claude providers. Using /api/provider/claude
- * returns 404 on the base CLIProxyAPI installation.
+ * Background: the original CLIProxyAPI backend registers Claude-compatible routes at
+ * the root. The /api/provider/<x> prefix is a Plus-only route. Using provider-scoped
+ * routes against the original backend returns 404.
  */
 
 import * as fs from 'fs';
@@ -23,7 +22,7 @@ import { resolveCliproxyBridgeMetadata } from '../cliproxy-profile-bridge';
 import { invalidateConfigCache } from '../../../config/config-loader-facade';
 import { clearConfigCache } from '../../../cliproxy/config/base-config-loader';
 
-describe('cliproxy-profile-bridge: claude provider uses root URL', () => {
+describe('cliproxy-profile-bridge: backend-aware provider route paths', () => {
   let tempHome: string;
   let originalCcsHome: string | undefined;
 
@@ -37,11 +36,27 @@ describe('cliproxy-profile-bridge: claude provider uses root URL', () => {
   });
 
   afterEach(() => {
-    process.env.CCS_HOME = originalCcsHome;
+    if (originalCcsHome !== undefined) {
+      process.env.CCS_HOME = originalCcsHome;
+    } else {
+      delete process.env.CCS_HOME;
+    }
     invalidateConfigCache();
     clearConfigCache();
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
+
+  function writeBackendConfig(backend: 'original' | 'plus'): void {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.yaml'),
+      ['version: 1', 'cliproxy:', `  backend: ${backend}`, ''].join('\n'),
+      'utf8'
+    );
+    invalidateConfigCache();
+    clearConfigCache();
+  }
 
   // ── resolveCliproxyBridgeProfile ──────────────────────────────────────────
 
@@ -65,13 +80,20 @@ describe('cliproxy-profile-bridge: claude provider uses root URL', () => {
     expect(profile.models.haiku).toBe('');
   });
 
-  it('resolveCliproxyBridgeProfile(gemini) still uses scoped /api/provider path', () => {
+  it('resolveCliproxyBridgeProfile(gemini) uses root URL on the original backend', () => {
     const profile = resolveCliproxyBridgeProfile('gemini');
-    expect(profile.baseUrl).toContain('/api/provider/gemini');
-    expect(profile.routePath).toBe('/api/provider/gemini');
+    expect(profile.baseUrl).toBe('http://127.0.0.1:8317/');
+    expect(profile.routePath).toBe('/');
   });
 
-  it('resolveCliproxyBridgeProfile(codex) still uses scoped /api/provider path', () => {
+  it('resolveCliproxyBridgeProfile(codex) uses root URL on the original backend', () => {
+    const profile = resolveCliproxyBridgeProfile('codex');
+    expect(profile.baseUrl).toBe('http://127.0.0.1:8317/');
+    expect(profile.routePath).toBe('/');
+  });
+
+  it('resolveCliproxyBridgeProfile(codex) uses scoped path on the plus backend', () => {
+    writeBackendConfig('plus');
     const profile = resolveCliproxyBridgeProfile('codex');
     expect(profile.baseUrl).toContain('/api/provider/codex');
     expect(profile.routePath).toBe('/api/provider/codex');
@@ -87,7 +109,15 @@ describe('cliproxy-profile-bridge: claude provider uses root URL', () => {
     expect(claudeInfo?.routePath).not.toContain('/api/provider/claude');
   });
 
-  it('listCliproxyBridgeProviders keeps scoped routePaths for non-claude providers', () => {
+  it('listCliproxyBridgeProviders shows root routePaths for original-backend providers', () => {
+    const providers = listCliproxyBridgeProviders();
+    for (const info of providers) {
+      expect(info.routePath).toBe('/');
+    }
+  });
+
+  it('listCliproxyBridgeProviders keeps scoped routePaths for plus-backend non-claude providers', () => {
+    writeBackendConfig('plus');
     const providers = listCliproxyBridgeProviders();
     for (const info of providers) {
       if (info.provider === 'claude') continue;
