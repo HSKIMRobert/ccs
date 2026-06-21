@@ -1,3 +1,62 @@
+## [8.5.0](https://github.com/kaitranntt/ccs/compare/v8.4.0...v8.5.0) (2026-06-21)
+
+### Features
+
+* **api:** add Fireworks AI provider preset ([#1543](https://github.com/kaitranntt/ccs/issues/1543)) ([a472c44](https://github.com/kaitranntt/ccs/commit/a472c440156fc549c500c649ea0033220fb97e61))
+* **bar:** live Codex usage sync with force refresh and spend-chart periods ([6ed5b2d](https://github.com/kaitranntt/ccs/commit/6ed5b2d62b8a3c08a2e23478c6d4078e2ebf501c))
+* **config:** add opt-in output limits for spawned CLI ([#1544](https://github.com/kaitranntt/ccs/issues/1544)) ([499aec8](https://github.com/kaitranntt/ccs/commit/499aec8a9ba9eeb27c1d183a27b3336f4e8794e8))
+* **errors:** P4 typed-error taxonomy adoption (0->91% locked) + erasable-syntax fix ([7234ef8](https://github.com/kaitranntt/ccs/commit/7234ef8fcf5e3cba0c42f2bf48e075dbe33b00d4))
+* **hardening:** P1 maintainability metrics baseline + freshness gate ([#1561](https://github.com/kaitranntt/ccs/issues/1561)) ([95a2864](https://github.com/kaitranntt/ccs/commit/95a2864ef3492f96098c689e16086f6e1db012d2))
+* **lint:** P7 enforcement gates (no-new-throw-error + max-lines) + docs ([2f94f35](https://github.com/kaitranntt/ccs/commit/2f94f35ec35bc3710c3ab1d6f1019f704e58d4c7))
+* **logging:** P2 traceability foundation - requestId wrap, daemon forwarding (#NNN) ([5e1b864](https://github.com/kaitranntt/ccs/commit/5e1b8640ab517109732affd32b430ca0b769996a)), closes [#NNN](https://github.com/kaitranntt/ccs/issues/NNN)
+* **logging:** P3 hotpath console.error migration + redaction gate (928->267) ([87aeb8f](https://github.com/kaitranntt/ccs/commit/87aeb8f19331b07ed056ec49913a23b5dad417e6))
+
+### Bug Fixes
+
+* avoid echoing invalid channel token values ([#1542](https://github.com/kaitranntt/ccs/issues/1542)) ([e3566ed](https://github.com/kaitranntt/ccs/commit/e3566ed7650b6930fd5515527831c4a3f0924cbb))
+* avoid quadratic cliproxy usage hydration ([#1537](https://github.com/kaitranntt/ccs/issues/1537)) ([f74561f](https://github.com/kaitranntt/ccs/commit/f74561fe9b48c478c002daec39b8797f1dd0ede6))
+* **bar:** authenticate reused local server probes ([#1546](https://github.com/kaitranntt/ccs/issues/1546)) ([f25a101](https://github.com/kaitranntt/ccs/commit/f25a1015ed35df91ed6f145e29eaa111da6b8727))
+* **bar:** avoid blocking on lower-priority probes ([#1548](https://github.com/kaitranntt/ccs/issues/1548)) ([8bd289b](https://github.com/kaitranntt/ccs/commit/8bd289bfae3e60c460ad4442d5ef46da51d43d14))
+* **bar:** distinguish native Codex subscription rows ([#1552](https://github.com/kaitranntt/ccs/issues/1552)) ([ba7a2ab](https://github.com/kaitranntt/ccs/commit/ba7a2abb799515447c30c99b75ef43b9362793ea))
+* **bar:** preserve Gatekeeper quarantine on install ([#1534](https://github.com/kaitranntt/ccs/issues/1534)) ([c776e18](https://github.com/kaitranntt/ccs/commit/c776e184344132ad9b5bf6d7fcca88d8251e9414))
+* **bar:** tolerate duplicate rows in alert pruning ([#1553](https://github.com/kaitranntt/ccs/issues/1553)) ([84ff4d5](https://github.com/kaitranntt/ccs/commit/84ff4d57a4a03ce3dfe105fab3b25c95bc45c0e5))
+* **bar:** verify CCS Bar release archive digest ([#1532](https://github.com/kaitranntt/ccs/issues/1532)) ([d2848d3](https://github.com/kaitranntt/ccs/commit/d2848d39317950b36ac7038fcf22cb8e953787f9))
+* bound Codex rollout tail reads ([#1547](https://github.com/kaitranntt/ccs/issues/1547)) ([06e8309](https://github.com/kaitranntt/ccs/commit/06e83091bec3cf4dff344019d02f836fdb7d2c13))
+* **browser:** preserve profile-bound DevTools discovery ([#1541](https://github.com/kaitranntt/ccs/issues/1541)) ([ab6c59b](https://github.com/kaitranntt/ccs/commit/ab6c59ba354361d011e3004b9706a5ebe05ebf76))
+* **cliproxy:** guard unsupported Qwen account auth ([b6ef4e5](https://github.com/kaitranntt/ccs/commit/b6ef4e5782f0dcd6dda3419c9b545dea6bfa1dcb))
+* **cliproxy:** use root URL for Claude provider ([#1554](https://github.com/kaitranntt/ccs/issues/1554)) ([49a7b9d](https://github.com/kaitranntt/ccs/commit/49a7b9dc857bce7525e0b9a6be8d797b6841ca1f))
+* **codex:** sanitize config override probes ([#1535](https://github.com/kaitranntt/ccs/issues/1535)) ([db44845](https://github.com/kaitranntt/ccs/commit/db44845857b62352058b07900de6c04c36c5ba27))
+* **config:** update provider default models ([20e315b](https://github.com/kaitranntt/ccs/commit/20e315ba3f5f165602ec89a38e94b2c9249e7ab8))
+* **cursor:** redact daemon token from dashboard start ([#1540](https://github.com/kaitranntt/ccs/issues/1540)) ([b85a3de](https://github.com/kaitranntt/ccs/commit/b85a3de26e45ffcfcd4db0f3216a41326a05f285))
+* degrade WebSearch launch provisioning failures ([#1571](https://github.com/kaitranntt/ccs/issues/1571)) ([1a03985](https://github.com/kaitranntt/ccs/commit/1a0398579a974efa8adaa65446c51c5f512efa77))
+* enforce tier lock during quota preflight ([#1550](https://github.com/kaitranntt/ccs/issues/1550)) ([361328c](https://github.com/kaitranntt/ccs/commit/361328c788e13fa471a1f6ced5c44411a131d503))
+* handle auth-protected bar launch probes ([#1551](https://github.com/kaitranntt/ccs/issues/1551)) ([c040986](https://github.com/kaitranntt/ccs/commit/c0409862d2ab89682dae0987f872db745d798763))
+* harden macOS bar launch descriptor ([#1533](https://github.com/kaitranntt/ccs/issues/1533)) ([10aff10](https://github.com/kaitranntt/ccs/commit/10aff10a67fbe7f4a9835aca8e394e3b62ae2a0c))
+* harden release issue parsing ([#1536](https://github.com/kaitranntt/ccs/issues/1536)) ([74dd2f3](https://github.com/kaitranntt/ccs/commit/74dd2f38ccc1adcb4c7cd7fb825f14121b0d96b2))
+* honor default target for Claude passthrough ([#1539](https://github.com/kaitranntt/ccs/issues/1539)) ([473aa08](https://github.com/kaitranntt/ccs/commit/473aa082f66a843edcea0d7ab9e9f94a2b585b67))
+* ignore malformed bar analytics date keys ([#1556](https://github.com/kaitranntt/ccs/issues/1556)) ([e37a87c](https://github.com/kaitranntt/ccs/commit/e37a87c3a250c5f08793b119d7c0d41e1227bbcd))
+* **logging:** harden structured trace redaction ([1462823](https://github.com/kaitranntt/ccs/commit/1462823be8c67895e81009aab0259263ae8b4097))
+* **macos-bar:** launch dashboard without shell ([#1549](https://github.com/kaitranntt/ccs/issues/1549)) ([50f136a](https://github.com/kaitranntt/ccs/commit/50f136a1f0223fd4c39789ffdd273c30b1ad6b06))
+* **proxy:** keep undici timeouts above the upstream request timeout ([#1524](https://github.com/kaitranntt/ccs/issues/1524)) ([8f9795b](https://github.com/kaitranntt/ccs/commit/8f9795bce24123786722d592d18dff8be59cc8d0))
+* **usage:** price updated provider defaults ([34123a6](https://github.com/kaitranntt/ccs/commit/34123a62a69c7e5acd621fc54da901a6975f1709))
+
+### Documentation
+
+* **hardening:** finalize epic metrics + progress log (P1-P7) ([2d48488](https://github.com/kaitranntt/ccs/commit/2d484884752a6fd79ca1a891c62450333c15a4fe))
+
+### Code Refactoring
+
+* P5 god-file splits (test-backed, public API preserved) ([919be3c](https://github.com/kaitranntt/ccs/commit/919be3c722eed9f56f028a4929bf2ac8944d080d))
+* P6 god-file splits (quota-fetcher + quota-fetcher-gemini-cli; 4 deferred) ([aecc1f7](https://github.com/kaitranntt/ccs/commit/aecc1f7217d192383d18c059690e38b47985ba18))
+
+### Tests
+
+* **bar:** harden bar-probe auth coverage; drop dead proxy shim ([#1555](https://github.com/kaitranntt/ccs/issues/1555)) ([3fa4a34](https://github.com/kaitranntt/ccs/commit/3fa4a342f974c3a346ba9b9d2ad3f429ae1eda0c))
+
+### CI
+
+* **bar:** auto-build and publish CCS Bar on main via self-hosted macOS runner ([b3a9abf](https://github.com/kaitranntt/ccs/commit/b3a9abffbce1c62957720e3fda9a83204f34757f))
+
 ## [8.4.0](https://github.com/kaitranntt/ccs/compare/v8.3.0...v8.4.0) (2026-06-16)
 
 ### Features
