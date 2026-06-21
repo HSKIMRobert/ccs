@@ -117,3 +117,28 @@ The source lives in `macos-bar/`. Contributors can build and run the logic check
 swift build                 # build all targets, including the app
 swift run ccs-bar-check     # run the logic tests
 ```
+
+## Releasing
+
+The app ships as a single floating GitHub release asset, `CCS-Bar.app.zip` under the `ccs-bar-latest` tag, which is what `ccs bar install` downloads. The version comes from one file: `macos-bar/VERSION` (a single line of semver). Bump it in the same PR when you want a new number; the asset is always the latest build regardless.
+
+### Automatic (preferred)
+
+The `Bar Release` workflow (`.github/workflows/bar-release.yml`) builds and publishes the asset automatically. It is scoped tightly so it never affects other PRs or CI:
+
+- It runs only on a push to `main` that touches `macos-bar/**`, or a manual run from the Actions tab (`workflow_dispatch`).
+- It runs only on the dedicated self-hosted macOS runner (label `ccs-bar`); the Linux CI runners never pick it up and it never competes for them.
+
+So bar changes reach users when they land on `main` (the stable cadence). To cut a release without a code change, or to re-publish, trigger the workflow manually.
+
+### Manual fallback
+
+From a macOS machine with the Swift toolchain and `gh`:
+
+```bash
+cd macos-bar
+./Scripts/package_app.sh            # uses macos-bar/VERSION; pass a version to override
+gh release upload ccs-bar-latest dist/CCS-Bar.app.zip --clobber
+```
+
+Builds are ad-hoc signed by default. Developer ID notarization (for the no-prompt public install) is available via `CCS_BAR_SIGNING=developer-id` once a paid Apple cert is configured.

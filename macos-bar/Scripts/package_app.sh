@@ -13,12 +13,19 @@
 #   CCS_BAR_SIGNING=developer-id CCS_BAR_SIGN_IDENTITY="Developer ID Application: ..." ./Scripts/package_app.sh 0.1.0
 set -euo pipefail
 
-VERSION="${1:-0.0.0}"
 SIGNING="${CCS_BAR_SIGNING:-adhoc}"
 APP_NAME="CCS Bar"
 EXEC_NAME="CCSBar"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Version precedence: explicit arg, else the committed `VERSION` file (the single
+# source of truth shared with the Bar Release CI workflow), else 0.0.0.
+VERSION="${1:-}"
+if [[ -z "$VERSION" && -f "$ROOT/VERSION" ]]; then
+  VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
+fi
+VERSION="${VERSION:-0.0.0}"
 DIST="$ROOT/dist"
 APP="$DIST/$APP_NAME.app"
 
