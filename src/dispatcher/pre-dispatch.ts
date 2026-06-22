@@ -122,19 +122,14 @@ export async function runPreDispatchHandlers(ctx: PreDispatchContext): Promise<b
     return true;
   }
 
-  // Special case: copilot command (GitHub Copilot integration)
-  // Route known subcommands AND unknown tokens to the command handler so the
-  // default case can print "[X] Unknown subcommand: <token>" and exit 1.
-  // Unknown tokens that are NOT subcommand-like are kept as profile passthrough.
+  // Special case: copilot command (GitHub Copilot integration).
+  // Route ONLY known subcommands to the handler; any other arg is kept as
+  // passthrough to the copilot bridge profile flow (legacy behavior). Do not
+  // treat an arbitrary token as an unknown subcommand error, or this breaks the
+  // passthrough path.
   if (firstArg === 'copilot' && args.length > 1) {
     const copilotToken = args[1];
-    const isKnownSubcommand = isCopilotSubcommandToken(copilotToken);
-    // Route any non-flag, non-profile-looking second token to the handler so
-    // the default branch fires with the correct error message.
-    const looksLikeCopilotSubcmd =
-      isKnownSubcommand || (typeof copilotToken === 'string' && !copilotToken.startsWith('-'));
-
-    if (looksLikeCopilotSubcmd) {
+    if (isCopilotSubcommandToken(copilotToken)) {
       const { handleCopilotCommand } = await import('../commands/copilot-command');
       const exitCode = await handleCopilotCommand(args.slice(1));
       process.exit(exitCode);
@@ -142,11 +137,15 @@ export async function runPreDispatchHandlers(ctx: PreDispatchContext): Promise<b
   }
 
   // Special case: explicit legacy Cursor bridge namespace.
-  // Route ALL tokens (known and unknown) so the default case can report the error.
+  // Route ONLY known subcommands; keep other args as passthrough to the cursor
+  // bridge flow (legacy behavior).
   if (firstArg === LEGACY_CURSOR_PROFILE_NAME && args.length > 1) {
-    const { handleCursorCommand } = await import('../commands/cursor-command');
-    const exitCode = await handleCursorCommand(args.slice(1));
-    process.exit(exitCode);
+    const cursorToken = args[1];
+    if (isCursorSubcommandToken(cursorToken)) {
+      const { handleCursorCommand } = await import('../commands/cursor-command');
+      const exitCode = await handleCursorCommand(args.slice(1));
+      process.exit(exitCode);
+    }
   }
 
   // Compatibility shim: old `ccs cursor <subcommand>` still forwards to the legacy bridge
