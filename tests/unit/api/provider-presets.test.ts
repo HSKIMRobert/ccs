@@ -100,6 +100,19 @@ describe('provider-presets', () => {
     expect(isValidPresetId('hf')).toBe(true);
   });
 
+  it('resolves Tuning Engines preset metadata and aliases', () => {
+    const preset = getPresetById('tuningengines');
+    expect(preset?.id).toBe('tuningengines');
+    expect(preset?.baseUrl).toBe('https://api.tuningengines.com/v1');
+    expect(preset?.defaultProfileName).toBe('te');
+    expect(preset?.defaultModel).toBe('gpt-4o');
+    expect(preset?.defaultTarget).toBe('droid');
+    expect(preset?.apiKeyPlaceholder).toBe('sk-te-...');
+    expect(getPresetById('te')?.id).toBe('tuningengines');
+    expect(getPresetById('tuning')?.id).toBe('tuningengines');
+    expect(isValidPresetId('te')).toBe(true);
+  });
+
   it('uses OpenRouter v1 as the OpenAI-compatible API root', () => {
     const preset = getPresetById('openrouter');
     expect(preset?.baseUrl).toBe('https://openrouter.ai/api/v1');
