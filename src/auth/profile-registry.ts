@@ -376,13 +376,19 @@ export class ProfileRegistry {
   }
 
   /**
-   * Set default profile in unified config
+   * Set default profile in unified config.
+   * Accepts names from unified config (accounts, profiles, cliproxy variants)
+   * as well as legacy profiles.json so that mixed-mode installs work correctly.
    */
   setDefaultUnified(name: string): void {
+    // Check legacy registry outside the mutate callback to avoid re-reading inside the transaction.
+    const legacyData = this._read();
+    const existsLegacy = !!legacyData.profiles[name];
+
     mutateConfig((config) => {
-      const exists =
+      const existsUnified =
         config.accounts[name] || config.profiles[name] || config.cliproxy?.variants?.[name];
-      if (!exists) {
+      if (!existsUnified && !existsLegacy) {
         throw new ProfileError(`Profile not found: ${name}`, name);
       }
       config.default = name;

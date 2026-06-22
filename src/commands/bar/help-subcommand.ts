@@ -14,6 +14,7 @@ export async function showHelp(): Promise<void> {
       'Commands:',
       [
         ['launch', 'Spawn the server detached, write ~/.ccs/bar.json, open the app (default)'],
+        ['serve', 'Run the CCS Bar server in the foreground (used internally by launch)'],
         ['stop', 'Stop the detached CCS Bar server'],
         ['status', 'Show whether the CCS Bar server is running'],
         ['install', 'Download CCS Bar from the ccs-bar-latest GitHub release into ~/Applications'],

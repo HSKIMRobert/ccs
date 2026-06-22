@@ -79,7 +79,8 @@ export async function handlePoolSubcommand(args: string[]): Promise<void> {
       console.log(warn(result.message));
       process.exitCode = 1;
     } else if (result.changed) {
-      console.log(ok(result.message));
+      // message already carries the correct [OK]/[!] prefix from routing-strategy
+      console.log(result.message);
     } else {
       console.log(info(result.message));
     }
@@ -93,7 +94,8 @@ export async function handlePoolSubcommand(args: string[]): Promise<void> {
       console.log(warn(result.message));
       process.exitCode = 1;
     } else if (result.changed) {
-      console.log(ok(result.message));
+      // message already carries the correct [OK]/[!] prefix from routing-strategy
+      console.log(result.message);
     } else {
       console.log(info(result.message));
     }

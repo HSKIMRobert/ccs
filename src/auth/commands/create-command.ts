@@ -53,7 +53,6 @@ export async function handleCreate(ctx: CommandContext, args: string[]): Promise
   });
 
   if (!profileName) {
-    console.log(fail('Profile name is required'));
     console.log('');
     console.log(
       `Usage: ${color('ccs auth create <profile> [--force] [--bare] [--share-context] [--context-group <name>] [--deeper-continuity]', 'command')}`
@@ -65,20 +64,21 @@ export async function handleCreate(ctx: CommandContext, args: string[]): Promise
   }
 
   if (!isValidAccountProfileName(profileName)) {
-    const error =
-      'Invalid profile name. Use letters/numbers/dash/underscore and start with a letter.';
-    console.log(fail(error));
-    console.log('');
-    exitWithError(error, ExitCode.PROFILE_ERROR);
+    exitWithError(
+      'Invalid profile name. Use letters/numbers/dash/underscore and start with a letter.',
+      ExitCode.PROFILE_ERROR
+    );
   }
 
   // Check if profile already exists (check both legacy and unified)
   const existsLegacy = ctx.registry.hasProfile(profileName);
   const existsUnified = ctx.registry.hasAccountUnified(profileName);
   if (!force && (existsLegacy || existsUnified)) {
-    console.log(fail(`Profile already exists: ${profileName}`));
-    console.log(`    Use ${color('--force', 'command')} to overwrite`);
-    exitWithError(`Profile already exists: ${profileName}`, ExitCode.PROFILE_ERROR);
+    // Keep the --force hint in the exitWithError message so it appears in the single output line
+    exitWithError(
+      `Profile already exists: ${profileName}\n    Use --force to overwrite`,
+      ExitCode.PROFILE_ERROR
+    );
   }
 
   const normalizedName = sanitizeProfileNameForInstance(profileName);
@@ -87,10 +87,10 @@ export async function handleCreate(ctx: CommandContext, args: string[]): Promise
   );
 
   if (collidingName) {
-    const error = `Profile "${profileName}" conflicts with existing profile "${collidingName}" on filesystem.`;
-    console.log(fail(error));
-    console.log('');
-    exitWithError(error, ExitCode.PROFILE_ERROR);
+    exitWithError(
+      `Profile "${profileName}" conflicts with existing profile "${collidingName}" on filesystem.`,
+      ExitCode.PROFILE_ERROR
+    );
   }
 
   const resolvedContext = resolveCreateAccountContext({
@@ -100,8 +100,6 @@ export async function handleCreate(ctx: CommandContext, args: string[]): Promise
   });
 
   if (resolvedContext.error) {
-    console.log(fail(resolvedContext.error));
-    console.log('');
     exitWithError(resolvedContext.error, ExitCode.PROFILE_ERROR);
   }
 

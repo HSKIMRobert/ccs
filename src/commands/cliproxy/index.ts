@@ -146,7 +146,12 @@ export async function handleCliproxyCommand(args: string[]): Promise<void> {
   const verbose = hasAnyFlag(remainingArgs, ['--verbose', '-v']);
   const command = remainingArgs[0];
 
-  if (hasAnyFlag(remainingArgs, ['--help', '-h'])) {
+  // Show global cliproxy help whenever --help/-h appears (order-insensitive, so
+  // `cliproxy status --help` and `cliproxy --verbose --help` both work). The one
+  // exception is `routing affinity --help`, which renders affinity-specific help
+  // after dispatch (handled below).
+  const isRoutingAffinity = command === 'routing' && remainingArgs[1] === 'affinity';
+  if (!isRoutingAffinity && hasAnyFlag(remainingArgs, ['--help', '-h'])) {
     await showHelp();
     return;
   }
@@ -245,7 +250,7 @@ export async function handleCliproxyCommand(args: string[]): Promise<void> {
     start: async () => handleStart(verbose),
     stop: async () => handleStop(),
     restart: async () => handleRestart(verbose),
-    status: async () => handleProxyStatus(),
+    status: async () => handleProxyStatus(verbose),
     doctor: async () => handleDoctor(verbose),
     diag: async () => handleDoctor(verbose),
     default: async () => handleSetDefault(remainingArgs.slice(1)),
