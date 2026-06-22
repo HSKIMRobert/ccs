@@ -5,7 +5,7 @@
  * Supports 6 platforms: darwin/linux/windows x amd64/arm64
  */
 
-import {
+import type {
   PlatformInfo,
   SupportedOS,
   SupportedArch,

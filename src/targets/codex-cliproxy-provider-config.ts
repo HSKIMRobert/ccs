@@ -8,6 +8,8 @@ import {
 } from '../web-server/services/compatible-cli-toml-file-service';
 import { getModelMaxLevel } from '../cliproxy/model-catalog';
 import { parseCodexModelTuningAlias } from '../cliproxy/ai-providers/model-id-normalizer';
+import { buildLocalProviderBaseUrl } from '../cliproxy/config/provider-route';
+import { ConfigError } from '../errors/error-types';
 
 export const CCSXP_CLIPROXY_SHORTCUT_ENV = 'CCSXP_CLIPROXY_SHORTCUT';
 export const CODEX_CLIPROXY_PROVIDER_ID = 'cliproxy';
@@ -37,7 +39,7 @@ function resolveCodexConfigPath(env: NodeJS.ProcessEnv = process.env): {
 }
 
 export function buildCodexCliproxyProviderBaseUrl(port: number): string {
-  return `http://127.0.0.1:${port}/api/provider/codex`;
+  return buildLocalProviderBaseUrl('codex', port);
 }
 
 export function isCcsxpCliproxyShortcut(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -70,10 +72,66 @@ function resolveProviderEnvKey(provider: Record<string, unknown> | null): string
   return CODEX_CLIPROXY_PROVIDER_ENV_KEY;
 }
 
-function isProviderReady(provider: Record<string, unknown>, envKey: string): boolean {
+const LOCALHOST_NAMES = new Set(['127.0.0.1', 'localhost', '0.0.0.0']);
+
+function getEffectiveUrlPort(url: URL): number {
+  if (url.port) return Number.parseInt(url.port, 10);
+  return url.protocol === 'https:' ? 443 : 80;
+}
+
+function isManagedLocalUrl(url: URL): boolean {
+  return ['http:', 'https:'].includes(url.protocol) && LOCALHOST_NAMES.has(url.hostname);
+}
+
+function shouldUseManagedLocalBaseUrl(current: URL, expected: URL): boolean {
+  if (!isManagedLocalUrl(current) || !isManagedLocalUrl(expected)) {
+    return false;
+  }
+
+  const currentPort = getEffectiveUrlPort(current);
+  const expectedPort = getEffectiveUrlPort(expected);
+  if (currentPort !== expectedPort) {
+    return true;
+  }
+
+  const currentPath = current.pathname.replace(/\/+$/, '') || '/';
+  const expectedPath = expected.pathname.replace(/\/+$/, '') || '/';
+  return currentPath !== expectedPath;
+}
+
+function resolveProviderBaseUrl(
+  provider: Record<string, unknown>,
+  fallbackBaseUrl: string
+): string {
+  const baseUrl = provider.base_url;
+  if (!isValidCodexCliproxyBaseUrl(baseUrl)) {
+    return fallbackBaseUrl;
+  }
+
+  const trimmed = baseUrl.trim();
+  try {
+    const current = new URL(trimmed);
+    const expected = new URL(fallbackBaseUrl);
+    if (shouldUseManagedLocalBaseUrl(current, expected)) {
+      return fallbackBaseUrl;
+    }
+  } catch {
+    return fallbackBaseUrl;
+  }
+
+  return trimmed;
+}
+
+function isProviderReady(
+  provider: Record<string, unknown>,
+  envKey: string,
+  expectedBaseUrl: string
+): boolean {
   return (
     provider.name === CODEX_CLIPROXY_PROVIDER_NAME &&
     isValidCodexCliproxyBaseUrl(provider.base_url) &&
+    typeof provider.base_url === 'string' &&
+    resolveProviderBaseUrl(provider, expectedBaseUrl) === provider.base_url.trim() &&
     provider.env_key === envKey &&
     provider.wire_api === 'responses' &&
     provider.requires_openai_auth === false &&
@@ -90,17 +148,6 @@ function buildProviderConfig(baseUrl: string, envKey: string): Record<string, un
     requires_openai_auth: false,
     supports_websockets: false,
   };
-}
-
-function resolveProviderBaseUrl(
-  provider: Record<string, unknown>,
-  fallbackBaseUrl: string
-): string {
-  const baseUrl = provider.base_url;
-  if (isValidCodexCliproxyBaseUrl(baseUrl)) {
-    return baseUrl.trim();
-  }
-  return fallbackBaseUrl;
 }
 
 function appendProviderBlock(rawText: string, baseUrl: string): string {
@@ -135,10 +182,16 @@ export async function ensureCodexCliproxyProviderConfig(
   const fileProbe = await probeTomlObjectFile(configPath, 'Codex user config', displayPath);
 
   if (fileProbe.diagnostics.readError) {
-    throw new Error(`Cannot repair ${displayPath}: ${fileProbe.diagnostics.readError}`);
+    throw new ConfigError(
+      `Cannot repair ${displayPath}: ${fileProbe.diagnostics.readError}`,
+      configPath
+    );
   }
   if (fileProbe.diagnostics.parseError) {
-    throw new Error(`Cannot repair ${displayPath}: ${fileProbe.diagnostics.parseError}`);
+    throw new ConfigError(
+      `Cannot repair ${displayPath}: ${fileProbe.diagnostics.parseError}`,
+      configPath
+    );
   }
 
   const config = fileProbe.config ?? {};
@@ -148,7 +201,10 @@ export async function ensureCodexCliproxyProviderConfig(
   const normalizedModelAlias = normalizeTopLevelCodexModelAlias(config);
 
   if (modelProvidersValue !== undefined && !providers) {
-    throw new Error(`Cannot repair ${displayPath}: [model_providers] must be a table.`);
+    throw new ConfigError(
+      `Cannot repair ${displayPath}: [model_providers] must be a table.`,
+      configPath
+    );
   }
 
   if (!providers || !Object.prototype.hasOwnProperty.call(providers, CODEX_CLIPROXY_PROVIDER_ID)) {
@@ -174,13 +230,14 @@ export async function ensureCodexCliproxyProviderConfig(
 
   const currentProvider = asObject(providers[CODEX_CLIPROXY_PROVIDER_ID]);
   if (!currentProvider) {
-    throw new Error(
-      `Cannot repair ${displayPath}: [model_providers.${CODEX_CLIPROXY_PROVIDER_ID}] must be a table.`
+    throw new ConfigError(
+      `Cannot repair ${displayPath}: [model_providers.${CODEX_CLIPROXY_PROVIDER_ID}] must be a table.`,
+      configPath
     );
   }
 
   const envKey = resolveProviderEnvKey(currentProvider);
-  const providerReady = isProviderReady(currentProvider, envKey);
+  const providerReady = isProviderReady(currentProvider, envKey, expectedBaseUrl);
 
   if (!providerReady) {
     providers[CODEX_CLIPROXY_PROVIDER_ID] = {

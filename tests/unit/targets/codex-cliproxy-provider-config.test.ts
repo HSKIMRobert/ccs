@@ -6,22 +6,59 @@ import {
   buildCodexCliproxyProviderBaseUrl,
   ensureCodexCliproxyProviderConfig,
 } from '../../../src/targets/codex-cliproxy-provider-config';
+import { invalidateConfigCache } from '../../../src/config/config-loader-facade';
+import { clearConfigCache } from '../../../src/cliproxy/config/base-config-loader';
 
 describe('codex cliproxy provider config repair', () => {
   let tempHome: string;
   let codexHome: string;
   let configPath: string;
   let env: NodeJS.ProcessEnv;
+  let originalCcsHome: string | undefined;
 
   beforeEach(() => {
+    originalCcsHome = process.env.CCS_HOME;
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-codex-provider-config-'));
     codexHome = path.join(tempHome, '.codex');
     configPath = path.join(codexHome, 'config.toml');
     env = { CODEX_HOME: codexHome } as NodeJS.ProcessEnv;
+    process.env.CCS_HOME = tempHome;
+    invalidateConfigCache();
+    clearConfigCache();
   });
 
   afterEach(() => {
+    if (originalCcsHome !== undefined) {
+      process.env.CCS_HOME = originalCcsHome;
+    } else {
+      delete process.env.CCS_HOME;
+    }
+    invalidateConfigCache();
+    clearConfigCache();
     fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  function writeBackendConfig(backend: 'original' | 'plus'): void {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.yaml'),
+      ['version: 1', 'cliproxy:', `  backend: ${backend}`, ''].join('\n'),
+      'utf8'
+    );
+    invalidateConfigCache();
+    clearConfigCache();
+  }
+
+  it('uses the original backend root URL by default', () => {
+    expect(buildCodexCliproxyProviderBaseUrl(8317)).toBe('http://127.0.0.1:8317');
+  });
+
+  it('uses the plus backend scoped Codex URL when configured', () => {
+    writeBackendConfig('plus');
+    expect(buildCodexCliproxyProviderBaseUrl(8317)).toBe(
+      'http://127.0.0.1:8317/api/provider/codex'
+    );
   });
 
   it('creates the cliproxy model provider when config.toml is missing', async () => {
@@ -32,6 +69,7 @@ describe('codex cliproxy provider config repair', () => {
     const rawText = fs.readFileSync(configPath, 'utf8');
     expect(rawText).toContain('[model_providers.cliproxy]');
     expect(rawText).toContain('name = "CLIProxy Codex"');
+    expect(rawText).toContain('base_url = "http://127.0.0.1:8317"');
     expect(rawText).toContain('env_key = "CLIPROXY_API_KEY"');
     expect(rawText).not.toContain('model_provider = "cliproxy"');
   });
@@ -78,7 +116,7 @@ wire_api = "responses"
     expect(result.changed).toBe(true);
     expect(result.envKey).toBe('CLIPROXY_API_KEY');
     const rawText = fs.readFileSync(configPath, 'utf8');
-    expect(rawText).toContain('base_url = "http://localhost:8317/api/provider/codex"');
+    expect(rawText).toContain('base_url = "http://127.0.0.1:9321"');
     expect(rawText).toContain('env_key = "CLIPROXY_API_KEY"');
     expect(rawText).toContain('requires_openai_auth = false');
     expect(rawText).toContain('supports_websockets = false');
@@ -142,7 +180,29 @@ supports_websockets = false
     expect(fs.readFileSync(configPath, 'utf8')).toBe(rawText);
   });
 
-  it('leaves a ready localhost provider unchanged', async () => {
+  it('repairs a stale ready localhost provider to the original backend root URL', async () => {
+    fs.mkdirSync(codexHome, { recursive: true });
+    const rawText = `[model_providers.cliproxy]
+name = "CLIProxy Codex"
+base_url = "http://localhost:8317/api/provider/codex"
+env_key = "CLIPROXY_API_KEY"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false
+`;
+    fs.writeFileSync(configPath, rawText, 'utf8');
+
+    const result = await ensureCodexCliproxyProviderConfig(8317, env);
+
+    expect(result.changed).toBe(true);
+    expect(result.envKey).toBe('CLIPROXY_API_KEY');
+    const repairedText = fs.readFileSync(configPath, 'utf8');
+    expect(repairedText).toContain('base_url = "http://127.0.0.1:8317"');
+    expect(repairedText).not.toContain('/api/provider/codex');
+  });
+
+  it('leaves a ready plus-backend localhost provider unchanged', async () => {
+    writeBackendConfig('plus');
     fs.mkdirSync(codexHome, { recursive: true });
     const rawText = `[model_providers.cliproxy]
 name = "CLIProxy Codex"
@@ -188,7 +248,7 @@ supports_websockets = false
 
 [model_providers.cliproxy]
 name = "CLIProxy Codex"
-base_url = "http://localhost:8317/api/provider/codex"
+base_url = "http://127.0.0.1:8317"
 env_key = "CLIPROXY_API_KEY"
 wire_api = "responses"
 requires_openai_auth = false
@@ -239,7 +299,7 @@ supports_websockets = false
 
 [model_providers.cliproxy]
 name = "CLIProxy Codex"
-base_url = "http://localhost:8317/api/provider/codex"
+base_url = "http://127.0.0.1:8317"
 env_key = "CLIPROXY_API_KEY"
 wire_api = "responses"
 requires_openai_auth = false

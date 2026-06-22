@@ -36,6 +36,10 @@ import {
   getOutputLimitsEnv,
   getCcsDir,
 } from '../../config/config-loader-facade';
+import { buildCliproxyProviderPath, buildLocalProviderBaseUrl } from './provider-route';
+import { ConfigError } from '../../errors/error-types';
+
+export { buildCliproxyProviderPath, buildLocalProviderBaseUrl } from './provider-route';
 
 /** Settings file structure for user overrides */
 interface ProviderSettings {
@@ -205,14 +209,12 @@ export function getModelMapping(provider: CLIProxyProvider): ProviderModelMappin
 
 /**
  * Get environment variables for Claude CLI (bundled defaults)
- * Uses provider-specific endpoints (e.g., /api/provider/gemini) for explicit routing
- * except for the built-in claude provider.
+ * Uses the backend-aware route path for the selected provider.
  *
- * Root-URL exception: the claude provider always uses the CLIProxy ROOT endpoint
- * (http://127.0.0.1:<port>) instead of /api/provider/claude.  CLIProxyAPI's Claude Code
- * contract registers /v1/messages at the root; the /api/provider/ prefix is a Plus-only
- * feature for non-Claude providers.  buildCliproxyProviderPath() encodes this rule and is
- * used here and by the api-create bridge path so both remain consistent.
+ * Root-URL rule: the original CLIProxy backend uses the root endpoint
+ * (http://127.0.0.1:<port>) and routes by model. The /api/provider/<x> prefix is
+ * only used for Plus-backend non-Claude providers. buildCliproxyProviderPath()
+ * encodes this rule and is reused by the api-create bridge path.
  *
  * For the claude built-in provider the model env vars are intentionally omitted so that
  * the user's own Claude Code /model selection is honored end-to-end (model-neutral passthrough).
@@ -376,25 +378,6 @@ function ensureRequiredEnvVars(
 const LOCALHOST_NAMES = new Set(['127.0.0.1', 'localhost', '0.0.0.0']);
 
 /**
- * Return the CLIProxy route path for a provider.
- *
- * - claude uses the root path (empty string → "/" after buildProxyUrl normalises it)
- *   because CLIProxyAPI's Claude Code contract registers /v1/messages at the root; the
- *   /api/provider/ prefix is Plus-only and only for non-Claude providers.
- * - all other providers use the scoped /api/provider/<x> path.
- *
- * Exported so the profile-bridge can reuse the same rule (DRY).
- */
-export function buildCliproxyProviderPath(provider: CLIProxyProvider): string {
-  return provider === 'claude' ? '' : `/api/provider/${provider}`;
-}
-
-function buildLocalProviderBaseUrl(provider: CLIProxyProvider, port: number): string {
-  const rootUrl = `http://127.0.0.1:${port}`;
-  return provider === 'claude' ? rootUrl : `${rootUrl}/api/provider/${provider}`;
-}
-
-/**
  * Normalize local CLIProxy endpoint to the expected provider route.
  * Only rewrites localhost URLs that target the active local port.
  */
@@ -415,11 +398,11 @@ function normalizeLocalProviderBaseUrl(
         : 80;
     if (!Number.isFinite(effectivePort) || effectivePort !== port) return baseUrl;
 
-    if (provider === 'claude') {
+    const expectedPath = buildCliproxyProviderPath(provider);
+    if (expectedPath === '') {
       return parsed.origin;
     }
 
-    const expectedPath = `/api/provider/${provider}`;
     if (parsed.pathname === expectedPath && !parsed.search && !parsed.hash) return baseUrl;
 
     parsed.pathname = expectedPath;
@@ -437,7 +420,6 @@ function normalizeLocalProviderBaseUrl(
  */
 function rewriteLocalhostUrls(
   envVars: NodeJS.ProcessEnv,
-  provider: CLIProxyProvider,
   remoteConfig: RemoteProxyRewriteConfig
 ): NodeJS.ProcessEnv {
   const result = { ...envVars };
@@ -458,10 +440,7 @@ function rewriteLocalhostUrls(
   const standardWebPort = normalizedProtocol === 'https' ? 443 : 80;
   const portSuffix = effectivePort === standardWebPort ? '' : `:${effectivePort}`;
   const remoteRootUrl = `${normalizedProtocol}://${remoteConfig.host}${portSuffix}`;
-  const remoteBaseUrl =
-    provider === 'claude' ? remoteRootUrl : `${remoteRootUrl}/api/provider/${provider}`;
-
-  result.ANTHROPIC_BASE_URL = remoteBaseUrl;
+  result.ANTHROPIC_BASE_URL = remoteRootUrl;
 
   // Update auth token if provided
   if (remoteConfig.authToken) {
@@ -517,7 +496,7 @@ export function getEffectiveEnvVars(
           envVars = ensureRequiredEnvVars(envVars, provider, port);
           // Apply remote rewrite if configured
           if (remoteRewriteConfig) {
-            envVars = rewriteLocalhostUrls(envVars, provider, remoteRewriteConfig);
+            envVars = rewriteLocalhostUrls(envVars, remoteRewriteConfig);
           }
           return envVars;
         }
@@ -553,7 +532,7 @@ export function getEffectiveEnvVars(
         envVars = ensureRequiredEnvVars(envVars, provider, port);
         // Apply remote rewrite if configured
         if (remoteRewriteConfig) {
-          envVars = rewriteLocalhostUrls(envVars, provider, remoteRewriteConfig);
+          envVars = rewriteLocalhostUrls(envVars, remoteRewriteConfig);
         }
         return envVars;
       }
@@ -696,10 +675,11 @@ export function ensureProviderSettings(provider: CLIProxyProvider): void {
   let parsed: Record<string, unknown>;
   try {
     const value = JSON.parse(rawContent) as unknown;
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      throw new Error('settings root must be an object');
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      parsed = value as Record<string, unknown>;
+    } else {
+      throw new SyntaxError('settings root must be an object');
     }
-    parsed = value as Record<string, unknown>;
   } catch {
     // Preserve corrupt payload for manual inspection, then recover with defaults.
     const backupPath = `${settingsPath}.corrupt-${Date.now()}`;
@@ -744,7 +724,7 @@ export function ensureProviderSettings(provider: CLIProxyProvider): void {
     }
   }
 
-  if (provider === 'claude' && typeof mergedEnv.ANTHROPIC_BASE_URL === 'string') {
+  if (typeof mergedEnv.ANTHROPIC_BASE_URL === 'string') {
     const normalizedBaseUrl = normalizeLocalProviderBaseUrl(
       mergedEnv.ANTHROPIC_BASE_URL,
       provider,
@@ -1002,7 +982,7 @@ export function getCompositeEnvVars(
 
   // If default tier is missing, we cannot proceed meaningfully
   if (!defaultModel) {
-    throw new Error(`Missing model for default tier '${defaultTier}'`);
+    throw new ConfigError(`Missing model for default tier '${defaultTier}'`);
   }
 
   // Determine base URL and auth token based on remote vs local mode

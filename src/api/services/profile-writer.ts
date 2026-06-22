@@ -37,6 +37,7 @@ import {
   loadConfigSafe,
   mutateConfig,
 } from '../../config/config-loader-facade';
+import { ProfileError } from '../../errors/error-types';
 
 /** Check if URL is an OpenRouter endpoint */
 function isOpenRouterUrl(baseUrl: string): boolean {
@@ -333,19 +334,27 @@ export function createCliproxyBridgeProfile(
     resolved.target,
     provider
   );
+  const detectedBridge = resolveCliproxyBridgeMetadata({
+    env: {
+      ANTHROPIC_BASE_URL: resolved.baseUrl,
+      ANTHROPIC_AUTH_TOKEN: resolved.apiKey,
+    },
+  });
 
   return {
     ...result,
     name: resolved.name,
     provider,
     target: resolved.target,
-    cliproxyBridge:
-      resolveCliproxyBridgeMetadata({
-        env: {
-          ANTHROPIC_BASE_URL: resolved.baseUrl,
-          ANTHROPIC_AUTH_TOKEN: resolved.apiKey,
-        },
-      }) ?? null,
+    cliproxyBridge: detectedBridge ?? {
+      provider,
+      providerDisplayName: resolved.providerDisplayName,
+      routePath: resolved.routePath,
+      currentBaseUrl: resolved.baseUrl,
+      source: resolved.source,
+      usesCurrentTarget: true,
+      usesCurrentAuthToken: true,
+    },
   };
 }
 
@@ -361,7 +370,7 @@ export function updateApiProfileTarget(
     if (isUnifiedMode()) {
       mutateConfig((config) => {
         if (!config.profiles[name]) {
-          throw new Error(`API profile not found: ${name}`);
+          throw new ProfileError(`API profile not found: ${name}`, name);
         }
 
         if (target === 'claude') {
@@ -412,7 +421,7 @@ function removeApiProfileUnified(name: string): void {
     const profile = config.profiles[name];
 
     if (!profile) {
-      throw new Error(`API profile not found: ${name}`);
+      throw new ProfileError(`API profile not found: ${name}`, name);
     }
 
     if (profile.settings) {
