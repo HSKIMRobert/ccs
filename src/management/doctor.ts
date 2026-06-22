@@ -46,47 +46,69 @@ class Doctor {
 
     // Group 1: System
     console.log(header('SYSTEM'));
-    await runSystemChecks(this.results);
+    await this.safe('System Checks', () => runSystemChecks(this.results));
     console.log('');
 
     // Group 2: Environment (OAuth readiness diagnostics)
     console.log(header('ENVIRONMENT'));
-    runEnvironmentCheck(this.results);
+    await this.safe('Environment Check', () => runEnvironmentCheck(this.results));
     console.log('');
 
     // Group 3: Configuration
     console.log(header('CONFIGURATION'));
-    runConfigChecks(this.results);
-    this.runDockerKeyRotationCheck();
+    await this.safe('Configuration Checks', () => runConfigChecks(this.results));
+    await this.safe('Docker Key Rotation', () => this.runDockerKeyRotationCheck());
     console.log('');
 
     // Group 4: Profiles & Delegation
     console.log(header('PROFILES & DELEGATION'));
-    runProfileChecks(this.results);
+    await this.safe('Profile Checks', () => runProfileChecks(this.results));
     console.log('');
 
     // Group 5: System Health
     console.log(header('SYSTEM HEALTH'));
-    runSymlinkChecks(this.results);
+    await this.safe('Symlink Checks', () => runSymlinkChecks(this.results));
     console.log('');
 
     // Group 6: CLIProxy Plus (OAuth profiles)
     console.log(header('CLIPROXY PLUS (OAUTH PROFILES)'));
-    await runCLIProxyChecks(this.results);
+    await this.safe('CLIProxy Checks', () => runCLIProxyChecks(this.results));
     console.log('');
 
     // Group 7: OAuth Readiness (port availability)
     console.log(header('OAUTH READINESS'));
-    await runOAuthChecks(this.results);
+    await this.safe('OAuth Checks', () => runOAuthChecks(this.results));
     console.log('');
 
     // Group 8: Image Analysis Config
     console.log(header('IMAGE ANALYSIS'));
-    await runImageAnalysisCheck(this.results);
+    await this.safe('Image Analysis Check', () => runImageAnalysisCheck(this.results));
     console.log('');
 
     this.showReport();
     return this.results;
+  }
+
+  /**
+   * Run one check group defensively. A thrown check (e.g. a corrupt config.yaml
+   * that makes a loader throw) is recorded as an error instead of aborting the
+   * whole run, so the SUMMARY and ERRORS sections (with recovery hints) always
+   * render.
+   */
+  private async safe(label: string, fn: () => void | Promise<void>): Promise<void> {
+    try {
+      await fn();
+    } catch (err) {
+      // Use only the first line of the message: parser errors (e.g. js-yaml)
+      // embed a multi-line snippet that the loader already printed once, so the
+      // ERRORS section stays one line per failed check.
+      const raw = err instanceof Error ? err.message : String(err);
+      const message = raw.split('\n')[0].trim();
+      this.results.addCheck(label, 'error', message, undefined, {
+        status: 'ERROR',
+        info: 'check failed (see ERRORS)',
+      });
+    }
   }
 
   /**
