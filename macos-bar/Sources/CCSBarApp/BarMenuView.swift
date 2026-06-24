@@ -340,11 +340,14 @@ struct BarMenuView: View {
     }
   }
 
-  /// Order subscription cards by tightest binding window ascending (closest to
-  /// empty on top). Rows with no binding window (error/reauth) sink to the bottom
-  /// so the actionable quota always leads.
+  /// Order subscription cards so the default/base account leads its provider
+  /// carousel (it is the account the user runs by default), then by tightest
+  /// binding window ascending (closest to empty next). Rows with no binding
+  /// window (error/reauth) sink to the bottom so actionable quota leads.
   private func orderedSubscriptions(_ subs: [BarSummaryRow]) -> [BarSummaryRow] {
     subs.sorted { a, b in
+      // Default account first within its provider group.
+      if a.isDefault != b.isDefault { return a.isDefault }
       let ra = BarQuotaGauge.selectBindingWindow(a.quotaWindows ?? [])?.remainingPercent
       let rb = BarQuotaGauge.selectBindingWindow(b.quotaWindows ?? [])?.remainingPercent
       switch (ra, rb) {

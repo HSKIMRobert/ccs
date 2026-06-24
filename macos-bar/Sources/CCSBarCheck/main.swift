@@ -1832,6 +1832,32 @@ do {
   check(
     BarFormatting.surfaceProfileLabel(noSurfaceRow) == "codex · personal",
     "mp: surfaceProfileLabel falls back to provider when surface is nil")
+
+  // (MP9) base/default account vs named profile presentation
+  let defaultCodexRow = BarSummaryRow(
+    accountId: "ccsx:default", provider: "codex",
+    surface: "ccsx", profile: "default", isSubscription: true)
+  check(
+    BarFormatting.isBaseAccount(defaultCodexRow),
+    "mp: 'default' profile is the base account")
+  check(
+    !BarFormatting.isBaseAccount(codexRow),
+    "mp: named profile 'ck' is not the base account")
+  check(
+    BarFormatting.accountTitle(defaultCodexRow) == "ccsx",
+    "mp: accountTitle for default account -> 'ccsx' (bare command)")
+  check(
+    BarFormatting.accountTitle(codexRow) == "ck",
+    "mp: accountTitle for named profile -> 'ck'")
+  check(
+    BarFormatting.accountTag(defaultCodexRow) == "default",
+    "mp: accountTag for default account -> 'default'")
+  check(
+    BarFormatting.accountTag(codexRow) == "ccsx",
+    "mp: accountTag for named profile -> 'ccsx' (surface)")
+  check(
+    BarFormatting.accountTag(legacyRow) == nil,
+    "mp: accountTag for CLIProxy pool row -> nil")
 } catch {
   check(false, "mp: multi-profile JSON decode failed: \(error)")
 }

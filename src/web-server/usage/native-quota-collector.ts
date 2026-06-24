@@ -80,6 +80,11 @@ const CB_COOLDOWN_MS = 900_000; // 15 minutes
 const SURFACE_CLAUDE = 'ccs';
 const SURFACE_CODEX = 'ccsx';
 
+// The "default way of running" a surface — the bare login (e.g. ~/.codex for
+// ccsx), as opposed to a named `ccsx <profile>` profile. Rendered in the Bar as
+// the base command ("ccsx") with a "default" badge, not as a named profile.
+const DEFAULT_PROFILE = 'default';
+
 // Provider values on the wire (unchanged from before)
 const CLAUDE_NATIVE_PROVIDER = 'claude-code';
 const CODEX_NATIVE_PROVIDER = 'codex';
@@ -117,13 +122,13 @@ export interface NativeQuotaDeps {
   getCodexQuota?: () => Promise<CodexLocalQuota | null>;
   /**
    * Read the native Codex auth for a profile (file-only, no keychain).
-   * 'personal' reads ~/.codex/auth.json; other names read codex-instances/<name>/auth.json.
+   * DEFAULT_PROFILE ('default') reads ~/.codex/auth.json; other names read codex-instances/<name>/auth.json.
    * Returns null when absent/unparseable.
    */
   readCodexNativeAuth?: (profile: string) => { accessToken: string; accountId: string } | null;
   /** Enumerate Claude profile names. Injected so tests never touch real fs. */
   listClaudeProfiles?: () => string[];
-  /** Enumerate Codex profile names (including 'personal' for bare ~/.codex). */
+  /** Enumerate Codex profile names (including DEFAULT_PROFILE for bare ~/.codex). */
   listCodexProfiles?: () => string[];
   /** Resolve the default Claude profile name. */
   defaultClaudeProfile?: () => string | null;
@@ -513,7 +518,7 @@ function readCodexNativeAuthFromDisk(
 ): { accessToken: string; accountId: string } | null {
   try {
     let authPath: string;
-    if (profile === 'personal') {
+    if (profile === DEFAULT_PROFILE) {
       authPath = path.join(os.homedir(), '.codex', 'auth.json');
     } else {
       // resolveCodexProfileDir would validate, but we do it inline to avoid the
@@ -576,7 +581,7 @@ function getDefaultClaudeProfileFromDisk(): string | null {
 }
 
 /**
- * List all Codex profiles from the registry, plus 'personal' when the bare
+ * List all Codex profiles from the registry, plus DEFAULT_PROFILE when the bare
  * ~/.codex/auth.json exists. Returns [] on any read error.
  */
 function listCodexProfilesFromDisk(): string[] {
@@ -588,9 +593,11 @@ function listCodexProfilesFromDisk(): string[] {
     };
     const registry = new CodexProfileRegistry();
     const profiles = registry.listProfiles();
-    // Add 'personal' for the bare ~/.codex/auth.json if it exists
+    // Add the bare ~/.codex/auth.json (the default `ccsx` invocation) as the
+    // DEFAULT_PROFILE account when it exists. It is the "default way of running",
+    // distinct from named `ccsx <profile>` profiles.
     if (fs.existsSync(path.join(os.homedir(), '.codex', 'auth.json'))) {
-      if (!profiles.includes('personal')) profiles.push('personal');
+      if (!profiles.includes(DEFAULT_PROFILE)) profiles.push(DEFAULT_PROFILE);
     }
     return profiles;
   } catch {
@@ -599,7 +606,7 @@ function listCodexProfilesFromDisk(): string[] {
 }
 
 /**
- * Resolve the default Codex profile. Falls back to 'personal' when the bare
+ * Resolve the default Codex profile. Falls back to DEFAULT_PROFILE when the bare
  * ~/.codex/auth.json exists and no registry default is set.
  */
 function getDefaultCodexProfileFromDisk(): string | null {
@@ -612,8 +619,9 @@ function getDefaultCodexProfileFromDisk(): string | null {
     const registry = new CodexProfileRegistry();
     const def = registry.getDefault();
     if (def) return def;
-    // Fall back to 'personal' if the bare auth.json exists
-    if (fs.existsSync(path.join(os.homedir(), '.codex', 'auth.json'))) return 'personal';
+    // Fall back to the bare ~/.codex account (DEFAULT_PROFILE) when no registry
+    // default is set — it is the default `ccsx` invocation.
+    if (fs.existsSync(path.join(os.homedir(), '.codex', 'auth.json'))) return DEFAULT_PROFILE;
     return null;
   } catch {
     return null;

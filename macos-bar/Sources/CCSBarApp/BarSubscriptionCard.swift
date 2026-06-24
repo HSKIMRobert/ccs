@@ -61,12 +61,14 @@ struct BarSubscriptionCard: View {
       Circle()
         .fill(healthColor)
         .frame(width: 8, height: 8)
-      // Multi-profile: show profile name when available; fall back to provider label.
-      Text(row.profile ?? BarFormatting.providerLabel(row.provider))
+      // Default account shows the bare command ("ccsx"); a named profile shows its
+      // name ("ck"). Falls back to the provider label for legacy rows.
+      Text(BarFormatting.accountTitle(row))
         .font(.system(.body, design: .default).weight(.semibold))
         .lineLimit(1)
-      // Surface tag chip ("ccs · work", "ccsx · personal") for multi-profile rows.
-      if let tag = BarFormatting.surfaceProfileLabel(row) {
+      // Tag: "default" for the base account, else the owning surface ("ccsx") so a
+      // named profile reads as e.g. "ck · ccsx".
+      if let tag = BarFormatting.accountTag(row) {
         Chip(tag, tint: theme.subscription.opacity(isParked ? 0.5 : 1))
       }
       if row.needsReauth {
