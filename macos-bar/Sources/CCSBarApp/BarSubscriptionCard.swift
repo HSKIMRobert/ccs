@@ -13,6 +13,9 @@ import CCSBarCore
 struct BarSubscriptionCard: View {
   @Environment(\.barTheme) private var theme
   let row: BarSummaryRow
+  /// When true this profile is parked (not the active/default profile for the
+  /// surface). The card is dimmed to 50% opacity to signal it is not live.
+  var isParked: Bool = false
   /// Injected clock — defaults to live Date() in production, pinned in previews
   /// and tests so countdown math is deterministic.
   var now: Date = Date()
@@ -44,20 +47,28 @@ struct BarSubscriptionCard: View {
     .background(
       theme.cardSurface,
       in: RoundedRectangle(cornerRadius: 9))
+    // Dim parked (non-active) profiles so the active profile clearly dominates.
+    .opacity(isParked ? 0.5 : 1.0)
   }
 
   // MARK: Title row
 
-  /// Health dot + product name + reauth chip + tier chip. No pause toggle —
-  /// subscriptions are not routable pool accounts.
+  /// Health dot + profile name (or provider label for legacy rows) + surface chip
+  /// + reauth chip + tier chip. No pause toggle — subscriptions are not routable
+  /// pool accounts.
   private var titleRow: some View {
     HStack(spacing: 8) {
       Circle()
         .fill(healthColor)
         .frame(width: 8, height: 8)
-      Text(BarFormatting.providerLabel(row.provider))
+      // Multi-profile: show profile name when available; fall back to provider label.
+      Text(row.profile ?? BarFormatting.providerLabel(row.provider))
         .font(.system(.body, design: .default).weight(.semibold))
         .lineLimit(1)
+      // Surface tag chip ("ccs · work", "ccsx · personal") for multi-profile rows.
+      if let tag = BarFormatting.surfaceProfileLabel(row) {
+        Chip(tag, tint: theme.subscription.opacity(isParked ? 0.5 : 1))
+      }
       if row.needsReauth {
         Chip("reauth", tint: theme.bandRed)
       }

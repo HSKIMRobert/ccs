@@ -165,9 +165,23 @@ public enum BarFormatting {
   /// Code or Codex plan) rather than a CLIProxy-managed OAuth pool account. Drives
   /// the "Subscriptions" grouping + badge so a user reads "this is MY plan quota",
   /// not one of the rotating pool credentials.
+  ///
+  /// Prefers the explicit `is_subscription` flag from the server (multi-profile
+  /// feature). Falls back to the legacy heuristic (`accountId == provider`) so
+  /// old single-profile payloads still work without `is_subscription`.
   public static func isNativeSubscription(_ row: BarSummaryRow) -> Bool {
-    (row.provider == "claude-code" && row.accountId == "claude-code")
+    if let s = row.isSubscription { return s }
+    // Legacy fallback for old payloads that omit is_subscription.
+    return (row.provider == "claude-code" && row.accountId == "claude-code")
       || (row.provider == "codex" && row.accountId == "codex")
+  }
+
+  /// Surface + profile chip label for multi-profile cards, e.g. "ccs · work" or
+  /// "ccsx · personal". Returns nil for CLIProxy pool rows that have no profile.
+  public static func surfaceProfileLabel(_ row: BarSummaryRow) -> String? {
+    guard let p = row.profile else { return nil }
+    let s = row.surface ?? row.provider
+    return "\(s) · \(p)"
   }
 
   /// Friendly product label for a provider key. Native subscription keys read as
