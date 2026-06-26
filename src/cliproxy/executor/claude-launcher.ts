@@ -23,6 +23,7 @@ import { CodexReasoningProxy } from '../ai-providers/codex-reasoning-proxy';
 import { ToolSanitizationProxy } from '../proxy/tool-sanitization-proxy';
 import { HttpsTunnelProxy } from '../proxy/https-tunnel-proxy';
 import { setupCleanupHandlers } from './session-bridge';
+import { prepareLaunchSettings } from './launch-settings';
 import { resolveRuntimeQuotaMonitorProviders } from './account-resolution';
 import {
   isClaudeSubcommandInvocation,
@@ -92,7 +93,7 @@ export async function launchClaude(context: ClaudeLaunchContext): Promise<ChildP
   const isWindows = process.platform === 'win32';
   const needsShell = isWindows && /\.(cmd|bat|ps1)$/i.test(claudeCli);
 
-  const settingsPath = cfg.customSettingsPath
+  const persistedSettingsPath = cfg.customSettingsPath
     ? cfg.customSettingsPath.replace(/^~/, os.homedir())
     : getProviderSettingsPath(provider);
 
@@ -104,6 +105,16 @@ export async function launchClaude(context: ClaudeLaunchContext): Promise<ChildP
   const claudeSessionArgs = isSubcommand
     ? stripClaudeSubcommandSessionArgs(claudeArgs)
     : claudeArgs;
+
+  // The persisted settings file pins ANTHROPIC_BASE_URL straight at CLIProxy.
+  // Claude applies the settings `env` block over the inherited environment, so
+  // without this overlay it would override the ephemeral proxy-chain URL CCS
+  // injected via env and bypass the tool-sanitization / codex-reasoning proxies
+  // (surfacing as `400 {"detail":"System messages are not allowed"}` for Codex).
+  // Subcommands skip `--settings`, so they keep the persisted path untouched.
+  const { settingsPath, cleanup: cleanupLaunchSettings } = isSubcommand
+    ? { settingsPath: persistedSettingsPath, cleanup: () => {} }
+    : prepareLaunchSettings(persistedSettingsPath, env);
 
   // Assemble final args: image analysis tools → browser tools → web search tools → settings
   const imageAnalysisArgs = imageAnalysisMcpReady
@@ -148,6 +159,11 @@ export async function launchClaude(context: ClaudeLaunchContext): Promise<ChildP
       env: tracedEnv,
     });
   }
+
+  // Remove the runtime settings overlay once Claude has read it and exited.
+  // cleanup is idempotent, so registering on both events is safe.
+  claude.on('exit', cleanupLaunchSettings);
+  claude.on('error', cleanupLaunchSettings);
 
   // Start runtime quota monitor (adaptive polling during session)
   if (!skipLocalAuth) {
