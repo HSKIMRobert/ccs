@@ -144,20 +144,28 @@ export async function launchClaude(context: ClaudeLaunchContext): Promise<ChildP
 
   // Spawn: Windows .cmd/.bat/.ps1 need shell escaping; all others spawn directly
   let claude: ChildProcess;
-  if (needsShell) {
-    const cmdString = [claudeCli, ...launchArgs].map(escapeShellArg).join(' ');
-    claude = spawn(cmdString, {
-      stdio: 'inherit',
-      windowsHide: true,
-      shell: getWindowsEscapedCommandShell(),
-      env: tracedEnv,
-    });
-  } else {
-    claude = spawn(claudeCli, launchArgs, {
-      stdio: 'inherit',
-      windowsHide: true,
-      env: tracedEnv,
-    });
+  try {
+    if (needsShell) {
+      const cmdString = [claudeCli, ...launchArgs].map(escapeShellArg).join(' ');
+      claude = spawn(cmdString, {
+        stdio: 'inherit',
+        windowsHide: true,
+        shell: getWindowsEscapedCommandShell(),
+        env: tracedEnv,
+      });
+    } else {
+      claude = spawn(claudeCli, launchArgs, {
+        stdio: 'inherit',
+        windowsHide: true,
+        env: tracedEnv,
+      });
+    }
+  } catch (spawnError) {
+    // spawn() can throw synchronously (e.g. invalid arg/env). Remove the
+    // runtime settings overlay before propagating so the secret-bearing temp
+    // file is not orphaned. cleanup is idempotent.
+    cleanupLaunchSettings();
+    throw spawnError;
   }
 
   // Remove the runtime settings overlay once Claude has read it and exited.
