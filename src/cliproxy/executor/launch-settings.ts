@@ -27,6 +27,13 @@ import * as path from 'path';
 
 import { ANTHROPIC_MODEL_ENV_KEYS, ANTHROPIC_ROUTING_ENV_KEYS } from '../../utils/shell-executor';
 
+// SIBLING HELPER: src/utils/openai-compat-launch-settings.ts solves the same
+// "persisted --settings env clobbers runtime routing env" problem by STRIPPING
+// routing keys (process env wins by absence). This module instead OVERLAYS the
+// resolved values (settings wins by overwrite). The two differ intentionally:
+// strip vs overlay diverge when a key is present on disk but absent from the
+// process env. Unifying them needs an explicit force-absent API — see issue #1609.
+
 /**
  * Environment keys that control provider routing/model selection and are read
  * by Claude from the settings `env` block. These must reflect the resolved
