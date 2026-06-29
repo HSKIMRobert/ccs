@@ -170,5 +170,6 @@ describe('proxy SSE stream transformer', () => {
       typeof signature,
       `expected non-empty string signature, received ${JSON.stringify(signature)}`
     ).toBe('string');
+    expect((signature as string).length).toBeGreaterThan(0);
   });
 });
