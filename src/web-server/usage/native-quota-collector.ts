@@ -43,7 +43,7 @@ import {
 } from './claude-native-credentials';
 import { fetchClaudeQuotaWithToken } from '../../cliproxy/quota/quota-fetcher-claude';
 import { fetchCodexQuota } from '../../cliproxy/quota/quota-fetcher-codex';
-import { getDefaultAccount } from '../../cliproxy/accounts/query';
+import { getDefaultAccount, getProviderAccounts } from '../../cliproxy/accounts/query';
 import { getCodexLocalQuota, type CodexLocalQuota } from './codex-local-quota-collector';
 import type { ClaudeQuotaResult, CodexQuotaResult } from '../../cliproxy/quota/quota-types';
 import type { BarSummaryRow, QuotaWindowDetail } from '../routes/bar-routes';
@@ -618,10 +618,17 @@ function listCodexProfilesFromDisk(): string[] {
     const { CodexProfileRegistry } = require('../../codex-auth/codex-profile-registry') as {
       CodexProfileRegistry: new () => {
         listProfiles: () => string[];
+        getProfile: (name: string) => { email?: string; account_id?: string };
       };
     };
     const registry = new CodexProfileRegistry();
-    const profiles = registry.listProfiles();
+    const pausedIdentities = getPausedCodexAccountIdentities();
+    const profiles = registry
+      .listProfiles()
+      .filter(
+        (name) =>
+          !codexProfileMatchesPausedAccount(name, registry.getProfile(name), pausedIdentities)
+      );
     // Add the bare ~/.codex/auth.json (the default `ccsx` invocation) as the
     // DEFAULT_PROFILE account when it exists. It is the "default way of running",
     // distinct from named `ccsx <profile>` profiles.
@@ -643,11 +650,23 @@ function getDefaultCodexProfileFromDisk(): string | null {
     const { CodexProfileRegistry } = require('../../codex-auth/codex-profile-registry') as {
       CodexProfileRegistry: new () => {
         getDefault: () => string | null;
+        getProfile: (name: string) => { email?: string; account_id?: string };
+        listProfiles: () => string[];
       };
     };
     const registry = new CodexProfileRegistry();
+    const pausedIdentities = getPausedCodexAccountIdentities();
     const def = registry.getDefault();
-    if (def) return def;
+    if (def && !codexProfileMatchesPausedAccount(def, registry.getProfile(def), pausedIdentities)) {
+      return def;
+    }
+    const fallback = registry
+      .listProfiles()
+      .find(
+        (name) =>
+          !codexProfileMatchesPausedAccount(name, registry.getProfile(name), pausedIdentities)
+      );
+    if (fallback) return fallback;
     // Fall back to the bare ~/.codex account (DEFAULT_PROFILE) when no registry
     // default is set — it is the default `ccsx` invocation.
     if (fs.existsSync(path.join(os.homedir(), '.codex', 'auth.json'))) return DEFAULT_PROFILE;
@@ -655,6 +674,33 @@ function getDefaultCodexProfileFromDisk(): string | null {
   } catch {
     return null;
   }
+}
+
+function getPausedCodexAccountIdentities(): Set<string> | null {
+  try {
+    const accounts = getProviderAccounts('codex');
+    if (accounts.length === 0) return null;
+    const identities = new Set<string>();
+    for (const account of accounts) {
+      if (!account.paused) continue;
+      identities.add(account.id);
+      if (account.email) identities.add(account.email);
+    }
+    return identities;
+  } catch {
+    return null;
+  }
+}
+
+function codexProfileMatchesPausedAccount(
+  profileName: string,
+  profile: { email?: string; account_id?: string },
+  pausedIdentities: Set<string> | null
+): boolean {
+  if (!pausedIdentities || pausedIdentities.size === 0) return false;
+  return [profileName, profile.email, profile.account_id].some(
+    (identity): identity is string => typeof identity === 'string' && pausedIdentities.has(identity)
+  );
 }
 
 // ============================================================================

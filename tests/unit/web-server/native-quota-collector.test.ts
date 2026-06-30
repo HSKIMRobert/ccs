@@ -7,6 +7,9 @@
  */
 
 import { beforeEach, describe, expect, it } from 'bun:test';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import {
   getNativeAccountRows,
   getCachedNativeAccountRows,
@@ -467,6 +470,202 @@ function makeCodexDeps(
 // ============================================================================
 
 describe('Codex network path', () => {
+  it('production profile enumeration skips paused Codex accounts before live network refresh', async () => {
+    const originalCcsHome = process.env.CCS_HOME;
+    const originalHome = process.env.HOME;
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-bar-paused-codex-'));
+    process.env.CCS_HOME = tempHome;
+    process.env.HOME = tempHome;
+
+    try {
+      const ccsDir = path.join(tempHome, '.ccs');
+      const cliproxyDir = path.join(ccsDir, 'cliproxy');
+      fs.mkdirSync(cliproxyDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(ccsDir, 'codex-profiles.yaml'),
+        [
+          'version: "1.0"',
+          'default: paused',
+          'profiles:',
+          '  paused:',
+          '    type: codex',
+          '    created: "2026-01-01T00:00:00.000Z"',
+          '    last_used: null',
+          '    email: paused-codex@example.com',
+          '    account_id: paused-codex@example.com',
+          '  active:',
+          '    type: codex',
+          '    created: "2026-01-02T00:00:00.000Z"',
+          '    last_used: null',
+          '    email: active-codex@example.com',
+          '    account_id: active-codex@example.com',
+          '',
+        ].join('\n')
+      );
+      fs.writeFileSync(
+        path.join(cliproxyDir, 'accounts.json'),
+        JSON.stringify(
+          {
+            version: 1,
+            providers: {
+              codex: {
+                default: 'paused-codex@example.com',
+                accounts: {
+                  'paused-codex@example.com': {
+                    email: 'paused-codex@example.com',
+                    tokenFile: 'paused-codex@example.com.json',
+                    paused: true,
+                  },
+                  'active-codex@example.com': {
+                    email: 'active-codex@example.com',
+                    tokenFile: 'active-codex@example.com.json',
+                  },
+                },
+              },
+            },
+          },
+          null,
+          2
+        )
+      );
+      fs.mkdirSync(path.join(cliproxyDir, 'auth'), { recursive: true });
+      fs.mkdirSync(path.join(cliproxyDir, 'auth-paused'), { recursive: true });
+      fs.writeFileSync(
+        path.join(cliproxyDir, 'auth', 'active-codex@example.com.json'),
+        JSON.stringify({ type: 'codex' })
+      );
+      fs.writeFileSync(
+        path.join(cliproxyDir, 'auth-paused', 'paused-codex@example.com.json'),
+        JSON.stringify({ type: 'codex' })
+      );
+
+      const fetchedAccountIds: string[] = [];
+      const deps = makeCodexDeps({
+        clock: { now: 1_000_000 },
+        listClaudeProfiles: () => [],
+        readCredentials: undefined,
+        getDefaultCodexAccountId: undefined,
+        readCodexNativeAuth: (profile: string) => ({
+          accessToken: `token-${profile}`,
+          accountId: profile === 'active' ? 'active-codex@example.com' : 'paused-codex@example.com',
+        }),
+        fetchCodexNetworkQuota: async (accountId: string) => {
+          fetchedAccountIds.push(accountId);
+          return { ...codexSuccessQuota(), accountId };
+        },
+      });
+
+      const rows = await getNativeAccountRows(deps);
+
+      expect(fetchedAccountIds).toEqual(['active-codex@example.com']);
+      expect(rows.find((row) => row.profile === 'paused')).toBeUndefined();
+      const active = rows.find((row) => row.profile === 'active');
+      expect(active?.paused).toBe(false);
+      expect(active?.is_default).toBe(true);
+    } finally {
+      if (originalCcsHome !== undefined) {
+        process.env.CCS_HOME = originalCcsHome;
+      } else {
+        delete process.env.CCS_HOME;
+      }
+      if (originalHome !== undefined) {
+        process.env.HOME = originalHome;
+      } else {
+        delete process.env.HOME;
+      }
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
+  });
+
+  it('production profile enumeration does not live-refresh when all Codex accounts are paused', async () => {
+    const originalCcsHome = process.env.CCS_HOME;
+    const originalHome = process.env.HOME;
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-bar-all-paused-codex-'));
+    process.env.CCS_HOME = tempHome;
+    process.env.HOME = tempHome;
+
+    try {
+      const ccsDir = path.join(tempHome, '.ccs');
+      const cliproxyDir = path.join(ccsDir, 'cliproxy');
+      fs.mkdirSync(cliproxyDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(ccsDir, 'codex-profiles.yaml'),
+        [
+          'version: "1.0"',
+          'default: paused',
+          'profiles:',
+          '  paused:',
+          '    type: codex',
+          '    created: "2026-01-01T00:00:00.000Z"',
+          '    last_used: null',
+          '    email: paused-codex@example.com',
+          '    account_id: paused-codex@example.com',
+          '',
+        ].join('\n')
+      );
+      fs.writeFileSync(
+        path.join(cliproxyDir, 'accounts.json'),
+        JSON.stringify(
+          {
+            version: 1,
+            providers: {
+              codex: {
+                default: 'paused-codex@example.com',
+                accounts: {
+                  'paused-codex@example.com': {
+                    email: 'paused-codex@example.com',
+                    tokenFile: 'paused-codex@example.com.json',
+                    paused: true,
+                  },
+                },
+              },
+            },
+          },
+          null,
+          2
+        )
+      );
+      fs.mkdirSync(path.join(cliproxyDir, 'auth-paused'), { recursive: true });
+      fs.writeFileSync(
+        path.join(cliproxyDir, 'auth-paused', 'paused-codex@example.com.json'),
+        JSON.stringify({ type: 'codex' })
+      );
+
+      let networkCalls = 0;
+      const deps = makeCodexDeps({
+        clock: { now: 1_000_000 },
+        listClaudeProfiles: () => [],
+        readCredentials: undefined,
+        getDefaultCodexAccountId: undefined,
+        readCodexNativeAuth: (profile: string) => ({
+          accessToken: `token-${profile}`,
+          accountId: 'paused-codex@example.com',
+        }),
+        fetchCodexNetworkQuota: async () => {
+          networkCalls += 1;
+          return codexSuccessQuota();
+        },
+      });
+
+      const rows = await getNativeAccountRows(deps);
+
+      expect(networkCalls).toBe(0);
+      expect(deps.localCount()).toBe(0);
+      expect(rows.find((row) => row.profile === 'paused')).toBeUndefined();
+    } finally {
+      if (originalCcsHome !== undefined) {
+        process.env.CCS_HOME = originalCcsHome;
+      } else {
+        delete process.env.CCS_HOME;
+      }
+      if (originalHome !== undefined) {
+        process.env.HOME = originalHome;
+      } else {
+        delete process.env.HOME;
+      }
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
+  });
   it('network success builds a fresh row from coreUsage — no staleAsOf, health ok, correct windows', async () => {
     const clock = { now: 1_000_000 };
     const deps = makeCodexDeps({ clock });
