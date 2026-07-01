@@ -99,6 +99,82 @@ describe('validateFilePath', () => {
     expect(result.readonly).toBe(false);
   });
 
+  test('rejects macOS case-variant paths through symlinked segments', () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+    try {
+      const ccsDir = path.join(tempDir, '.ccs');
+      const caseVariantCcsDir = path.join(tempDir, '.CCS');
+      const sharedDir = path.join(ccsDir, 'shared');
+      const outsideCommandsDir = path.join(tempDir, '.claude', 'commands');
+      const linkedCommandsDir = path.join(sharedDir, 'commands');
+
+      fs.mkdirSync(sharedDir, { recursive: true });
+      fs.mkdirSync(outsideCommandsDir, { recursive: true });
+      try {
+        fs.symlinkSync(ccsDir, caseVariantCcsDir, 'dir');
+      } catch (error) {
+        const nodeError = error as NodeJS.ErrnoException;
+        if (nodeError.code !== 'EEXIST') {
+          throw error;
+        }
+      }
+      fs.symlinkSync(outsideCommandsDir, linkedCommandsDir, 'dir');
+
+      const result = validateFilePath(
+        path.join(caseVariantCcsDir, 'shared', 'commands', 'pwned.md')
+      );
+
+      expect(result.valid).toBe(false);
+      expect(result.readonly).toBe(false);
+    } finally {
+      if (platformDescriptor) {
+        Object.defineProperty(process, 'platform', platformDescriptor);
+      }
+    }
+  });
+
+  test('rejects macOS case-variant CCS directory symlinks', () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+    try {
+      const ccsDir = path.join(tempDir, '.ccs');
+      const caseVariantCcsDir = path.join(tempDir, '.CCS');
+      const outsideDir = path.join(tempDir, 'outside');
+
+      fs.mkdirSync(ccsDir, { recursive: true });
+      fs.mkdirSync(outsideDir, { recursive: true });
+      try {
+        fs.symlinkSync(outsideDir, caseVariantCcsDir, 'dir');
+      } catch (error) {
+        const nodeError = error as NodeJS.ErrnoException;
+        if (nodeError.code === 'EEXIST') {
+          return;
+        }
+        throw error;
+      }
+
+      const result = validateFilePath(path.join(caseVariantCcsDir, 'pwned.md'));
+
+      expect(result.valid).toBe(false);
+      expect(result.readonly).toBe(false);
+    } finally {
+      if (platformDescriptor) {
+        Object.defineProperty(process, 'platform', platformDescriptor);
+      }
+    }
+  });
+
   test('rejects symlinked Claude settings path', () => {
     if (process.platform === 'win32') {
       return;
