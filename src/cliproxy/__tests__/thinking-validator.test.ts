@@ -69,6 +69,13 @@ describe('Thinking Validator', () => {
       expect(result.warning).toBeUndefined();
     });
 
+    it('should treat max as a distinct top tier on Claude Sonnet 5', () => {
+      const result = validateThinking('claude', 'claude-sonnet-5', 'max');
+      expect(result.valid).toBe(true);
+      expect(result.value).toBe('max');
+      expect(result.warning).toBeUndefined();
+    });
+
     it('should still alias max -> xhigh for models without a max level (backcompat)', () => {
       // Codex catalog uses ['low','medium','high','xhigh'] with maxLevel 'xhigh'.
       // User input "max" should map down to xhigh rather than be rejected.

@@ -70,7 +70,7 @@ describe('FlexibleModelSelector', () => {
     expect(screen.queryByText(/All Models \(/i)).not.toBeInTheDocument();
   });
 
-  it('surfaces Claude Opus 4.7 in the curated Claude picker', async () => {
+  it('surfaces Claude Sonnet 5 in the curated Claude picker', async () => {
     render(
       <FlexibleModelSelector
         label="Primary model"
@@ -83,8 +83,8 @@ describe('FlexibleModelSelector', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /select model/i }));
 
-    expect(screen.getByRole('option', { name: /claude-opus-4-7/i })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /claude-opus-4-6/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /claude-sonnet-5/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /claude-opus-4-8/i })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /claude-sonnet-4-6/i })).toBeInTheDocument();
   });
 
@@ -116,6 +116,28 @@ describe('FlexibleModelSelector', () => {
         value={undefined}
         onChange={onChange}
         catalog={MODEL_CATALOGS.ghcp}
+        allModels={[]}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /select model/i }));
+    await userEvent.type(await screen.findByPlaceholderText('Search models...'), 'claude-sonnet-6');
+
+    expect(screen.getAllByText('Custom model').length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole('option', { name: /claude-sonnet-6/i }));
+
+    expect(onChange).toHaveBeenCalledWith('claude-sonnet-6');
+  });
+
+  it('lets users enter a future direct Claude model ID from the CLIProxy picker', async () => {
+    const onChange = vi.fn();
+
+    render(
+      <FlexibleModelSelector
+        label="Primary model"
+        value={undefined}
+        onChange={onChange}
+        catalog={MODEL_CATALOGS.claude}
         allModels={[]}
       />
     );
