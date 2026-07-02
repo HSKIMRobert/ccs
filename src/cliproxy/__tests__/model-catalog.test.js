@@ -132,7 +132,19 @@ describe('Model Catalog', () => {
     });
     it('has correct default model', () => {
       const { MODEL_CATALOG } = modelCatalog;
-      assert.strictEqual(MODEL_CATALOG.claude.defaultModel, 'claude-sonnet-4-6');
+      assert.strictEqual(MODEL_CATALOG.claude.defaultModel, 'claude-sonnet-5');
+    });
+
+    it('includes Claude Sonnet 5 with adaptive levels and extended context', () => {
+      const { MODEL_CATALOG } = modelCatalog;
+      const sonnet = MODEL_CATALOG.claude.models.find((m) => m.id === 'claude-sonnet-5');
+      assert(sonnet, 'Should include Claude Sonnet 5');
+      assert.strictEqual(sonnet.name, 'Claude Sonnet 5');
+      assert.strictEqual(sonnet.thinking.type, 'levels');
+      assert.deepStrictEqual(sonnet.thinking.levels, ['low', 'medium', 'high', 'xhigh', 'max']);
+      assert.strictEqual(sonnet.thinking.maxLevel, 'max');
+      assert.strictEqual(sonnet.nativeImageInput, true);
+      assert.strictEqual(sonnet.extendedContext, true);
     });
 
     it('includes Claude Sonnet 4.6', () => {
