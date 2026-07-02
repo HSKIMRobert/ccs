@@ -25,6 +25,7 @@ interface SearchableSelectProps {
   value?: string;
   onChange: (value: string) => void;
   options: SearchableSelectOption[];
+  createOption?: (query: string) => SearchableSelectOption | null | undefined;
   groups?: SearchableSelectGroup[];
   placeholder: string;
   searchPlaceholder: string;
@@ -47,6 +48,7 @@ export function SearchableSelect({
   value,
   onChange,
   options,
+  createOption,
   groups,
   placeholder,
   searchPlaceholder,
@@ -64,20 +66,32 @@ export function SearchableSelect({
   const optionRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
 
   const selectedOption = React.useMemo(
-    () => options.find((option) => option.value === value),
-    [options, value]
+    () =>
+      options.find((option) => option.value === value) ??
+      (value ? (createOption?.(value) ?? undefined) : undefined),
+    [createOption, options, value]
   );
 
   const filteredOptions = React.useMemo(() => {
     const normalizedQuery = normalizeSearch(query);
     if (!normalizedQuery) return options;
 
-    return options.filter((option) =>
+    const matchedOptions = options.filter((option) =>
       [option.searchText, ...(option.keywords ?? [])].some((candidate) =>
         normalizeSearch(candidate).includes(normalizedQuery)
       )
     );
-  }, [options, query]);
+    const createdOption = createOption?.(query.trim()) ?? null;
+    if (!createdOption) return matchedOptions;
+
+    const normalizedCreatedValue = normalizeSearch(createdOption.value);
+    const optionAlreadyExists = options.some(
+      (option) => normalizeSearch(option.value) === normalizedCreatedValue
+    );
+    if (optionAlreadyExists) return matchedOptions;
+
+    return [...matchedOptions, createdOption];
+  }, [createOption, options, query]);
 
   const groupedOptions = React.useMemo(() => {
     const knownGroups = new Map((groups ?? []).map((group) => [group.key, group]));

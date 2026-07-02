@@ -42,6 +42,42 @@ function SearchableSelectHarness() {
   );
 }
 
+function SearchableSelectWithCreateHarness() {
+  const [value, setValue] = useState<string | undefined>();
+
+  return (
+    <SearchableSelect
+      value={value}
+      onChange={setValue}
+      placeholder="Select model"
+      searchPlaceholder="Search models..."
+      emptyText="No results found."
+      groups={[
+        { key: 'known', label: 'Known Models' },
+        { key: 'custom', label: 'Custom Model' },
+      ]}
+      createOption={(query) =>
+        /^[a-z0-9][a-z0-9.-]*$/i.test(query)
+          ? {
+              value: query,
+              groupKey: 'custom',
+              searchText: query,
+              itemContent: <span>Use custom model {query}</span>,
+            }
+          : null
+      }
+      options={[
+        {
+          value: 'claude-sonnet-4',
+          groupKey: 'known',
+          searchText: 'Claude Sonnet 4 claude-sonnet-4',
+          itemContent: <span>Claude Sonnet 4</span>,
+        },
+      ]}
+    />
+  );
+}
+
 describe('SearchableSelect', () => {
   beforeEach(() => {
     Object.defineProperty(HTMLElement.prototype, 'hasPointerCapture', {
@@ -92,6 +128,22 @@ describe('SearchableSelect', () => {
     await userEvent.type(await screen.findByPlaceholderText('Search models...'), 'no-match');
 
     expect(screen.getByText('No results found.')).toBeInTheDocument();
+  });
+
+  it('can append and select a custom option from the search query', async () => {
+    render(<SearchableSelectWithCreateHarness />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Select model' }));
+    await userEvent.type(await screen.findByPlaceholderText('Search models...'), 'claude-sonnet-5');
+
+    expect(screen.getByText('Custom Model')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('option', { name: 'Use custom model claude-sonnet-5' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Use custom model claude-sonnet-5' })
+      ).toBeInTheDocument();
+    });
   });
 
   it('supports keyboard navigation and selection from the search input', async () => {
