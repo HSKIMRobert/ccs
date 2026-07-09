@@ -13,9 +13,12 @@ import type { CLIProxyProvider } from '../types';
 import { supportsExtendedContext } from '../model-catalog';
 import { warn } from '../../utils/ui';
 import {
+  ANTHROPIC_MODEL_ENV_KEYS,
   applyExtendedContextPreferenceToAnthropicModels,
   applyExtendedContextSuffix as applyExtendedContextSuffixShared,
+  hasExtendedContextSuffix,
   isNativeGeminiModel,
+  stripExtendedContextSuffix,
   stripModelConfigurationSuffixes,
 } from '../../shared/extended-context-utils';
 
@@ -73,20 +76,41 @@ export function applyExtendedContextConfig(
   provider: CLIProxyProvider,
   extendedContextOverride?: boolean
 ): void {
-  if (extendedContextOverride === false) {
-    Object.assign(envVars, applyExtendedContextPreferenceToAnthropicModels(envVars, false));
+  if (extendedContextOverride === true || extendedContextOverride === false) {
+    Object.assign(
+      envVars,
+      applyExtendedContextPreferenceToAnthropicModels(envVars, extendedContextOverride, {
+        supportsExtendedContext: (modelId) =>
+          shouldApplyExtendedContext(
+            provider,
+            stripModelConfigurationSuffixes(modelId),
+            extendedContextOverride
+          ),
+      })
+    );
     return;
   }
 
-  Object.assign(
-    envVars,
-    applyExtendedContextPreferenceToAnthropicModels(envVars, true, {
-      supportsExtendedContext: (modelId) =>
-        shouldApplyExtendedContext(
-          provider,
-          stripModelConfigurationSuffixes(modelId),
-          extendedContextOverride
-        ),
-    })
-  );
+  // Auto mode (no explicit --1m/--no-1m this launch): don't force-strip a
+  // previously saved [1m] preference just because the model is Claude — only
+  // strip when the model no longer supports extended context. Native Gemini
+  // models still get auto-toggled based on catalog support.
+  for (const key of ANTHROPIC_MODEL_ENV_KEYS) {
+    const value = envVars[key];
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      continue;
+    }
+    const modelId = stripModelConfigurationSuffixes(value);
+
+    if (isNativeGeminiModel(modelId)) {
+      envVars[key] = supportsExtendedContext(provider, modelId)
+        ? applyExtendedContextSuffixShared(value)
+        : value;
+      continue;
+    }
+
+    if (hasExtendedContextSuffix(value) && !supportsExtendedContext(provider, modelId)) {
+      envVars[key] = stripExtendedContextSuffix(value);
+    }
+  }
 }
