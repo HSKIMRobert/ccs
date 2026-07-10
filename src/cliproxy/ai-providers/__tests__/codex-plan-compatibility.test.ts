@@ -29,6 +29,9 @@ describe('codex plan compatibility', () => {
   });
 
   it('does not rewrite cross-plan or already-safe Codex models', () => {
+    expect(getFreePlanFallbackCodexModel('gpt-5.6-sol')).toBeNull();
+    expect(getFreePlanFallbackCodexModel('gpt-5.6-terra-high')).toBeNull();
+    expect(getFreePlanFallbackCodexModel('gpt-5.6-luna-fast')).toBeNull();
     expect(getFreePlanFallbackCodexModel('gpt-5.4')).toBeNull();
     expect(getFreePlanFallbackCodexModel('gpt-5.4-mini')).toBeNull();
     expect(getFreePlanFallbackCodexModel('gpt-5.2')).toBeNull();
@@ -94,6 +97,9 @@ describe('codex plan compatibility', () => {
   });
 
   it('tracks Codex thinking caps for current safe defaults, paid models, and legacy aliases', () => {
+    expect(getModelMaxLevel('codex', 'gpt-5.6-sol')).toBe('xhigh');
+    expect(getModelMaxLevel('codex', 'gpt-5.6-terra')).toBe('xhigh');
+    expect(getModelMaxLevel('codex', 'gpt-5.6-luna')).toBe('xhigh');
     expect(getModelMaxLevel('codex', 'gpt-5.5')).toBe('xhigh');
     expect(getModelMaxLevel('codex', 'gpt-5.4')).toBe('xhigh');
     expect(getModelMaxLevel('codex', 'gpt-5.4-mini')).toBe('high');

@@ -191,6 +191,10 @@ describe('FlexibleModelSelector', () => {
     expect(screen.getByText('gpt-5.3-codex-high')).toBeInTheDocument();
     expect(screen.getByText('gpt-5.3-codex-xhigh')).toBeInTheDocument();
     expect(screen.getByText('gpt-5.4-high-fast')).toBeInTheDocument();
+    expect(screen.getByText('gpt-5.6-sol-low')).toBeInTheDocument();
+    expect(screen.getByText('gpt-5.6-terra-xhigh')).toBeInTheDocument();
+    expect(screen.getByText('gpt-5.6-luna-fast')).toBeInTheDocument();
+    expect(screen.queryByText('gpt-5.6-sol-minimal')).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByText('gpt-5.3-codex-high'));
     expect(onChange).toHaveBeenCalledWith('gpt-5.3-codex-high');
