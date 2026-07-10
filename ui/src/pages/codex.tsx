@@ -10,6 +10,7 @@ import { useCodex } from '@/hooks/use-codex';
 import { isApiConflictError } from '@/lib/api-client';
 import { CodexOverviewTab } from '@/components/compatible-cli/codex-overview-tab';
 import { RawConfigEditorPanel } from '@/components/compatible-cli/raw-json-settings-editor-panel';
+import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   getKnownCodexFeatures,
@@ -20,7 +21,13 @@ import {
   readCodexProjectTrust,
   readCodexTopLevelSettings,
 } from '@/lib/codex-config';
-import { safeParseTomlObject } from '@shared/toml-object';
+import { proposeJoinedCodexModelMigrationRepair, safeParseTomlObject } from '@shared/toml-object';
+
+interface RawConfigDraft {
+  text: string;
+  baseText: string;
+  expectedMtime?: number;
+}
 
 export function CodexPage() {
   const { t } = useTranslation();
@@ -40,10 +47,14 @@ export function CodexPage() {
     isPatchingConfig,
   } = useCodex();
 
-  const [rawDraftText, setRawDraftText] = useState<string | null>(null);
+  const [rawDraft, setRawDraft] = useState<RawConfigDraft | null>(null);
   const rawBaseText = rawConfig?.rawText ?? '';
-  const rawEditorText = rawDraftText ?? rawBaseText;
-  const rawConfigDirty = rawDraftText !== null && rawDraftText !== rawBaseText;
+  const rawEditorText = rawDraft?.text ?? rawBaseText;
+  const rawConfigDirty = rawDraft !== null;
+  const rawBaseRepairProposal = useMemo(() => {
+    if (rawConfigDirty || !rawConfig?.parseError || rawConfig.readError) return null;
+    return proposeJoinedCodexModelMigrationRepair(rawBaseText);
+  }, [rawBaseText, rawConfig?.parseError, rawConfig?.readError, rawConfigDirty]);
   const rawEditorParsed = safeParseTomlObject(rawEditorText);
   const rawEditorValidation = rawEditorParsed.parseError
     ? { valid: false as const, error: rawEditorParsed.parseError }
@@ -84,11 +95,20 @@ export function CodexPage() {
   const featureState = useMemo(() => readCodexFeatureState(controlsConfig), [controlsConfig]);
 
   const setRawEditorDraftText = (nextText: string) => {
-    if (nextText === rawBaseText) {
-      setRawDraftText(null);
-      return;
-    }
-    setRawDraftText(nextText);
+    setRawDraft((currentDraft) => {
+      const baseText = currentDraft?.baseText ?? rawBaseText;
+      if (nextText === baseText) return null;
+
+      return {
+        text: nextText,
+        baseText,
+        expectedMtime: currentDraft
+          ? currentDraft.expectedMtime
+          : rawConfig?.exists
+            ? rawConfig.mtime
+            : undefined,
+      };
+    });
   };
 
   const refreshAll = async () => {
@@ -103,24 +123,24 @@ export function CodexPage() {
         return;
       }
 
-      setRawDraftText(null);
+      setRawDraft(null);
     } catch (error) {
       toast.error((error as Error).message || t('toasts.codexRefreshError'));
     }
   };
 
   const handleSaveRawConfig = async () => {
-    if (!rawEditorValidation.valid) {
+    if (!rawDraft || !rawEditorValidation.valid) {
       toast.error(t('toasts.codexFixToml'));
       return;
     }
 
     try {
       await saveRawConfigAsync({
-        rawText: rawEditorText,
-        expectedMtime: rawConfig?.exists ? rawConfig.mtime : undefined,
+        rawText: rawDraft.text,
+        expectedMtime: rawDraft.expectedMtime,
       });
-      setRawDraftText(null);
+      setRawDraft(null);
       toast.success(t('toasts.codexSaved'));
       await refetchDiagnostics();
     } catch (error) {
@@ -141,7 +161,7 @@ export function CodexPage() {
         ...patch,
         expectedMtime: rawConfig?.exists ? rawConfig.mtime : undefined,
       });
-      setRawDraftText(null);
+      setRawDraft(null);
       toast.success(successMessage);
     } catch (error) {
       if (isApiConflictError(error)) {
@@ -259,7 +279,7 @@ export function CodexPage() {
             }}
             onSave={handleSaveRawConfig}
             onRefresh={refreshAll}
-            onDiscard={() => setRawDraftText(null)}
+            onDiscard={() => setRawDraft(null)}
             language="toml"
             exactText
             /* TODO i18n: missing key for "Loading config.toml..." */
@@ -267,16 +287,40 @@ export function CodexPage() {
             /* TODO i18n: missing key for "TOML warning" */
             parseWarningLabel="TOML warning"
             ownershipNotice={
-              <div className="rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/20 dark:text-amber-300">
-                {/* TODO i18n: missing keys for ownership notice paragraphs */}
-                <p className="font-medium">This file is upstream-owned by Codex CLI.</p>
-                <p>
-                  CCS does not keep <code>~/.codex/config.toml</code> in sync for you.
-                </p>
-                <p>
-                  CCS-backed Codex launches may apply transient <code>-c</code> overrides and
-                  <code> CCS_CODEX_API_KEY</code>; those effective values may not appear here.
-                </p>
+              <div className="space-y-3">
+                {rawBaseRepairProposal ? (
+                  <div
+                    role="alert"
+                    className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/20 dark:text-amber-300"
+                  >
+                    <p className="font-medium">Safe repair available</p>
+                    <p className="mt-1">
+                      Codex joined a model migration to the next table header. Previewing inserts
+                      exactly one newline in this unsaved editor draft. Review it, then select Save
+                      to write <code>config.toml</code>.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => setRawEditorDraftText(rawBaseRepairProposal.repairedText)}
+                    >
+                      Preview one-newline repair
+                    </Button>
+                  </div>
+                ) : null}
+                <div className="rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/20 dark:text-amber-300">
+                  {/* TODO i18n: missing keys for ownership notice paragraphs */}
+                  <p className="font-medium">This file is upstream-owned by Codex CLI.</p>
+                  <p>
+                    CCS does not keep <code>~/.codex/config.toml</code> in sync for you.
+                  </p>
+                  <p>
+                    CCS-backed Codex launches may apply transient <code>-c</code> overrides and
+                    <code> CCS_CODEX_API_KEY</code>; those effective values may not appear here.
+                  </p>
+                </div>
               </div>
             }
           />
