@@ -43,6 +43,8 @@ export interface ModelEntry {
   };
   /** Highest codex reasoning-effort suffix this model supports in the dashboard UI. */
   codexMaxEffort?: CodexEffort;
+  /** Exact Codex reasoning-effort suffixes supported by this model in the dashboard UI. */
+  codexEfforts?: CodexEffort[];
   /** Additional Codex service-tier suffixes supported by this model in the dashboard UI. */
   codexServiceTiers?: CodexServiceTier[];
 }
@@ -347,12 +349,13 @@ function getPreferredOptionValue(
 
 function getModelOptionValues(
   codexMaxEffort: CodexEffort | undefined,
+  codexEfforts: readonly CodexEffort[] | undefined,
   codexServiceTiers: readonly CodexServiceTier[] | undefined,
   optionValue: string,
   isCodexProvider: boolean
 ): string[] {
   return isCodexProvider
-    ? getCodexEffortVariants(optionValue, codexMaxEffort, codexServiceTiers)
+    ? getCodexEffortVariants(optionValue, codexMaxEffort, codexServiceTiers, codexEfforts)
     : [optionValue];
 }
 
@@ -395,6 +398,7 @@ export function FlexibleModelSelector({
         resolvedCatalogModels.flatMap((model) =>
           getModelOptionValues(
             model.codexMaxEffort,
+            model.codexEfforts,
             model.codexServiceTiers,
             getPreferredOptionValue(model.id, routingHints.get(model.id.toLowerCase())),
             isCodexProvider
@@ -431,6 +435,7 @@ export function FlexibleModelSelector({
     const routingHint = routingHints.get(model.id.toLowerCase());
     const optionValues = getModelOptionValues(
       model.codexMaxEffort,
+      model.codexEfforts,
       model.codexServiceTiers,
       getPreferredOptionValue(model.id, routingHint),
       isCodexProvider
@@ -485,6 +490,7 @@ export function FlexibleModelSelector({
     .flatMap((model) => {
       const routingHint = routingHints.get(model.id.toLowerCase());
       const optionValues = getModelOptionValues(
+        undefined,
         undefined,
         undefined,
         getPreferredOptionValue(model.id, routingHint),
