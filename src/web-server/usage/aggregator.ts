@@ -113,7 +113,8 @@ async function loadInstanceData(instancePath: string): Promise<{
 }
 
 function getHourlyRequestCount(hour: HourlyUsage): number {
-  return hour.requestCount ?? hour.modelBreakdowns.length;
+  // modelBreakdowns can be absent at runtime (legacy snapshots, files read mid-write).
+  return hour.requestCount ?? hour.modelBreakdowns?.length ?? 0;
 }
 
 function finalizeDailyUsage(day: DailyUsage): DailyUsage {
@@ -165,7 +166,7 @@ export function mergeDailyData(
         existing.cacheReadTokens += day.cacheReadTokens;
         existing.totalCost += day.totalCost;
         // Merge model breakdowns by aggregating same modelName
-        for (const breakdown of day.modelBreakdowns) {
+        for (const breakdown of day.modelBreakdowns ?? []) {
           const breakdownKey = getProviderModelKey(breakdown);
           const existingBreakdown = existing.modelBreakdowns.find(
             (b) => getProviderModelKey(b) === breakdownKey
@@ -182,7 +183,7 @@ export function mergeDailyData(
         }
       } else {
         // Clone to avoid mutating original
-        const modelBreakdowns = day.modelBreakdowns.map((b) => ({ ...b }));
+        const modelBreakdowns = (day.modelBreakdowns ?? []).map((b) => ({ ...b }));
         dateMap.set(mergeKey, {
           ...day,
           ...(options.preserveProfile && day.profile ? { profile: day.profile } : {}),
@@ -219,7 +220,7 @@ export function mergeMonthlyData(
         existing.cacheCreationTokens += month.cacheCreationTokens;
         existing.cacheReadTokens += month.cacheReadTokens;
         existing.totalCost += month.totalCost;
-        for (const breakdown of month.modelBreakdowns) {
+        for (const breakdown of month.modelBreakdowns ?? []) {
           const breakdownKey = getProviderModelKey(breakdown);
           const existingBreakdown = existing.modelBreakdowns.find(
             (item) => getProviderModelKey(item) === breakdownKey
@@ -235,7 +236,9 @@ export function mergeMonthlyData(
           }
         }
       } else {
-        const modelBreakdowns = month.modelBreakdowns.map((breakdown) => ({ ...breakdown }));
+        const modelBreakdowns = (month.modelBreakdowns ?? []).map((breakdown) => ({
+          ...breakdown,
+        }));
         monthMap.set(mergeKey, {
           ...month,
           ...(options.preserveProfile && month.profile ? { profile: month.profile } : {}),
@@ -275,7 +278,7 @@ export function mergeHourlyData(
         existing.totalCost += hour.totalCost;
         existing.requestCount = getHourlyRequestCount(existing) + getHourlyRequestCount(hour);
         // Merge model breakdowns
-        for (const breakdown of hour.modelBreakdowns) {
+        for (const breakdown of hour.modelBreakdowns ?? []) {
           const breakdownKey = getProviderModelKey(breakdown);
           const existingBreakdown = existing.modelBreakdowns.find(
             (b) => getProviderModelKey(b) === breakdownKey
@@ -291,7 +294,7 @@ export function mergeHourlyData(
           }
         }
       } else {
-        const modelBreakdowns = hour.modelBreakdowns.map((b) => ({ ...b }));
+        const modelBreakdowns = (hour.modelBreakdowns ?? []).map((b) => ({ ...b }));
         hourMap.set(mergeKey, {
           ...hour,
           ...(options.preserveProfile && hour.profile ? { profile: hour.profile } : {}),
