@@ -260,6 +260,48 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
     defaultModel: 'gpt-5.4',
     models: [
       {
+        id: 'gpt-5.6-sol',
+        name: 'GPT-5.6 Sol',
+        description: 'Latest frontier agentic coding model.',
+        codexMaxEffort: 'xhigh',
+        codexEfforts: ['low', 'medium', 'high', 'xhigh'],
+        codexServiceTiers: ['fast'],
+        presetMapping: {
+          default: 'gpt-5.6-sol',
+          opus: 'gpt-5.6-sol',
+          sonnet: 'gpt-5.6-sol',
+          haiku: 'gpt-5.4-mini',
+        },
+      },
+      {
+        id: 'gpt-5.6-terra',
+        name: 'GPT-5.6 Terra',
+        description: 'Balanced agentic coding model for everyday work.',
+        codexMaxEffort: 'xhigh',
+        codexEfforts: ['low', 'medium', 'high', 'xhigh'],
+        codexServiceTiers: ['fast'],
+        presetMapping: {
+          default: 'gpt-5.6-terra',
+          opus: 'gpt-5.6-terra',
+          sonnet: 'gpt-5.6-terra',
+          haiku: 'gpt-5.4-mini',
+        },
+      },
+      {
+        id: 'gpt-5.6-luna',
+        name: 'GPT-5.6 Luna',
+        description: 'Fast and affordable agentic coding model.',
+        codexMaxEffort: 'xhigh',
+        codexEfforts: ['low', 'medium', 'high', 'xhigh'],
+        codexServiceTiers: ['fast'],
+        presetMapping: {
+          default: 'gpt-5.6-luna',
+          opus: 'gpt-5.6-luna',
+          sonnet: 'gpt-5.6-luna',
+          haiku: 'gpt-5.4-mini',
+        },
+      },
+      {
         id: 'gpt-5.5',
         name: 'GPT-5.5',
         tier: 'paid',

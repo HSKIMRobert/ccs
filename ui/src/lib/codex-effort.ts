@@ -69,7 +69,8 @@ export function applyCodexEffortSuffix(
 export function getCodexEffortVariants(
   modelId: string,
   maxEffort: CodexEffort | undefined,
-  serviceTiers: readonly CodexServiceTier[] = []
+  serviceTiers: readonly CodexServiceTier[] = [],
+  efforts?: readonly CodexEffort[]
 ): string[] {
   if (!maxEffort) {
     const explicitEffort = parseCodexEffort(modelId);
@@ -91,9 +92,9 @@ export function getCodexEffortVariants(
 
   appendVariantsForEffort(undefined);
 
-  for (const effort of CODEX_EFFORTS_IN_ORDER) {
+  for (const effort of efforts ?? CODEX_EFFORTS_IN_ORDER) {
     appendVariantsForEffort(effort);
-    if (effort === maxEffort) {
+    if (!efforts && effort === maxEffort) {
       break;
     }
   }
