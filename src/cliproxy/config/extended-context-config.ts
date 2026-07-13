@@ -105,7 +105,7 @@ export function applyExtendedContextConfig(
     if (isNativeGeminiModel(modelId)) {
       envVars[key] = supportsExtendedContext(provider, modelId)
         ? applyExtendedContextSuffixShared(value)
-        : value;
+        : stripExtendedContextSuffix(value);
       continue;
     }
 
