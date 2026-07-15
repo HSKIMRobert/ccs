@@ -110,6 +110,59 @@ describe('ensureCodexProfileResources', () => {
     expect(fs.readFileSync(sharedSkillPath, 'utf8')).toBe('# Current shared skill\n');
   });
 
+  it('refuses a profile root that resolves to the shared Codex home without changing its cache', async () => {
+    const { ensureCodexProfileResources } = await import(
+      '../../../src/codex-auth/codex-profile-resources'
+    );
+    const sharedPluginsDir = path.join(sharedCodexHome, 'plugins');
+    const sharedCacheDir = path.join(sharedPluginsDir, 'cache');
+    const sharedMarkerPath = path.join(sharedCacheDir, 'shared-marker.txt');
+    fs.writeFileSync(sharedMarkerPath, 'preserve shared cache\n');
+    const cacheInodeBeforeRepair = fs.lstatSync(sharedCacheDir).ino;
+    fs.symlinkSync(sharedCodexHome, profileDir, 'dir');
+
+    expect(() => ensureCodexProfileResources(profileDir, { sharedCodexHome })).toThrow(
+      'profile plugins directory resolves to the shared plugins directory'
+    );
+
+    expect(fs.lstatSync(profileDir).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(sharedCacheDir).isDirectory()).toBe(true);
+    expect(fs.lstatSync(sharedCacheDir).isSymbolicLink()).toBe(false);
+    expect(fs.lstatSync(sharedCacheDir).ino).toBe(cacheInodeBeforeRepair);
+    expect(fs.readFileSync(sharedMarkerPath, 'utf8')).toBe('preserve shared cache\n');
+    expect(
+      fs.readdirSync(sharedPluginsDir).some((name) => name.startsWith('.cache.ccs-backup-'))
+    ).toBe(false);
+  });
+
+  it('refuses a shared plugins directory that resolves to the profile plugins directory', async () => {
+    const { ensureCodexProfileResources } = await import(
+      '../../../src/codex-auth/codex-profile-resources'
+    );
+    const profilePluginsDir = path.join(profileDir, 'plugins');
+    const profileCacheDir = path.join(profilePluginsDir, 'cache');
+    const profileMarkerPath = path.join(profileCacheDir, 'profile-marker.txt');
+    const sharedPluginsDir = path.join(sharedCodexHome, 'plugins');
+    fs.mkdirSync(profileCacheDir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(profileMarkerPath, 'preserve profile cache\n');
+    const cacheInodeBeforeRepair = fs.lstatSync(profileCacheDir).ino;
+    fs.rmSync(sharedPluginsDir, { recursive: true, force: true });
+    fs.symlinkSync(profilePluginsDir, sharedPluginsDir, 'dir');
+
+    expect(() => ensureCodexProfileResources(profileDir, { sharedCodexHome })).toThrow(
+      'profile plugins directory resolves to the shared plugins directory'
+    );
+
+    expect(fs.lstatSync(sharedPluginsDir).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(profileCacheDir).isDirectory()).toBe(true);
+    expect(fs.lstatSync(profileCacheDir).isSymbolicLink()).toBe(false);
+    expect(fs.lstatSync(profileCacheDir).ino).toBe(cacheInodeBeforeRepair);
+    expect(fs.readFileSync(profileMarkerPath, 'utf8')).toBe('preserve profile cache\n');
+    expect(
+      fs.readdirSync(profilePluginsDir).some((name) => name.startsWith('.cache.ccs-backup-'))
+    ).toBe(false);
+  });
+
   it('keeps the plugin cache projection stable across repeated repairs', async () => {
     const { ensureCodexProfileResources } = await import(
       '../../../src/codex-auth/codex-profile-resources'

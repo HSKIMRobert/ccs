@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ConfigError } from '../errors/error-types';
-import { symlinkPointsTo } from '../management/shared-manager/fs-helpers';
+import { resolveCanonicalPath, symlinkPointsTo } from '../management/shared-manager/fs-helpers';
 import { createLogger } from '../services/logging';
 
 const logger = createLogger('codex-auth:resources');
@@ -14,6 +14,12 @@ export function ensureSharedPluginCache(profileDir: string, sharedCodexHome: str
 
   ensureProfileLocalPluginsDirectory(pluginsPath);
   fs.mkdirSync(targetPath, { recursive: true, mode: 0o700 });
+
+  if (resolveCanonicalPath(pluginsPath) === resolveCanonicalPath(path.dirname(targetPath))) {
+    throw new ConfigError(
+      'Refusing plugin cache repair: profile plugins directory resolves to the shared plugins directory.'
+    );
+  }
 
   const existingStat = lstatIfExists(linkPath);
   if (isExpectedCacheLink(linkPath, targetPath, existingStat)) {
