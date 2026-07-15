@@ -10,8 +10,9 @@ refresh in one session overwrites the other's credentials.
 
 `ccsx auth` solves this by giving each account its own profile directory under
 `~/.ccs/codex-instances/<name>/`. Each profile holds its own `auth.json` and
-`history.jsonl`. Shared `config.toml`, `agents/`, and `skills/` resources are linked
-via symlink so model/provider settings and relative agent role config files stay in sync.
+`history.jsonl`, plus its own session data. Shared `config.toml`, `agents/`, `skills/`,
+and plugin cache resources come from `~/.codex/` so configuration and installed plugin
+skills stay in sync across profiles.
 
 ## Quick start (4 commands)
 
@@ -149,17 +150,26 @@ No OAuth tokens are ever returned by the API endpoint or shown in the UI.
         ├── sessions/            # Per-profile chat session dirs (optional)
         ├── config.toml -> ~/.codex/config.toml   (symlink — shared)
         ├── agents/ -> ~/.codex/agents/           (symlink — shared)
-        └── skills/ -> ~/.codex/skills/           (symlink — shared)
+        ├── skills/ -> ~/.codex/skills/           (symlink — shared)
+        └── plugins/             # Profile-local parent; may hold local metadata
+            └── cache/ -> ~/.codex/plugins/cache/ (symlink — shared)
 
 ~/.codex/
 ├── config.toml                  # Single shared model/provider config
 ├── agents/                      # Shared Codex agent role config files
-└── skills/                      # Shared Codex skills
+├── skills/                      # Shared Codex skills
+└── plugins/
+    └── cache/                   # Shared installed plugin payloads
 ```
 
-`ccsx auth create <name>` and `ccsx <name>` both repair these links idempotently.
-This keeps relative Codex config entries such as `agents/foo.toml` valid inside
-each isolated `CODEX_HOME`.
+Only `plugins/cache/` is shared. The profile's parent `plugins/` directory remains a
+real local directory so Codex can keep profile-specific plugin metadata beside the
+shared cache.
+
+`ccsx auth create <name>` and direct `ccsx <name>` launches repair these links
+idempotently before Codex starts. This keeps relative entries such as
+`agents/foo.toml` valid and prevents stale first-launch skill warnings after a plugin
+install or update changes the cache.
 
 ## Caveats
 
@@ -167,9 +177,10 @@ each isolated `CODEX_HOME`.
 
 On Windows, creating symlinks requires Developer Mode or elevated privileges.
 If symlink creation fails, CCS falls back to copying `config.toml`, `agents/`,
-and `skills/`. In this case, changes to `~/.codex/` resources are **not**
-automatically reflected in the profile; re-run `ccsx auth create <name> --force`
-to refresh the copy.
+`skills/`, and the current `plugins/cache/` snapshot. Copies do not update live with
+`~/.codex/`; after a plugin update, another profile launch or
+`ccsx auth create <name> --force` repair copies newly missing cache entries. Existing
+profile-local cache files are preserved.
 
 ### Native Codex project-local config warnings
 
