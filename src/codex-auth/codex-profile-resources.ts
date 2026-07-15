@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { createLogger } from '../services/logging';
+import { ensureSharedPluginCache } from './codex-profile-plugin-cache';
 
 const logger = createLogger('codex-auth:resources');
 
@@ -23,6 +24,8 @@ export function ensureCodexProfileResources(
   for (const resourceName of SHARED_CODEX_RESOURCE_DIRS) {
     ensureSharedResourceDir(profileDir, sharedCodexHome, resourceName);
   }
+
+  ensureSharedPluginCache(profileDir, sharedCodexHome);
 }
 
 function ensureSharedResourceDir(
