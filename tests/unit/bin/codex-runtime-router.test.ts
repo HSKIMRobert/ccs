@@ -176,7 +176,43 @@ describe('codex-runtime router — non-auth profile resolution', () => {
     expect(process.env.CCS_CODEX_PROFILE).toBe('ck');
     expect(process.env.CODEX_HOME).toBe(profileDir);
     expect(fs.existsSync(path.join(profileDir, 'agents', 'brainstormer.toml'))).toBe(true);
+    expect(fs.lstatSync(path.join(profileDir, 'plugins', 'cache')).isSymbolicLink()).toBe(true);
     expect(argv).toEqual(['node', 'codex-runtime', 'default', 'fix failing tests']);
+  });
+
+  it('repairs a positional ccsx profile before delegating to CCS', async () => {
+    const profileDir = makeProfileDir('ck');
+    writeRegistry({
+      version: '1.0',
+      default: null,
+      profiles: { ck: { type: 'codex', created: '2026-01-01T00:00:00.000Z', last_used: null } },
+    });
+    const events: string[] = [];
+
+    flushRouterCache();
+    require.cache[resourcePath] = {
+      exports: {
+        ensureCodexProfileResources: (dir: string) => {
+          expect(dir).toBe(profileDir);
+          events.push('repair');
+        },
+      },
+    } as NodeJS.Module;
+    require.cache[ccsPath] = Object.defineProperty({} as NodeJS.Module, 'exports', {
+      configurable: true,
+      get: () => {
+        events.push('ccs');
+        return {};
+      },
+    });
+
+    const argv = ['node', 'codex-runtime', 'ck'];
+    const { main } = require(routerPath) as { main: (args: string[]) => Promise<number> };
+    const code = await main(argv);
+
+    expect(code).toBe(-1);
+    expect(events).toEqual(['repair', 'ccs']);
+    expect(argv).toEqual(['node', 'codex-runtime', 'default']);
   });
 
   it('self-heals missing Codex profile resources during launch', async () => {
