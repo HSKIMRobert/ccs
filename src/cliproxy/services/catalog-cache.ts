@@ -33,6 +33,7 @@ const CHANNEL_TO_PROVIDER: Record<string, CLIProxyProvider> = {
   claude: 'claude',
   gemini: 'gemini',
   codex: 'codex',
+  xai: 'xai',
   qwen: 'qwen',
   iflow: 'iflow',
   kimi: 'kimi',

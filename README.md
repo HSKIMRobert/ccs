@@ -50,6 +50,7 @@ Then launch whatever runtime fits the task:
 ```bash
 ccs
 ccs codex
+ccs xai              # Alias: ccs grok
 ccs --target droid glm
 ccs glm
 ccs ollama
@@ -61,7 +62,7 @@ CCS gives you one stable command surface while letting you switch between:
 
 - multiple runtimes such as Claude Code, Factory Droid, and Codex CLI
 - multiple Claude subscriptions and isolated account contexts
-- OAuth providers like Codex, Kiro, Claude, Kimi, and more, with legacy
+- OAuth providers like Codex, xAI/Grok, Kiro, Claude, Kimi, and more, with legacy
   Copilot compatibility for existing setups
 - API and local-model profiles like GLM, Kimi, OpenRouter, Ollama, llama.cpp,
   Novita, Fireworks AI, and Alibaba Coding Plan

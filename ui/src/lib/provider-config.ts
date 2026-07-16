@@ -98,6 +98,7 @@ export const PROVIDER_ASSETS: Partial<Record<ProviderVisualId, string>> = {
   gemini: '/assets/providers/gemini-color.svg',
   agy: '/assets/providers/agy.png',
   codex: '/assets/providers/codex-color.svg',
+  xai: '/assets/providers/xai.svg',
   qwen: '/assets/providers/qwen-color.svg',
   iflow: '/assets/providers/iflow.png',
   kiro: '/assets/providers/kiro.png',
@@ -128,6 +129,7 @@ export const PROVIDER_FALLBACK_VISUALS: Record<ProviderVisualId, ProviderFallbac
   gemini: { textClass: 'text-blue-600', letter: 'G' },
   claude: { textClass: 'text-orange-600', letter: 'C' },
   codex: { textClass: 'text-emerald-600', letter: 'X' },
+  xai: { textClass: 'text-slate-900', letter: 'X' },
   agy: { textClass: 'text-violet-600', letter: 'A' },
   qwen: { textClass: 'text-cyan-600', letter: 'Q' },
   iflow: { textClass: 'text-indigo-600', letter: 'i' },
@@ -265,6 +267,7 @@ export const PROVIDER_COLORS: Record<string, string> = {
   gemini: '#4285F4',
   agy: '#f3722c',
   codex: '#10a37f',
+  xai: '#111827',
   openai: '#111827',
   vertex: '#4285F4',
   iflow: '#f94144',
@@ -370,6 +373,7 @@ const DEVICE_CODE_PROVIDER_INSTRUCTIONS: Readonly<Partial<Record<CLIProxyProvide
     qwen: 'Sign in with your Qwen account to authorize access.',
     kiro: 'Sign in with your selected Kiro auth provider to continue.',
     kimi: 'Sign in with your Kimi account and finish the device authorization.',
+    xai: 'Sign in with your xAI account and finish the Grok device authorization.',
   });
 
 /** Check if the add-account UI should use the verification-code auth dialog. */

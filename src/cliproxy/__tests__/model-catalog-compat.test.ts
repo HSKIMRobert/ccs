@@ -37,11 +37,30 @@ describe('model-catalog compatibility lookups', () => {
   });
 
   it('maps all dashboard providers to upstream catalog channels', () => {
+    expect(SYNCABLE_PROVIDERS).toContain('xai');
     expect(SYNCABLE_PROVIDERS).toContain('qwen');
     expect(SYNCABLE_PROVIDERS).toContain('iflow');
     expect(SYNCABLE_PROVIDERS).toContain('kiro');
     expect(SYNCABLE_PROVIDERS).toContain('ghcp');
     expect(PROVIDER_TO_CHANNEL.ghcp).toBe('github-copilot');
+    expect(PROVIDER_TO_CHANNEL.xai).toBe('xai');
+  });
+
+  it('merges live xAI model metadata while preserving the static coding default', () => {
+    const catalog = mergeCatalog('xai', [
+      { id: 'grok-build-0.1', display_name: 'Grok Build 0.1' },
+      {
+        id: 'grok-4.5',
+        display_name: 'Grok 4.5',
+        thinking: { levels: ['low', 'medium', 'high'] },
+      },
+    ]);
+
+    expect(catalog?.defaultModel).toBe('grok-build-0.1');
+    expect(catalog?.models[1]?.thinking).toMatchObject({
+      type: 'levels',
+      levels: ['low', 'medium', 'high'],
+    });
   });
 
   it('does not re-add stale static-only models when live catalog data is present', () => {

@@ -11,7 +11,7 @@ export type AccountTier = 'free' | 'pro' | 'ultra' | 'unknown';
  * Providers that typically have empty email in OAuth token files.
  * For these providers, nickname is used as accountId instead of email.
  */
-export const PROVIDERS_WITHOUT_EMAIL: CLIProxyProvider[] = ['kiro', 'ghcp'];
+export const PROVIDERS_WITHOUT_EMAIL: CLIProxyProvider[] = ['kiro', 'ghcp', 'xai'];
 
 /** Account information */
 export interface AccountInfo {

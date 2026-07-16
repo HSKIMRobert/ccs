@@ -17,6 +17,7 @@ const WIZARD_PROVIDER_ORDER: CLIProxyProvider[] = [
   'claude',
   'gemini',
   'codex',
+  'xai',
   'cursor',
   'gitlab',
   'codebuddy',

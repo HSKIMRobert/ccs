@@ -1,7 +1,7 @@
 /**
  * Add Account Dialog Component
  * Uses /start-url to get OAuth URL + polls for completion via management API.
- * For Device Code flows (ghcp, qwen, kiro): Uses /start endpoint which spawns CLIProxy
+ * For verification-code flows: Uses /start endpoint which spawns CLIProxy
  * binary and emits WebSocket events. DeviceCodeDialog handles user code display.
  * Shows auth URL + callback paste field. Polling auto-closes on success.
  * For Kiro: Also shows "Import from IDE" option.

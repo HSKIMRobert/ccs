@@ -2,6 +2,7 @@ import ProfileDetector from '../auth/profile-detector';
 import {
   API_SUBCOMMANDS,
   AUTH_SUBCOMMANDS,
+  BUILTIN_PROVIDER_ALIAS_SHORTCUTS,
   BUILTIN_PROVIDER_SHORTCUTS,
   CLEANUP_FLAGS,
   COMMAND_FLAG_SUGGESTIONS,
@@ -65,6 +66,7 @@ function getTopLevelSuggestions(): CompletionSuggestion[] {
     ...getPublicRootCommandTokens().map((value) => suggestion(value)),
     ...ROOT_COMMAND_FLAGS.map((value) => suggestion(value)),
     ...BUILTIN_PROVIDER_SHORTCUTS.map((entry) => suggestion(entry.name, entry.summary)),
+    ...BUILTIN_PROVIDER_ALIAS_SHORTCUTS.map((entry) => suggestion(entry.name, entry.summary)),
     ...getDynamicProfileSuggestions(),
   ];
 }
@@ -262,6 +264,7 @@ function getSuggestionsForCommand(tokensBeforeCurrent: string[]): CompletionSugg
           ...getProfileNames('settings'),
           ...getProfileNames('accounts'),
           ...BUILTIN_PROVIDER_SHORTCUTS.map((entry) => entry.name),
+          ...BUILTIN_PROVIDER_ALIAS_SHORTCUTS.map((entry) => entry.name),
         ]),
         COMMAND_FLAG_SUGGESTIONS.env
       );
@@ -280,7 +283,11 @@ function getSuggestionsForCommand(tokensBeforeCurrent: string[]): CompletionSugg
         ['--bash', '--zsh', '--fish', '--powershell', '--force', '-f']
       );
     default:
-      if (BUILTIN_PROVIDER_SHORTCUTS.some((entry) => entry.name === command)) {
+      if (
+        [...BUILTIN_PROVIDER_SHORTCUTS, ...BUILTIN_PROVIDER_ALIAS_SHORTCUTS].some(
+          (entry) => entry.name === command
+        )
+      ) {
         if (command === 'agy')
           return completeSubcommands([], [...PROVIDER_FLAGS, '--accept-agr-risk']);
         if (command === 'kiro') {

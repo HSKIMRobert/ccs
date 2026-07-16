@@ -149,6 +149,7 @@ export function toKiroManagementMethod(method: KiroAuthMethod): 'aws' | 'google'
  * OAuth flow types per provider:
  * - Gemini: Authorization Code Flow with local callback server on port 8085
  * - Codex:  Authorization Code Flow with local callback server on port 1455
+ * - xAI:    Device Code Flow (polling-based, NO callback port needed)
  * - Agy:    Authorization Code Flow with local callback server on port 51121
  * - iFlow:  Authorization Code Flow with local callback server on port 11451
  * - Claude: Authorization Code Flow with local callback server on port 54545 (Anthropic OAuth)
@@ -227,6 +228,13 @@ export const OAUTH_CONFIGS: Record<CLIProxyProvider, ProviderOAuthConfig> = {
     authUrl: 'https://auth.openai.com/authorize',
     scopes: ['openid', 'profile'],
     authFlag: '--codex-login',
+  },
+  xai: {
+    provider: 'xai',
+    displayName: 'xAI (Grok)',
+    authUrl: 'https://accounts.x.ai/oauth2/device',
+    scopes: ['openid', 'profile', 'email', 'offline_access', 'grok-cli:access', 'api:access'],
+    authFlag: '--xai-login',
   },
   agy: {
     provider: 'agy',

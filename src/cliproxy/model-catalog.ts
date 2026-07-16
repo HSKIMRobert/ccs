@@ -301,6 +301,75 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
       },
     ],
   },
+  xai: {
+    provider: 'xai',
+    displayName: 'xAI (Grok)',
+    defaultModel: 'grok-build-0.1',
+    models: [
+      {
+        id: 'grok-build-0.1',
+        name: 'Grok Build 0.1',
+        description: 'Fast coding model for agentic software engineering workflows',
+      },
+      {
+        id: 'grok-4.5',
+        name: 'Grok 4.5',
+        description: 'Frontier model for coding, engineering, and agentic workflows',
+        thinking: {
+          type: 'levels',
+          levels: ['low', 'medium', 'high'],
+          zeroAllowed: false,
+        },
+      },
+      {
+        id: 'grok-4.3',
+        name: 'Grok 4.3',
+        description: 'General-purpose Grok model with a one-million-token context window',
+        extendedContext: true,
+        thinking: {
+          type: 'levels',
+          levels: ['none', 'low', 'medium', 'high'],
+          zeroAllowed: true,
+        },
+      },
+      {
+        id: 'grok-4.20-0309-reasoning',
+        name: 'Grok 4.20 0309 Reasoning',
+        description: 'Reasoning model with a two-million-token context window',
+        extendedContext: true,
+      },
+      {
+        id: 'grok-4.20-0309-non-reasoning',
+        name: 'Grok 4.20 0309 Non Reasoning',
+        description: 'Non-reasoning model with a two-million-token context window',
+        extendedContext: true,
+      },
+      {
+        id: 'grok-4.20-multi-agent-0309',
+        name: 'Grok 4.20 Multi Agent 0309',
+        description: 'Multi-agent model with a two-million-token context window',
+        extendedContext: true,
+        thinking: { type: 'levels', levels: ['low', 'medium', 'high'] },
+      },
+      {
+        id: 'grok-3-mini',
+        name: 'Grok 3 Mini',
+        description: 'Compact reasoning model',
+        thinking: { type: 'levels', levels: ['low', 'medium', 'high'] },
+      },
+      {
+        id: 'grok-3-mini-fast',
+        name: 'Grok 3 Mini Fast',
+        description: 'Faster compact reasoning model',
+        thinking: { type: 'levels', levels: ['low', 'medium', 'high'] },
+      },
+      {
+        id: 'grok-composer-2.5-fast',
+        name: 'Grok Composer 2.5 Fast',
+        description: 'Fast Composer model for lightweight coding tasks',
+      },
+    ],
+  },
   qoder: {
     provider: 'qoder',
     displayName: 'Qoder',

@@ -94,10 +94,18 @@ describe('ProfileDetector', () => {
     });
 
     it('should detect newly added cliproxy providers', () => {
+      expect(detector.detectProfileType('xai').provider).toBe('xai');
       expect(detector.detectProfileType('gitlab').provider).toBe('gitlab');
       expect(detector.detectProfileType('codebuddy').provider).toBe('codebuddy');
       expect(detector.detectProfileType('kilo').provider).toBe('kilo');
       expect(detector.detectProfileType('qoder').provider).toBe('qoder');
+    });
+
+    it('should resolve the grok CLI alias to canonical xai routing', () => {
+      const result = detector.detectProfileType('grok');
+      expect(result.type).toBe('cliproxy');
+      expect(result.name).toBe('xai');
+      expect(result.provider).toBe('xai');
     });
 
     it('should detect settings-based profile from unified config', () => {

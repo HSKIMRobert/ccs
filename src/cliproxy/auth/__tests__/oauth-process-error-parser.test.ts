@@ -4,10 +4,27 @@ import {
   extractLikelyAuthFailureFromLogs,
   extractLikelyAuthFailureFromStderr,
   extractLikelyOAuthAuthorizationUrl,
+  extractDeviceCodePrompt,
   getExpectedLocalCallback,
   getKiroBuilderIdSelectionInput,
   validateManualCallbackUrl,
 } from '../oauth-process';
+
+describe('oauth-process device code parsing', () => {
+  it('parses the xAI device authorization output contract', () => {
+    const output = `
+To authenticate, please visit:
+https://accounts.x.ai/oauth2/device?user_code=ABCD-1234
+
+Then enter this code: ABCD-1234
+`;
+
+    expect(extractDeviceCodePrompt(output)).toEqual({
+      userCode: 'ABCD-1234',
+      verificationUrl: 'https://accounts.x.ai/oauth2/device?user_code=ABCD-1234',
+    });
+  });
+});
 
 describe('oauth-process stderr parsing', () => {
   it('does not match provider-specific patterns for other providers', () => {

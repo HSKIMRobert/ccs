@@ -9,6 +9,7 @@ describe('base-config-loader new providers', () => {
     ['codebuddy', '/api/provider/codebuddy', 'auto'],
     ['kilo', '/api/provider/kilo', 'kilo/auto'],
     ['qoder', '/api/provider/qoder', 'qoder/auto'],
+    ['xai', '/api/provider/xai', 'grok-build-0.1'],
   ] as const)('loads base settings for %s', (provider, baseUrlPath, defaultModel) => {
     const config = loadBaseConfig(provider);
 

@@ -24,7 +24,10 @@ import {
 
 import { getProfileLookupCandidates, isLegacyProfileAlias } from '../utils/profile-compat';
 import type { CLIProxyProvider } from '../cliproxy/types';
-import { CLIPROXY_PROVIDER_IDS, isCLIProxyProvider } from '../cliproxy/provider-capabilities';
+import {
+  CLIPROXY_PROVIDER_IDS,
+  resolveCLIProxyProviderShortcut,
+} from '../cliproxy/provider-capabilities';
 import { LEGACY_CURSOR_PROFILE_NAME } from '../cursor/constants';
 import { normalizeCopilotModelId } from '../copilot/copilot-model-normalizer';
 import type { TargetType } from '../targets/target-adapter';
@@ -332,11 +335,12 @@ class ProfileDetector {
     }
 
     // Priority 0.5: Check CLIProxy profiles (gemini, codex, agy, qwen, ...)
-    if (isCLIProxyProvider(profileName)) {
+    const builtinProvider = resolveCLIProxyProviderShortcut(profileName);
+    if (builtinProvider) {
       return {
         type: 'cliproxy',
-        name: profileName,
-        provider: profileName,
+        name: builtinProvider,
+        provider: builtinProvider,
       };
     }
 
