@@ -63,6 +63,18 @@ describe('model-catalog compatibility lookups', () => {
     });
   });
 
+  it('does not export extended-context capability from live xAI context length', () => {
+    const catalog = mergeCatalog('xai', [
+      {
+        id: 'grok-4.3',
+        display_name: 'Grok 4.3',
+        context_length: 2_000_000,
+      },
+    ]);
+
+    expect(catalog?.models[0]?.extendedContext).toBeUndefined();
+  });
+
   it('does not re-add stale static-only models when live catalog data is present', () => {
     const catalog = mergeCatalog('gemini', [
       {

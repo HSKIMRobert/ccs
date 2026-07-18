@@ -143,6 +143,20 @@ export function extractDeviceCodePrompt(output: string): {
   };
 }
 
+export function resolveDeviceCodeVerificationUrl(
+  provider: CLIProxyProvider,
+  userCode: string,
+  parsedUrl: string | null
+): string {
+  if (parsedUrl) {
+    return parsedUrl;
+  }
+  if (provider === 'xai') {
+    return `https://accounts.x.ai/oauth2/device?user_code=${encodeURIComponent(userCode)}`;
+  }
+  return 'https://github.com/login/device';
+}
+
 export function isLoopbackHost(hostname: string): boolean {
   const normalized = hostname.replace(/^\[|\]$/g, '').toLowerCase();
   return (
@@ -415,7 +429,11 @@ async function handleStdout(
       state.deviceCodeDisplayed = true;
       log(`Parsed device code: ${state.userCode}`);
 
-      const verificationUrl = devicePrompt.verificationUrl || 'https://github.com/login/device';
+      const verificationUrl = resolveDeviceCodeVerificationUrl(
+        options.provider,
+        state.userCode,
+        devicePrompt.verificationUrl
+      );
 
       // Emit device code event for WebSocket broadcast to UI
       const deviceCodePrompt: DeviceCodePrompt = {
@@ -525,6 +543,7 @@ export function extractLikelyAuthFailureFromLogs(
     });
 
   const providerPatterns: Partial<Record<CLIProxyProvider, RegExp[]>> = {
+    xai: [/xai authentication failed:\s*(.+)/i],
     ghcp: [
       /github copilot authentication failed:\s*(.+)/i,
       /failed to verify copilot access[^:]*:\s*(.+)/i,

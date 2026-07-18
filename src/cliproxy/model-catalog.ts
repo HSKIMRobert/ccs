@@ -325,7 +325,6 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'grok-4.3',
         name: 'Grok 4.3',
         description: 'General-purpose Grok model with a one-million-token context window',
-        extendedContext: true,
         thinking: {
           type: 'levels',
           levels: ['none', 'low', 'medium', 'high'],
@@ -336,19 +335,16 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'grok-4.20-0309-reasoning',
         name: 'Grok 4.20 0309 Reasoning',
         description: 'Reasoning model with a two-million-token context window',
-        extendedContext: true,
       },
       {
         id: 'grok-4.20-0309-non-reasoning',
         name: 'Grok 4.20 0309 Non Reasoning',
         description: 'Non-reasoning model with a two-million-token context window',
-        extendedContext: true,
       },
       {
         id: 'grok-4.20-multi-agent-0309',
         name: 'Grok 4.20 Multi Agent 0309',
         description: 'Multi-agent model with a two-million-token context window',
-        extendedContext: true,
         thinking: { type: 'levels', levels: ['low', 'medium', 'high'] },
       },
       {
@@ -765,6 +761,7 @@ export function supportsThinking(provider: CLIProxyProvider, modelId: string): b
  * Returns true if model has extendedContext: true in catalog.
  */
 export function supportsExtendedContext(provider: CLIProxyProvider, modelId: string): boolean {
+  if (provider === 'xai') return false;
   const model = findModel(provider, modelId);
   return model?.extendedContext === true;
 }

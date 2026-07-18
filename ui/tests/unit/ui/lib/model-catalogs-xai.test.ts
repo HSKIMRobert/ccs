@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MODEL_CATALOGS } from '@/lib/model-catalogs';
+import { buildUiCatalog, MODEL_CATALOGS, supportsExtendedContext } from '@/lib/model-catalogs';
 
 describe('xAI model catalog defaults', () => {
   it('mirrors the CLIProxyAPI text catalog and default tier routing', () => {
@@ -26,5 +26,32 @@ describe('xAI model catalog defaults', () => {
       sonnet: 'grok-build-0.1',
       haiku: 'grok-composer-2.5-fast',
     });
+  });
+
+  it('does not expose Claude [1m] suffix support for xAI model IDs', () => {
+    const catalog = MODEL_CATALOGS.xai;
+
+    for (const model of catalog.models) {
+      expect(model.extendedContext).not.toBe(true);
+      expect(supportsExtendedContext('xai', model.id)).toBe(false);
+    }
+  });
+
+  it('strips generic extended-context metadata from live xAI catalogs', () => {
+    const catalog = buildUiCatalog('xai', {
+      provider: 'xai',
+      displayName: 'xAI (Grok)',
+      defaultModel: 'grok-4.3',
+      models: [
+        {
+          id: 'grok-4.3',
+          name: 'Grok 4.3',
+          extendedContext: true,
+        },
+      ],
+    });
+
+    expect(catalog?.models[0]?.extendedContext).toBeUndefined();
+    expect(supportsExtendedContext('xai', 'grok-4.3', catalog)).toBe(false);
   });
 });

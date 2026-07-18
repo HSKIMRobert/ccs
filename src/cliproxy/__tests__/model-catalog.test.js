@@ -87,6 +87,23 @@ describe('Model Catalog', () => {
         'grok-composer-2.5-fast',
       ]);
     });
+
+    it('does not expose Claude [1m] suffix support for xAI model IDs', () => {
+      const { MODEL_CATALOG, supportsExtendedContext } = modelCatalog;
+
+      for (const model of MODEL_CATALOG.xai.models) {
+        assert.notStrictEqual(
+          model.extendedContext,
+          true,
+          `${model.id} must not advertise extended-context metadata`
+        );
+        assert.strictEqual(
+          supportsExtendedContext('xai', model.id),
+          false,
+          `${model.id} must not advertise [1m] suffix support`
+        );
+      }
+    });
   });
 
   describe('AGY models', () => {

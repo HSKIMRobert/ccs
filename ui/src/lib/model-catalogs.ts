@@ -407,25 +407,21 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
         id: 'grok-4.3',
         name: 'Grok 4.3',
         description: 'General-purpose Grok model with a one-million-token context window',
-        extendedContext: true,
       },
       {
         id: 'grok-4.20-0309-reasoning',
         name: 'Grok 4.20 0309 Reasoning',
         description: 'Reasoning model with a two-million-token context window',
-        extendedContext: true,
       },
       {
         id: 'grok-4.20-0309-non-reasoning',
         name: 'Grok 4.20 0309 Non Reasoning',
         description: 'Non-reasoning model with a two-million-token context window',
-        extendedContext: true,
       },
       {
         id: 'grok-4.20-multi-agent-0309',
         name: 'Grok 4.20 Multi Agent 0309',
         description: 'Multi-agent model with a two-million-token context window',
-        extendedContext: true,
       },
       {
         id: 'grok-3-mini',
@@ -1124,7 +1120,8 @@ export function buildUiCatalog(
   provider: string,
   liveCatalog: ProviderCatalog | undefined
 ): ProviderCatalog | undefined {
-  const staticCatalog = MODEL_CATALOGS[provider.toLowerCase()];
+  const normalizedProvider = provider.toLowerCase();
+  const staticCatalog = MODEL_CATALOGS[normalizedProvider];
   if (!liveCatalog || liveCatalog.models.length === 0) {
     return staticCatalog;
   }
@@ -1145,7 +1142,10 @@ export function buildUiCatalog(
       issueUrl: staticModel?.issueUrl,
       deprecated: staticModel?.deprecated,
       deprecationReason: staticModel?.deprecationReason,
-      extendedContext: model.extendedContext ?? staticModel?.extendedContext,
+      extendedContext:
+        normalizedProvider === 'xai'
+          ? undefined
+          : (model.extendedContext ?? staticModel?.extendedContext),
       presetMapping: staticModel?.presetMapping,
     };
   });
@@ -1344,5 +1344,6 @@ export function supportsExtendedContext(
   modelId: string,
   catalogOverride?: ProviderCatalog
 ): boolean {
+  if (provider.toLowerCase() === 'xai') return false;
   return findCatalogModel(provider, modelId, catalogOverride)?.extendedContext === true;
 }

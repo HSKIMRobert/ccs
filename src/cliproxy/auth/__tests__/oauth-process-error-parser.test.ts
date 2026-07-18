@@ -7,6 +7,7 @@ import {
   extractDeviceCodePrompt,
   getExpectedLocalCallback,
   getKiroBuilderIdSelectionInput,
+  resolveDeviceCodeVerificationUrl,
   validateManualCallbackUrl,
 } from '../oauth-process';
 
@@ -23,6 +24,18 @@ Then enter this code: ABCD-1234
       userCode: 'ABCD-1234',
       verificationUrl: 'https://accounts.x.ai/oauth2/device?user_code=ABCD-1234',
     });
+  });
+
+  it('preserves a parsed xAI verification URL exactly', () => {
+    const parsedUrl = 'https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&source=cliproxy';
+
+    expect(resolveDeviceCodeVerificationUrl('xai', 'ABCD-1234', parsedUrl)).toBe(parsedUrl);
+  });
+
+  it('uses an xAI-specific device URL when upstream output omits the URL', () => {
+    expect(resolveDeviceCodeVerificationUrl('xai', 'ABCD-1234', null)).toBe(
+      'https://accounts.x.ai/oauth2/device?user_code=ABCD-1234'
+    );
   });
 });
 
@@ -47,6 +60,13 @@ describe('oauth-process stderr parsing', () => {
     const stderr = 'level=error msg="Authentication failed: state mismatch"';
 
     expect(extractLikelyAuthFailureFromStderr('ghcp', stderr)).toBe('state mismatch');
+  });
+
+  it('extracts the current upstream xAI authentication failure format', () => {
+    const stderr =
+      'time="2026-07-18T00:00:00Z" level=error msg="xAI authentication failed: xai device code expired"';
+
+    expect(extractLikelyAuthFailureFromStderr('xai', stderr)).toBe('xai device code expired');
   });
 
   it('caps extracted message length to prevent noisy broadcasts', () => {
