@@ -57,7 +57,7 @@ function codexResult(overrides: Partial<CodexQuotaResult> = {}): CodexQuotaResul
       },
       weekly: {
         label: 'Secondary',
-        remainingPercent: 64,
+        remainingPercent: 24,
         resetAfterSeconds: 259200,
         resetAt: '2026-07-21T13:00:00.000Z',
       },
@@ -81,7 +81,7 @@ function createDeps(
 }
 
 describe('Bar pool account quota adapter', () => {
-  it('maps the most restrictive Claude core window to percentage and reset', async () => {
+  it('maps Claude percentage from the most restrictive window and reset from the earliest', async () => {
     const fetchQuota = createBarPoolAccountQuotaFetcher(createDeps());
 
     const result = await fetchQuota('claude', 'claude@example.com');
@@ -92,13 +92,13 @@ describe('Bar pool account quota adapter', () => {
         name: 'seven_day',
         displayName: 'Weekly usage limit',
         percentage: 45,
-        resetTime: '2026-07-21T12:00:00.000Z',
+        resetTime: '2026-07-18T16:00:00.000Z',
       },
     ]);
     expect(result.accountId).toBe('claude@example.com');
   });
 
-  it('maps the most restrictive Codex core window to percentage and reset', async () => {
+  it('maps Codex percentage from the most restrictive window and reset from the earliest', async () => {
     const fetchQuota = createBarPoolAccountQuotaFetcher(createDeps());
 
     const result = await fetchQuota('codex', 'codex@example.com');
@@ -106,9 +106,9 @@ describe('Bar pool account quota adapter', () => {
     expect(result.success).toBe(true);
     expect(result.models).toEqual([
       {
-        name: 'Primary',
-        displayName: 'Primary',
-        percentage: 36,
+        name: 'Secondary',
+        displayName: 'Secondary',
+        percentage: 24,
         resetTime: '2026-07-18T14:00:00.000Z',
       },
     ]);
@@ -209,5 +209,4 @@ describe('Bar pool account quota adapter', () => {
       errorCode: 'quota_not_supported',
     });
   });
-
 });

@@ -100,13 +100,13 @@ it('stores normalized Claude quota in the existing Bar cache', async () => {
     expect(fetchCount).toBe(1);
     expect(first[0]).toMatchObject({
       quota_percentage: 45,
-      next_reset: '2026-07-21T12:00:00.000Z',
+      next_reset: '2026-07-18T16:00:00.000Z',
       quotaStatus: 'ok',
       cached: false,
     });
     expect(second[0]).toMatchObject({
       quota_percentage: 45,
-      next_reset: '2026-07-21T12:00:00.000Z',
+      next_reset: '2026-07-18T16:00:00.000Z',
       quotaStatus: 'ok',
       cached: true,
     });

@@ -29,6 +29,7 @@ import type {
   CodexQuotaResult,
   QuotaErrorMetadata,
 } from '../../cliproxy/quota/quota-types';
+import { shouldCacheQuotaResult } from './cliproxy-stats-routes/quota-helpers';
 
 interface BindingWindow {
   name: string;
@@ -81,9 +82,22 @@ function pickBindingWindow(windows: BindingWindow[]): BindingWindow | null {
   );
 }
 
+function pickEarliestReset(windows: BindingWindow[]): string | null {
+  return (
+    windows
+      .map((window) => ({
+        resetAt: window.resetAt,
+        timestamp: resetTimestamp(window.resetAt),
+      }))
+      .filter((reset) => Number.isFinite(reset.timestamp))
+      .sort((left, right) => left.timestamp - right.timestamp)[0]?.resetAt ?? null
+  );
+}
+
 function normalizeResult(
   result: ProviderQuotaResult,
-  bindingWindow: BindingWindow | null
+  bindingWindow: BindingWindow | null,
+  earliestReset: string | null
 ): QuotaResult {
   return {
     success: result.success,
@@ -94,7 +108,7 @@ function normalizeResult(
               name: bindingWindow.name,
               displayName: bindingWindow.displayName,
               percentage: normalizeRemainingPercent(bindingWindow.remainingPercent),
-              resetTime: bindingWindow.resetAt,
+              resetTime: earliestReset,
             },
           ]
         : [],
@@ -116,16 +130,15 @@ function normalizeClaudeQuota(result: ClaudeQuotaResult): QuotaResult {
     result.coreUsage?.fiveHour || result.coreUsage?.weekly
       ? result.coreUsage
       : buildClaudeCoreUsageSummary(result.windows);
-  const bindingWindow = pickBindingWindow(
-    [coreUsage?.fiveHour, coreUsage?.weekly].filter(isPresent).map((window) => ({
-      name: window.rateLimitType,
-      displayName: window.label,
-      remainingPercent: window.remainingPercent,
-      resetAt: window.resetAt,
-    }))
-  );
+  const windows = [coreUsage?.fiveHour, coreUsage?.weekly].filter(isPresent).map((window) => ({
+    name: window.rateLimitType,
+    displayName: window.label,
+    remainingPercent: window.remainingPercent,
+    resetAt: window.resetAt,
+  }));
+  const bindingWindow = pickBindingWindow(windows);
 
-  const normalized = normalizeResult(result, bindingWindow);
+  const normalized = normalizeResult(result, bindingWindow, pickEarliestReset(windows));
   rawQuotaByNormalizedResult.set(normalized, result);
   return normalized;
 }
@@ -135,16 +148,15 @@ function normalizeCodexQuota(result: CodexQuotaResult): QuotaResult {
     result.coreUsage?.fiveHour || result.coreUsage?.weekly
       ? result.coreUsage
       : buildCodexCoreUsageSummary(result.windows);
-  const bindingWindow = pickBindingWindow(
-    [coreUsage?.fiveHour, coreUsage?.weekly].filter(isPresent).map((window) => ({
-      name: window.label,
-      displayName: window.label,
-      remainingPercent: window.remainingPercent,
-      resetAt: window.resetAt,
-    }))
-  );
+  const windows = [coreUsage?.fiveHour, coreUsage?.weekly].filter(isPresent).map((window) => ({
+    name: window.label,
+    displayName: window.label,
+    remainingPercent: window.remainingPercent,
+    resetAt: window.resetAt,
+  }));
+  const bindingWindow = pickBindingWindow(windows);
 
-  const normalized = normalizeResult(result, bindingWindow);
+  const normalized = normalizeResult(result, bindingWindow, pickEarliestReset(windows));
   rawQuotaByNormalizedResult.set(normalized, result);
   return normalized;
 }
@@ -182,7 +194,17 @@ export function setCachedBarPoolAccountQuota<T>(
     typeof data === 'object' && data !== null
       ? rawQuotaByNormalizedResult.get(data as unknown as QuotaResult)
       : undefined;
-  setCachedQuota(provider, accountId, raw ?? data);
+  const cacheValue = raw ?? data;
+  if (
+    typeof cacheValue === 'object' &&
+    cacheValue !== null &&
+    'success' in cacheValue &&
+    typeof cacheValue.success === 'boolean' &&
+    !shouldCacheQuotaResult(cacheValue as ProviderQuotaResult)
+  ) {
+    return;
+  }
+  setCachedQuota(provider, accountId, cacheValue);
 }
 
 export function invalidateCachedBarPoolAccountQuota(
