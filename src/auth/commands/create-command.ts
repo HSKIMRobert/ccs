@@ -34,6 +34,7 @@ import {
   maybeShowPoolOnboardingHint,
   countNativeClaudeProfiles,
 } from '../../cliproxy/routing/pool-onboarding-hint';
+import { canOverwriteGrandfatheredReservedProfileName } from '../../config/reserved-names';
 
 function sanitizeProfileNameForInstance(name: string): string {
   return name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
@@ -63,7 +64,19 @@ export async function handleCreate(ctx: CommandContext, args: string[]): Promise
     exitWithError('Profile name is required', ExitCode.PROFILE_ERROR);
   }
 
-  if (!isValidAccountProfileName(profileName)) {
+  // Check exact account ownership before applying the narrow grandfathered
+  // repair exception. API profiles and case variants do not qualify.
+  const existsLegacy = ctx.registry.hasProfile(profileName);
+  const existsUnified = ctx.registry.hasAccountUnified(profileName);
+  const canOverwriteGrandfatheredProfile = canOverwriteGrandfatheredReservedProfileName(
+    profileName,
+    {
+      force: force === true,
+      exists: existsLegacy || existsUnified,
+    }
+  );
+
+  if (!isValidAccountProfileName(profileName) && !canOverwriteGrandfatheredProfile) {
     exitWithError(
       'Invalid profile name. Use letters/numbers/dash/underscore and start with a letter.',
       ExitCode.PROFILE_ERROR
@@ -71,8 +84,6 @@ export async function handleCreate(ctx: CommandContext, args: string[]): Promise
   }
 
   // Check if profile already exists (check both legacy and unified)
-  const existsLegacy = ctx.registry.hasProfile(profileName);
-  const existsUnified = ctx.registry.hasAccountUnified(profileName);
   if (!force && (existsLegacy || existsUnified)) {
     // Keep the --force hint in the exitWithError message so it appears in the single output line
     exitWithError(

@@ -76,11 +76,17 @@ describe('profile-routes lifecycle endpoints', () => {
   it('does not register all orphans when names=[] is explicitly passed', async () => {
     const ccsDir = path.join(tempHome, '.ccs');
     fs.mkdirSync(ccsDir, { recursive: true });
-    fs.writeFileSync(path.join(ccsDir, 'config.json'), JSON.stringify({ profiles: {} }, null, 2) + '\n');
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.json'),
+      JSON.stringify({ profiles: {} }, null, 2) + '\n'
+    );
     fs.writeFileSync(
       path.join(ccsDir, 'lonely.settings.json'),
-      JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://api.example.com', ANTHROPIC_AUTH_TOKEN: 'token' } }, null, 2) +
-        '\n'
+      JSON.stringify(
+        { env: { ANTHROPIC_BASE_URL: 'https://api.example.com', ANTHROPIC_AUTH_TOKEN: 'token' } },
+        null,
+        2
+      ) + '\n'
     );
 
     const response = await fetch(`${baseUrl}/api/profiles/orphans/register`, {
@@ -141,5 +147,86 @@ describe('profile-routes lifecycle endpoints', () => {
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: string };
     expect(body.error).toContain('API name must start with letter');
+  });
+
+  it('keeps grandfathered profiles exportable, copyable, and removable', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.json'),
+      JSON.stringify({ profiles: { xai: '~/.ccs/xai.settings.json' } }, null, 2) + '\n'
+    );
+    fs.writeFileSync(
+      path.join(ccsDir, 'xai.settings.json'),
+      JSON.stringify(
+        { env: { ANTHROPIC_BASE_URL: 'https://api.example.com', ANTHROPIC_AUTH_TOKEN: 'token' } },
+        null,
+        2
+      ) + '\n'
+    );
+
+    const exportResponse = await fetch(`${baseUrl}/api/profiles/xai/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(exportResponse.status).toBe(200);
+
+    const copyResponse = await fetch(`${baseUrl}/api/profiles/xai/copy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ destination: 'xai-backup' }),
+    });
+    expect(copyResponse.status).toBe(201);
+
+    const reservedDestinationResponse = await fetch(`${baseUrl}/api/profiles/xai/copy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ destination: 'GROK' }),
+    });
+    expect(reservedDestinationResponse.status).toBe(400);
+    const reservedDestinationBody = (await reservedDestinationResponse.json()) as {
+      error: string;
+    };
+    expect(reservedDestinationBody.error).toContain('reserved name');
+
+    const deleteResponse = await fetch(`${baseUrl}/api/profiles/xai`, {
+      method: 'DELETE',
+    });
+    expect(deleteResponse.status).toBe(200);
+    expect(fs.existsSync(path.join(ccsDir, 'xai.settings.json'))).toBe(false);
+  });
+
+  it('recovers a grandfathered xai orphan through the route', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.json'),
+      JSON.stringify({ profiles: {} }, null, 2) + '\n'
+    );
+    fs.writeFileSync(
+      path.join(ccsDir, 'xai.settings.json'),
+      JSON.stringify(
+        { env: { ANTHROPIC_BASE_URL: 'https://api.example.com', ANTHROPIC_AUTH_TOKEN: 'token' } },
+        null,
+        2
+      ) + '\n'
+    );
+
+    const response = await fetch(`${baseUrl}/api/profiles/orphans/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ names: ['xai'] }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { registered: string[]; skipped: unknown[] };
+    expect(body.registered).toEqual(['xai']);
+    expect(body.skipped).toEqual([]);
+
+    const config = JSON.parse(fs.readFileSync(path.join(ccsDir, 'config.json'), 'utf8')) as {
+      profiles: Record<string, string>;
+    };
+    expect(config.profiles.xai).toBe('~/.ccs/xai.settings.json');
   });
 });

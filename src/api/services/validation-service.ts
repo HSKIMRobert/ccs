@@ -8,10 +8,13 @@
 import { isReservedName, isWindowsReservedName } from '../../config/reserved-names';
 
 /**
- * Validate API profile name
+ * Validate API profile name syntax for an existing profile reference.
+ *
+ * Existing profiles may use a name that became reserved after they were
+ * created, so this validator intentionally excludes built-in-name policy.
  * @returns Error message if invalid, null if valid
  */
-export function validateApiName(name: string): string | null {
+export function validateApiNameSyntax(name: string): string | null {
   if (!name) {
     return 'API name is required';
   }
@@ -21,11 +24,23 @@ export function validateApiName(name: string): string | null {
   if (name.length > 32) {
     return 'API name must be 32 characters or less';
   }
-  if (isReservedName(name)) {
-    return `'${name}' is a reserved name`;
-  }
   if (isWindowsReservedName(name)) {
     return `'${name}' is a Windows reserved device name and cannot be used`;
+  }
+  return null;
+}
+
+/**
+ * Validate a name for creation of a new API profile.
+ * @returns Error message if invalid or reserved, null if valid
+ */
+export function validateApiName(name: string): string | null {
+  const syntaxError = validateApiNameSyntax(name);
+  if (syntaxError) {
+    return syntaxError;
+  }
+  if (isReservedName(name)) {
+    return `'${name}' is a reserved name`;
   }
   return null;
 }

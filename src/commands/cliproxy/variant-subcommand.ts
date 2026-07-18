@@ -31,6 +31,7 @@ import {
 } from '../../cliproxy/services';
 import { DEFAULT_BACKEND } from '../../cliproxy/binary/platform-detector';
 import { CompositeTierConfig } from '../../config/unified-config-types';
+import { canOverwriteGrandfatheredReservedProfileName } from '../../config/reserved-names';
 import { formatAccountDisplayName } from '../../cliproxy/accounts/email-account-identity';
 import { isUnifiedMode } from '../../config/config-loader-facade';
 
@@ -118,6 +119,24 @@ export function parseProfileArgs(args: string[]): CliproxyProfileArgs {
     }
   }
   return result;
+}
+
+export function validateVariantCreateName(
+  name: string,
+  force: boolean,
+  exists: boolean = variantExists(name)
+): string | null {
+  const error = validateProfileName(name);
+  if (
+    error &&
+    !canOverwriteGrandfatheredReservedProfileName(name, {
+      force,
+      exists,
+    })
+  ) {
+    return error;
+  }
+  return null;
 }
 
 function formatModelOption(model: ModelEntry): string {
@@ -306,7 +325,7 @@ export async function handleCreate(
       validate: validateProfileName,
     });
   } else {
-    const error = validateProfileName(name);
+    const error = validateVariantCreateName(name, parsedArgs.force === true);
     if (error) {
       console.log(fail(error));
       process.exit(1);

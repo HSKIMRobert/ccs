@@ -5,6 +5,8 @@
  * project workspace context with other accounts in the same context group.
  */
 
+import { isReservedName } from '../config/reserved-names';
+
 export type AccountContextMode = 'isolated' | 'shared';
 export type AccountContinuityMode = 'standard' | 'deeper';
 
@@ -36,7 +38,6 @@ export const DEFAULT_ACCOUNT_CONTEXT_GROUP = 'default';
 export const DEFAULT_ACCOUNT_CONTINUITY_MODE: AccountContinuityMode = 'standard';
 export const MAX_CONTEXT_GROUP_LENGTH = 64;
 export const ACCOUNT_PROFILE_NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
-const RESERVED_ACCOUNT_PROFILE_NAMES = new Set(['default']);
 
 const CONTEXT_GROUP_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 
@@ -58,10 +59,7 @@ export function isValidContextGroupName(value: string): boolean {
  * Validate account profile naming constraints.
  */
 export function isValidAccountProfileName(value: string): boolean {
-  return (
-    ACCOUNT_PROFILE_NAME_PATTERN.test(value) &&
-    !RESERVED_ACCOUNT_PROFILE_NAMES.has(value.toLowerCase())
-  );
+  return ACCOUNT_PROFILE_NAME_PATTERN.test(value) && !isReservedName(value);
 }
 
 /**

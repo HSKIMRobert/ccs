@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as os from 'os';
 import ProfileDetector, { loadSettingsFromFile } from '../../../src/auth/profile-detector';
 import * as unifiedConfigLoader from '../../../src/config/unified-config-loader';
+import { ConfigError } from '../../../src/errors/error-types';
 
 describe('ProfileDetector', () => {
   const tempDir = path.join(os.tmpdir(), `ccs-test-profile-detector-${process.pid}`);
@@ -101,11 +102,186 @@ describe('ProfileDetector', () => {
       expect(detector.detectProfileType('qoder').provider).toBe('qoder');
     });
 
-    it('should resolve the grok CLI alias to canonical xai routing', () => {
-      const result = detector.detectProfileType('grok');
-      expect(result.type).toBe('cliproxy');
-      expect(result.name).toBe('xai');
-      expect(result.provider).toBe('xai');
+    it('should resolve xai and grok to built-in xai routing when no configured profile exists', () => {
+      const isUnifiedModeSpy = spyOn(unifiedConfigLoader, 'isUnifiedMode').mockReturnValue(false);
+      const existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false);
+
+      try {
+        for (const shortcut of ['xai', 'grok']) {
+          const result = detector.detectProfileType(shortcut);
+          expect(result.type).toBe('cliproxy');
+          expect(result.name).toBe('xai');
+          expect(result.provider).toBe('xai');
+        }
+      } finally {
+        isUnifiedModeSpy.mockRestore();
+        existsSyncSpy.mockRestore();
+      }
+    });
+
+    it('should preserve configured xai and grok profiles from unified config', () => {
+      const xaiSettingsPath = path.join(tempDir, 'xai.settings.json');
+      const grokSettingsPath = path.join(tempDir, 'grok.settings.json');
+      fs.writeFileSync(
+        xaiSettingsPath,
+        JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://legacy-xai.example' } })
+      );
+      fs.writeFileSync(
+        grokSettingsPath,
+        JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://legacy-grok.example' } })
+      );
+
+      const mockUnifiedConfig = {
+        version: 2,
+        profiles: {
+          xai: { settings: xaiSettingsPath, type: 'api' },
+          grok: { settings: grokSettingsPath, type: 'api' },
+        },
+      };
+
+      const isUnifiedModeSpy = spyOn(unifiedConfigLoader, 'isUnifiedMode').mockReturnValue(true);
+      const loadUnifiedConfigSpy = spyOn(unifiedConfigLoader, 'loadUnifiedConfig').mockReturnValue(
+        mockUnifiedConfig as any
+      );
+
+      try {
+        for (const profileName of ['xai', 'grok']) {
+          const result = detector.detectProfileType(profileName);
+          expect(result.type).toBe('settings');
+          expect(result.name).toBe(profileName);
+          expect(result.settingsPath).toBe(
+            profileName === 'xai' ? xaiSettingsPath : grokSettingsPath
+          );
+        }
+      } finally {
+        isUnifiedModeSpy.mockRestore();
+        loadUnifiedConfigSpy.mockRestore();
+      }
+    });
+
+    it('should reject a malformed unified xai composite instead of using the built-in shortcut', () => {
+      const mockUnifiedConfig = {
+        version: 12,
+        profiles: {},
+        accounts: {},
+        cliproxy: {
+          variants: {
+            xai: {
+              type: 'composite',
+              default_tier: 'opus',
+              tiers: {},
+            },
+          },
+        },
+      };
+
+      const isUnifiedModeSpy = spyOn(unifiedConfigLoader, 'isUnifiedMode').mockReturnValue(true);
+      const loadUnifiedConfigSpy = spyOn(unifiedConfigLoader, 'loadUnifiedConfig').mockReturnValue(
+        mockUnifiedConfig as any
+      );
+      const warningSpy = spyOn(console, 'warn').mockImplementation(() => {});
+
+      try {
+        expect(() => detector.detectProfileType('xai')).toThrow(ConfigError);
+        expect(() => detector.detectProfileType('xai')).toThrow(
+          /Configured profile "xai" in config.yaml is invalid/
+        );
+      } finally {
+        warningSpy.mockRestore();
+        isUnifiedModeSpy.mockRestore();
+        loadUnifiedConfigSpy.mockRestore();
+      }
+    });
+
+    it('should reject a malformed legacy grok variant instead of using the built-in shortcut', () => {
+      const originalCcsHome = process.env.CCS_HOME;
+      process.env.CCS_HOME = tempDir;
+      const ccsDir = path.join(tempDir, '.ccs');
+      fs.mkdirSync(ccsDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(ccsDir, 'config.json'),
+        JSON.stringify({ profiles: {}, cliproxy: { grok: {} } }, null, 2)
+      );
+
+      const isUnifiedModeSpy = spyOn(unifiedConfigLoader, 'isUnifiedMode').mockReturnValue(false);
+
+      try {
+        const localDetector = new ProfileDetector();
+        expect(() => localDetector.detectProfileType('grok')).toThrow(ConfigError);
+        expect(() => localDetector.detectProfileType('grok')).toThrow(
+          /Configured profile "grok" in config.json is invalid/
+        );
+      } finally {
+        isUnifiedModeSpy.mockRestore();
+        if (originalCcsHome !== undefined) {
+          process.env.CCS_HOME = originalCcsHome;
+        } else {
+          delete process.env.CCS_HOME;
+        }
+      }
+    });
+
+    it('should reject a malformed unified xai default instead of using the native default', () => {
+      const mockUnifiedConfig = {
+        version: 12,
+        default: 'xai',
+        profiles: {},
+        accounts: {},
+        cliproxy: {
+          variants: {
+            xai: {
+              type: 'composite',
+              default_tier: 'opus',
+              tiers: {},
+            },
+          },
+        },
+      };
+
+      const isUnifiedModeSpy = spyOn(unifiedConfigLoader, 'isUnifiedMode').mockReturnValue(true);
+      const loadUnifiedConfigSpy = spyOn(unifiedConfigLoader, 'loadUnifiedConfig').mockReturnValue(
+        mockUnifiedConfig as any
+      );
+      const warningSpy = spyOn(console, 'warn').mockImplementation(() => {});
+
+      try {
+        expect(() => detector.resolveDefaultProfileResult()).toThrow(ConfigError);
+        expect(() => detector.resolveDefaultProfileResult()).toThrow(
+          /Configured profile "xai" in config.yaml is invalid/
+        );
+      } finally {
+        warningSpy.mockRestore();
+        isUnifiedModeSpy.mockRestore();
+        loadUnifiedConfigSpy.mockRestore();
+      }
+    });
+
+    it('should reject a malformed legacy xai account default', () => {
+      const originalCcsHome = process.env.CCS_HOME;
+      process.env.CCS_HOME = tempDir;
+      const ccsDir = path.join(tempDir, '.ccs');
+      fs.mkdirSync(ccsDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(ccsDir, 'profiles.json'),
+        JSON.stringify({ default: 'xai', profiles: { xai: {} } }, null, 2)
+      );
+
+      const isUnifiedModeSpy = spyOn(unifiedConfigLoader, 'isUnifiedMode').mockReturnValue(false);
+
+      try {
+        const localDetector = new ProfileDetector();
+        expect(() => localDetector.resolveDefaultProfileResult()).toThrow(ConfigError);
+        expect(() => localDetector.resolveDefaultProfileResult()).toThrow(
+          /Configured profile "xai" in profiles.json is invalid/
+        );
+      } finally {
+        isUnifiedModeSpy.mockRestore();
+        if (originalCcsHome !== undefined) {
+          process.env.CCS_HOME = originalCcsHome;
+        } else {
+          delete process.env.CCS_HOME;
+        }
+      }
     });
 
     it('should detect settings-based profile from unified config', () => {
