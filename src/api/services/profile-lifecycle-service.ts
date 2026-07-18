@@ -9,14 +9,19 @@ import * as path from 'path';
 import type { Config, Settings } from '../../types';
 import type { TargetType } from '../../targets/target-adapter';
 import { getPersistedTargetChoices, isPersistedTargetType } from '../../targets/target-metadata';
+import { ConfigError, ProfileError } from '../../errors/error-types';
 import { getConfigPath } from '../../utils/config-manager';
 import { ensureWebSearchMcpOrThrow } from '../../utils/websearch-manager';
 import { ensureImageAnalysisMcpOrThrow } from '../../utils/image-analysis';
 import { isSensitiveKey } from '../../utils/sensitive-keys';
-import { isReservedName } from '../../config/reserved-names';
+import {
+  canOverwriteGrandfatheredReservedProfileName,
+  isGrandfatheredReservedProfileName,
+  isReservedName,
+} from '../../config/reserved-names';
 
-import { validateApiName } from './validation-service';
-import { listApiProfiles } from './profile-reader';
+import { validateApiName, validateApiNameSyntax } from './validation-service';
+import { apiProfileExists, listApiProfiles } from './profile-reader';
 import { validateApiProfileSettingsPayload } from './profile-lifecycle-validation';
 import type {
   ApiProfileExportBundle,
@@ -44,7 +49,7 @@ function parseTargetValue(value: unknown): TargetType | null {
 }
 
 function validateProfileNameForPath(name: string, label: string): string | null {
-  const validationError = validateApiName(name);
+  const validationError = validateApiNameSyntax(name);
   if (validationError) {
     return `Invalid ${label} profile name "${name}": ${validationError}`;
   }
@@ -70,7 +75,7 @@ function registerApiProfileInConfig(name: string, target: TargetType, force = fa
   if (isUnifiedMode()) {
     mutateConfig((config) => {
       if (config.profiles[name] && !force) {
-        throw new Error(`API profile already exists: ${name}`);
+        throw new ProfileError(`API profile already exists: ${name}`, name);
       }
 
       config.profiles[name] = {
@@ -85,7 +90,7 @@ function registerApiProfileInConfig(name: string, target: TargetType, force = fa
   const configPath = getConfigPath();
   const config = loadConfigSafe() as Config;
   if (config.profiles[name] && !force) {
-    throw new Error(`API profile already exists: ${name}`);
+    throw new ProfileError(`API profile already exists: ${name}`, name);
   }
 
   config.profiles[name] = `~/.ccs/${name}${SETTINGS_FILE_SUFFIX}`;
@@ -124,7 +129,7 @@ function readJsonObject(filePath: string): Record<string, unknown> {
   const raw = fs.readFileSync(filePath, 'utf8');
   const parsed = JSON.parse(raw);
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error('Settings file must contain a JSON object.');
+    throw new ConfigError('Settings file must contain a JSON object.', filePath);
   }
   return parsed as Record<string, unknown>;
 }
@@ -158,7 +163,10 @@ export function discoverApiProfileOrphans(): DiscoverApiProfileOrphansResult {
     .filter((file) => !registeredSettings.has(file))
     .filter((file) => !file.startsWith('base-'))
     .filter((file) => !ignoredNames.has(file))
-    .filter((file) => !isReservedName(file.slice(0, -SETTINGS_FILE_SUFFIX.length)))
+    .filter((file) => {
+      const name = file.slice(0, -SETTINGS_FILE_SUFFIX.length);
+      return !isReservedName(name) || isGrandfatheredReservedProfileName(name);
+    })
     .map((file) => {
       const name = file.slice(0, -SETTINGS_FILE_SUFFIX.length);
       const settingsPath = path.join(ccsDir, file);
@@ -206,7 +214,7 @@ export function registerApiProfileOrphans(options?: {
 
   const result: RegisterApiProfileOrphansResult = { registered: [], skipped: [] };
   for (const orphan of selected) {
-    const nameError = validateApiName(orphan.name);
+    const nameError = validateApiNameSyntax(orphan.name);
     if (nameError) {
       result.skipped.push({
         name: orphan.name,
@@ -247,7 +255,16 @@ export function copyApiProfile(
   if (sourceError) return { success: false, error: sourceError };
 
   const destinationError = validateApiName(destination);
-  if (destinationError) return { success: false, error: destinationError };
+  const canOverwriteGrandfatheredDestination = canOverwriteGrandfatheredReservedProfileName(
+    destination,
+    {
+      force: options?.force === true,
+      exists: apiProfileExists(destination),
+    }
+  );
+  if (destinationError && !canOverwriteGrandfatheredDestination) {
+    return { success: false, error: destinationError };
+  }
 
   const sourceSettingsPath = getProfileSettingsPath(source);
   if (!fs.existsSync(sourceSettingsPath)) {
@@ -363,7 +380,13 @@ export function importApiProfileBundle(
 
   const name = options?.name || input.profile.name;
   const nameError = validateApiName(name);
-  if (nameError) return { success: false, error: nameError };
+  const canOverwriteGrandfatheredProfile = canOverwriteGrandfatheredReservedProfileName(name, {
+    force: options?.force === true,
+    exists: apiProfileExists(name),
+  });
+  if (nameError && !canOverwriteGrandfatheredProfile) {
+    return { success: false, error: nameError };
+  }
 
   const bundleTarget = parseTargetValue(input.profile.target);
   if (input.profile.target !== undefined && bundleTarget === null) {

@@ -11,6 +11,7 @@ import {
   getProvidersByOAuthFlow,
   isCLIProxyProvider,
   mapExternalProviderName,
+  resolveCLIProxyProviderShortcut,
   QUOTA_SUPPORTED_PROVIDER_IDS,
   isQuotaSupportedProvider,
   QUOTA_PROVIDER_OPTION_VALUES,
@@ -25,6 +26,7 @@ import {
   getKiroCallbackPort,
   getKiroCLIAuthArgs,
   getKiroCLIAuthFlag,
+  getOAuthConfig,
   normalizeKiroIDCFlow,
   normalizeKiroAuthMethod,
   OAUTH_CALLBACK_PORTS as AUTH_CALLBACK_PORTS,
@@ -36,6 +38,7 @@ describe('provider-capabilities', () => {
     expect(CLIPROXY_PROVIDER_IDS).toEqual([
       'gemini',
       'codex',
+      'xai',
       'agy',
       'qwen',
       'iflow',
@@ -61,6 +64,7 @@ describe('provider-capabilities', () => {
 
   it('returns providers by OAuth flow capability', () => {
     expect(getProvidersByOAuthFlow('device_code')).toEqual([
+      'xai',
       'qwen',
       'kiro',
       'ghcp',
@@ -82,6 +86,7 @@ describe('provider-capabilities', () => {
 
   it('separates browser URL auth providers from verification-code device flows', () => {
     expect(getDeviceCodeVerificationProviders()).toEqual([
+      'xai',
       'qwen',
       'kiro',
       'ghcp',
@@ -101,9 +106,18 @@ describe('provider-capabilities', () => {
     expect(mapExternalProviderName('anthropic')).toBe('claude');
     expect(mapExternalProviderName('gitlab-duo')).toBe('gitlab');
     expect(mapExternalProviderName('tencent')).toBe('codebuddy');
+    expect(mapExternalProviderName('grok')).toBe('xai');
+    expect(mapExternalProviderName('x.ai')).toBe('xai');
     expect(mapExternalProviderName('  COPILOT  ')).toBe('ghcp');
     expect(mapExternalProviderName('')).toBeNull();
     expect(mapExternalProviderName('unknown-provider')).toBeNull();
+  });
+
+  it('keeps CLI aliases explicit and canonical', () => {
+    expect(resolveCLIProxyProviderShortcut('xai')).toBe('xai');
+    expect(resolveCLIProxyProviderShortcut('grok')).toBe('xai');
+    expect(resolveCLIProxyProviderShortcut('  GROK  ')).toBe('xai');
+    expect(resolveCLIProxyProviderShortcut('anthropic')).toBeNull();
   });
 
   it('exposes quota-supported providers and guards correctly', () => {
@@ -130,6 +144,7 @@ describe('provider-capabilities', () => {
 
   it('exposes callback port and display name capabilities', () => {
     expect(getOAuthCallbackPort('qwen')).toBeNull();
+    expect(getOAuthCallbackPort('xai')).toBeNull();
     expect(getOAuthCallbackPort('kiro')).toBeNull();
     expect(getOAuthCallbackPort('cursor')).toBeNull();
     expect(getOAuthCallbackPort('gitlab')).toBe(17171);
@@ -138,6 +153,7 @@ describe('provider-capabilities', () => {
     expect(PROVIDER_CAPABILITIES.qwen.refreshOwnership).toBe('unsupported');
     expect(getProviderDisplayName('agy')).toBe('Antigravity');
     expect(getProviderDisplayName('kilo')).toBe('Kilo AI');
+    expect(getProviderDisplayName('xai')).toBe('xAI (Grok)');
   });
 
   it('exposes auth start support separately from OAuth flow type', () => {
@@ -147,6 +163,15 @@ describe('provider-capabilities', () => {
     );
     expect(getUnsupportedAuthStartReason('kiro')).toBeNull();
     expect(getUnsupportedAuthStartReason('qoder')).toBeNull();
+    expect(getUnsupportedAuthStartReason('xai')).toBeNull();
+  });
+
+  it('uses the CLIProxyAPI xAI OAuth command contract', () => {
+    expect(getOAuthConfig('xai')).toMatchObject({
+      provider: 'xai',
+      authFlag: '--xai-login',
+    });
+    expect(AUTH_CALLBACK_PORTS.xai).toBeUndefined();
   });
 
   it('throws when provider aliases collide across providers', () => {

@@ -24,7 +24,13 @@ import {
 
 import { getProfileLookupCandidates, isLegacyProfileAlias } from '../utils/profile-compat';
 import type { CLIProxyProvider } from '../cliproxy/types';
-import { CLIPROXY_PROVIDER_IDS, isCLIProxyProvider } from '../cliproxy/provider-capabilities';
+import {
+  CLIPROXY_PROVIDER_IDS,
+  isCLIProxyProvider,
+  resolveCLIProxyProviderShortcut,
+} from '../cliproxy/provider-capabilities';
+import { isGrandfatheredReservedProfileName } from '../config/reserved-names';
+import { ConfigError } from '../errors/error-types';
 import { LEGACY_CURSOR_PROFILE_NAME } from '../cursor/constants';
 import { normalizeCopilotModelId } from '../copilot/copilot-model-normalizer';
 import type { TargetType } from '../targets/target-adapter';
@@ -82,6 +88,50 @@ export interface ProfileNotFoundError extends Error {
   availableProfiles: string;
 }
 
+function hasOwnEntry(value: unknown, key: string): boolean {
+  return (
+    typeof value === 'object' && value !== null && Object.prototype.hasOwnProperty.call(value, key)
+  );
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isResolvableCompositeVariant(value: unknown): value is CompositeVariantConfig {
+  if (!isObjectRecord(value) || value.type !== 'composite') {
+    return false;
+  }
+  if (
+    value.default_tier !== 'opus' &&
+    value.default_tier !== 'sonnet' &&
+    value.default_tier !== 'haiku'
+  ) {
+    return false;
+  }
+  if (!isObjectRecord(value.tiers)) {
+    return false;
+  }
+  const tiers = value.tiers;
+
+  return (['opus', 'sonnet', 'haiku'] as const).every((tierName) => {
+    const tier = tiers[tierName];
+    return (
+      isObjectRecord(tier) &&
+      typeof tier.provider === 'string' &&
+      isCLIProxyProvider(tier.provider) &&
+      typeof tier.model === 'string' &&
+      tier.model.trim().length > 0
+    );
+  });
+}
+
+function isResolvableAccountProfile(value: unknown): value is ProfileMetadata {
+  return (
+    isObjectRecord(value) && typeof value.created === 'string' && value.created.trim().length > 0
+  );
+}
+
 /**
  * Profile Detector Class
  */
@@ -130,28 +180,22 @@ class ProfileDetector {
     config: UnifiedConfig
   ): ProfileDetectionResult | null {
     // Check CLIProxy variants first
-    if (config.cliproxy?.variants?.[profileName]) {
-      const variant = config.cliproxy.variants[profileName];
+    if (hasOwnEntry(config.cliproxy?.variants, profileName)) {
+      const variant = config.cliproxy?.variants?.[profileName];
+      if (!isObjectRecord(variant)) {
+        return null;
+      }
 
       // Handle composite variants
       if ('type' in variant && variant.type === 'composite') {
-        const composite = variant as CompositeVariantConfig;
-
-        // Defensive: check for missing tiers or default_tier
-        if (!composite.tiers || !composite.default_tier) {
+        if (!isResolvableCompositeVariant(variant)) {
           console.warn(
-            `[!] Warning: Composite variant '${profileName}' has missing tiers or default_tier`
+            `[!] Warning: Composite variant '${profileName}' has invalid or incomplete tiers/default_tier`
           );
           return null;
         }
-
+        const composite = variant;
         const defaultTierConfig = composite.tiers[composite.default_tier];
-        if (!defaultTierConfig) {
-          console.warn(
-            `[!] Warning: Composite variant '${profileName}' missing config for default tier '${composite.default_tier}'`
-          );
-          return null;
-        }
 
         return {
           type: 'cliproxy',
@@ -167,6 +211,9 @@ class ProfileDetector {
       }
 
       const singleVariant = variant as CLIProxyVariantConfig;
+      if (!isCLIProxyProvider(singleVariant.provider)) {
+        return null;
+      }
       return {
         type: 'cliproxy',
         name: profileName,
@@ -179,11 +226,18 @@ class ProfileDetector {
 
     // Check API profiles (supports compatibility aliases, e.g. km -> kimi)
     for (const candidate of getProfileLookupCandidates(profileName)) {
-      if (!config.profiles?.[candidate]) {
+      if (!hasOwnEntry(config.profiles, candidate)) {
         continue;
       }
 
       const profile = config.profiles[candidate];
+      if (
+        !isObjectRecord(profile) ||
+        typeof profile.settings !== 'string' ||
+        profile.settings.trim().length === 0
+      ) {
+        return null;
+      }
       const settingsPath = profile.settings;
       const settingsEnv = loadSettingsFromFile(settingsPath);
       const viaLegacyAlias = isLegacyProfileAlias(profileName, candidate);
@@ -201,8 +255,11 @@ class ProfileDetector {
     }
 
     // Check accounts
-    if (config.accounts?.[profileName]) {
+    if (hasOwnEntry(config.accounts, profileName)) {
       const account = config.accounts[profileName];
+      if (!isResolvableAccountProfile(account)) {
+        return null;
+      }
       return {
         type: 'account',
         name: profileName,
@@ -220,6 +277,20 @@ class ProfileDetector {
     }
 
     return null;
+  }
+
+  private hasUnifiedConfiguredProfile(profileName: string, config: UnifiedConfig): boolean {
+    return (
+      hasOwnEntry(config.cliproxy?.variants, profileName) ||
+      hasOwnEntry(config.profiles, profileName) ||
+      hasOwnEntry(config.accounts, profileName)
+    );
+  }
+
+  private createConfiguredCollisionError(profileName: string, source: string): ConfigError {
+    return new ConfigError(
+      `Configured profile "${profileName}" in ${source} is invalid and cannot be resolved as a grandfathered profile.`
+    );
   }
 
   /**
@@ -261,11 +332,12 @@ class ProfileDetector {
    *
    * Priority order:
    * 0. Hardcoded special runtime profiles (copilot, cursor)
-   * 0.5. Hardcoded CLIProxy profiles (gemini, codex, agy, qwen, ...)
+   * 0.5. Hardcoded CLIProxy profiles (except grandfathered xai/grok collisions)
    * 1. Unified config profiles (if config.yaml exists or CCS_UNIFIED_CONFIG=1)
    * 2. User-defined CLIProxy variants (config.cliproxy section) [legacy]
    * 3. Settings-based profiles (config.profiles section) [legacy]
    * 4. Account-based profiles (profiles.json) [legacy]
+   * 5. Built-in xai/grok shortcut fallback when no configured profile exists
    */
   detectProfileType(profileName: string | null | undefined): ProfileDetectionResult {
     // Special case: 'default' means use default profile
@@ -332,11 +404,13 @@ class ProfileDetector {
     }
 
     // Priority 0.5: Check CLIProxy profiles (gemini, codex, agy, qwen, ...)
-    if (isCLIProxyProvider(profileName)) {
+    const builtinProvider = resolveCLIProxyProviderShortcut(profileName);
+    const shouldGrandfatherConfiguredProfile = builtinProvider === 'xai';
+    if (builtinProvider && !shouldGrandfatherConfiguredProfile) {
       return {
         type: 'cliproxy',
-        name: profileName,
-        provider: profileName,
+        name: builtinProvider,
+        provider: builtinProvider,
       };
     }
 
@@ -345,6 +419,12 @@ class ProfileDetector {
     if (unifiedConfig) {
       const result = this.resolveFromUnifiedConfig(profileName, unifiedConfig);
       if (result) return result;
+      if (
+        isGrandfatheredReservedProfileName(profileName) &&
+        this.hasUnifiedConfiguredProfile(profileName, unifiedConfig)
+      ) {
+        throw this.createConfiguredCollisionError(profileName, 'config.yaml');
+      }
       // Fall through to legacy if not found in unified config
     }
 
@@ -353,22 +433,36 @@ class ProfileDetector {
     const legacyTargetMap = (config as { profile_targets?: Record<string, TargetType> })
       .profile_targets;
 
-    if (config.cliproxy && config.cliproxy[profileName]) {
-      const variant = config.cliproxy[profileName];
-      return {
-        type: 'cliproxy',
-        name: profileName,
-        target: variant.target,
-        provider: variant.provider as CLIProxyProfileName,
-        settingsPath: variant.settings,
-        port: variant.port,
-      };
+    if (hasOwnEntry(config.cliproxy, profileName)) {
+      const variant = config.cliproxy?.[profileName];
+      if (!isObjectRecord(variant) || !isCLIProxyProvider(variant.provider as string)) {
+        if (isGrandfatheredReservedProfileName(profileName)) {
+          throw this.createConfiguredCollisionError(profileName, 'config.json');
+        }
+      } else {
+        return {
+          type: 'cliproxy',
+          name: profileName,
+          target: variant.target,
+          provider: variant.provider,
+          settingsPath: variant.settings,
+          port: variant.port,
+        };
+      }
     }
 
     // Priority 3: Check settings-based profiles (glm, km) - LEGACY FALLBACK
     if (config.profiles) {
       for (const candidate of getProfileLookupCandidates(profileName)) {
-        if (!config.profiles[candidate]) {
+        if (!hasOwnEntry(config.profiles, candidate)) {
+          continue;
+        }
+
+        const settingsPath = config.profiles[candidate];
+        if (typeof settingsPath !== 'string' || settingsPath.trim().length === 0) {
+          if (candidate === profileName && isGrandfatheredReservedProfileName(profileName)) {
+            throw this.createConfiguredCollisionError(profileName, 'config.json');
+          }
           continue;
         }
 
@@ -376,7 +470,7 @@ class ProfileDetector {
         return {
           type: 'settings',
           name: profileName,
-          settingsPath: config.profiles[candidate],
+          settingsPath,
           target: legacyTargetMap?.[candidate],
           message: viaLegacyAlias
             ? `Using legacy API profile "${candidate}" for "${profileName}".`
@@ -388,11 +482,28 @@ class ProfileDetector {
     // Priority 4: Check account-based profiles (work, personal) - LEGACY FALLBACK
     const profiles = this.readProfiles();
 
-    if (profiles.profiles && profiles.profiles[profileName]) {
+    if (hasOwnEntry(profiles.profiles, profileName)) {
+      const profile = profiles.profiles[profileName];
+      if (!isResolvableAccountProfile(profile)) {
+        if (isGrandfatheredReservedProfileName(profileName)) {
+          throw this.createConfiguredCollisionError(profileName, 'profiles.json');
+        }
+      } else {
+        return {
+          type: 'account',
+          name: profileName,
+          profile,
+        };
+      }
+    }
+
+    // xai and grok became reserved when the built-in xAI provider shipped. Existing
+    // configured profiles keep working, while new installs still get the shortcuts.
+    if (builtinProvider) {
       return {
-        type: 'account',
-        name: profileName,
-        profile: profiles.profiles[profileName],
+        type: 'cliproxy',
+        name: builtinProvider,
+        provider: builtinProvider,
       };
     }
 
@@ -422,25 +533,49 @@ class ProfileDetector {
     if (unifiedConfig?.default) {
       const result = this.resolveFromUnifiedConfig(unifiedConfig.default, unifiedConfig);
       if (result) return result;
+      if (
+        isGrandfatheredReservedProfileName(unifiedConfig.default) &&
+        this.hasUnifiedConfiguredProfile(unifiedConfig.default, unifiedConfig)
+      ) {
+        throw this.createConfiguredCollisionError(unifiedConfig.default, 'config.yaml');
+      }
     }
 
     // Check if account-based default exists (legacy)
     const profiles = this.readProfiles();
 
-    if (unifiedConfig?.default && profiles.profiles[unifiedConfig.default]) {
-      return {
-        type: 'account',
-        name: unifiedConfig.default,
-        profile: profiles.profiles[unifiedConfig.default],
-      };
+    if (unifiedConfig?.default && hasOwnEntry(profiles.profiles, unifiedConfig.default)) {
+      const profile = profiles.profiles[unifiedConfig.default];
+      if (
+        isGrandfatheredReservedProfileName(unifiedConfig.default) &&
+        !isResolvableAccountProfile(profile)
+      ) {
+        throw this.createConfiguredCollisionError(unifiedConfig.default, 'profiles.json');
+      }
+      if (profile) {
+        return {
+          type: 'account',
+          name: unifiedConfig.default,
+          profile,
+        };
+      }
     }
 
-    if (profiles.default && profiles.profiles[profiles.default]) {
-      return {
-        type: 'account',
-        name: profiles.default,
-        profile: profiles.profiles[profiles.default],
-      };
+    if (profiles.default && hasOwnEntry(profiles.profiles, profiles.default)) {
+      const profile = profiles.profiles[profiles.default];
+      if (
+        isGrandfatheredReservedProfileName(profiles.default) &&
+        !isResolvableAccountProfile(profile)
+      ) {
+        throw this.createConfiguredCollisionError(profiles.default, 'profiles.json');
+      }
+      if (profile) {
+        return {
+          type: 'account',
+          name: profiles.default,
+          profile,
+        };
+      }
     }
 
     // Check if settings-based default exists

@@ -1,6 +1,6 @@
 # Provider Integration Flows
 
-Last Updated: 2026-05-07
+Last Updated: 2026-07-16
 
 Detailed provider integration flows including CLIProxyAPI, legacy GLMT compatibility transforms, remote CLIProxy, quota management, and authentication.
 
@@ -35,13 +35,13 @@ Generated local CLIProxy configs also keep the management dashboard aligned with
         +---> OAuth Authentication
         |           |
         |           +---> Authorization Code Flow (port-based)
-        |           |         - Gemini, Codex, Antigravity, Kiro (port 9876)
+        |           |         - Gemini, Codex, Antigravity, iFlow, Claude, GitLab
         |           |         - Opens browser for user auth
         |           |         - Callback to localhost:PORT
         |           |
         |           +---> Device Code Flow (no port needed)
-        |                     - GitHub Copilot (ghcp, deprecated compatibility)
-        |                     - User enters code at github.com/login/device
+        |                     - xAI/Grok, Kimi, Kiro, Copilot, CodeBuddy, Kilo, and Qoder
+        |                     - User enters a code on the provider verification page
         |                     - Polls for token completion
         |           |
         |           +---> Browser URL Polling (no callback port)
@@ -70,23 +70,37 @@ Generated local CLIProxy configs also keep the management dashboard aligned with
         +---> Provider APIs
                     |
                     +---> Google (Gemini)
-                    +---> GitHub (Codex)
+                    +---> OpenAI (Codex)
+                    +---> xAI (Grok)
                     +---> Antigravity (AGY)
                     +---> AWS Kiro (Claude-powered)
                     +---> GitHub Copilot (ghcp, deprecated compatibility)
                     +---> OpenAI-compatible endpoints
 ```
 
-### Supported Hardcoded Providers
+### Supported Built-In Providers
 
-| Provider | ID | Auth Method | Port | Binary |
+| Provider | ID | Auth Method | Callback Port | Backend |
 |----------|----|----|------|--------|
-| Gemini | `gemini` | Authorization Code | 9876 | CLIProxyAPI |
-| Codex | `codex` | Authorization Code | 9876 | CLIProxyAPI |
-| Antigravity | `agy` | Authorization Code | 9876 | CLIProxyAPI |
-| Kiro (AWS) | `kiro` | Method-aware (default: Device Code) | 9876 | CLIProxyAPIPlus fork |
-| GitHub Copilot (deprecated) | `ghcp` | Device Code | none | CLIProxyAPIPlus fork |
-| Cursor | `cursor` | Browser URL polling | none | CLIProxyAPIPlus fork |
+| Gemini | `gemini` | Authorization Code | 8085 | Original |
+| Codex | `codex` | Authorization Code | 1455 | Original |
+| xAI (Grok) | `xai` (`grok` CLI alias) | Device Code | none | Original |
+| Antigravity | `agy` | Authorization Code | 51121 | Original |
+| Qwen | `qwen` | Account linking unavailable in bundled runtime | none | Original |
+| iFlow | `iflow` | Authorization Code | 11451 | Original |
+| Claude | `claude` | Authorization Code | 54545 | Original |
+| Kimi | `kimi` | Device Code | none | Original |
+| Kiro (AWS) | `kiro` | Method-aware (default: Device Code) | none by default | Plus |
+| GitHub Copilot (deprecated) | `ghcp` | Device Code | none | Plus |
+| Cursor | `cursor` | Browser URL polling | none | Plus |
+| GitLab Duo | `gitlab` | Authorization Code or PAT | 17171 | Plus |
+| CodeBuddy | `codebuddy` | Device-style polling | none | Plus |
+| Kilo AI | `kilo` | Device Code | none | Plus |
+| Qoder | `qoder` | Device Code | none | Plus |
+
+xAI uses CLIProxyAPI's `--xai-login` device flow. CCS stores and discovers the resulting
+`xai-*.json` credentials under the canonical `xai` provider. `ccs grok` is a command alias only,
+so it shares the same accounts, settings, live model catalog, and routing as `ccs xai`.
 
 ### Codex Duplicate-Email Account Identity
 
@@ -100,16 +114,16 @@ Codex can legitimately produce multiple auth files for the same email when the u
 
 This preserves the user-visible distinction between business and personal Codex sessions while keeping other providers on their existing email-backed identity model.
 
-### Hardcoded Provider Detection
+### Built-In Provider Detection
 
-CCS detects hardcoded providers via `profile-detector.ts` and routes through `execClaudeWithCLIProxy()`.
+CCS derives canonical providers from `provider-capabilities.ts`. `profile-detector.ts` resolves only
+explicit CLI aliases before routing through the CLIProxy execution flow.
 
 ```typescript
-// Profile name matching
-const hardcodedProviders = ['gemini', 'codex', 'agy', 'kiro', 'ghcp'];
+const provider = resolveCLIProxyProviderShortcut(profileName);
 
-if (hardcodedProviders.includes(profileName)) {
-  return execClaudeWithCLIProxy(claudeCli, profileName, args);
+if (provider) {
+  return execClaudeWithCLIProxy(claudeCli, provider, args);
 }
 ```
 

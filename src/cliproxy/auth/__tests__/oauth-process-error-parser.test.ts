@@ -4,10 +4,40 @@ import {
   extractLikelyAuthFailureFromLogs,
   extractLikelyAuthFailureFromStderr,
   extractLikelyOAuthAuthorizationUrl,
+  extractDeviceCodePrompt,
   getExpectedLocalCallback,
   getKiroBuilderIdSelectionInput,
+  resolveDeviceCodeVerificationUrl,
   validateManualCallbackUrl,
 } from '../oauth-process';
+
+describe('oauth-process device code parsing', () => {
+  it('parses the xAI device authorization output contract', () => {
+    const output = `
+To authenticate, please visit:
+https://accounts.x.ai/oauth2/device?user_code=ABCD-1234
+
+Then enter this code: ABCD-1234
+`;
+
+    expect(extractDeviceCodePrompt(output)).toEqual({
+      userCode: 'ABCD-1234',
+      verificationUrl: 'https://accounts.x.ai/oauth2/device?user_code=ABCD-1234',
+    });
+  });
+
+  it('preserves a parsed xAI verification URL exactly', () => {
+    const parsedUrl = 'https://accounts.x.ai/oauth2/device?user_code=ABCD-1234&source=cliproxy';
+
+    expect(resolveDeviceCodeVerificationUrl('xai', 'ABCD-1234', parsedUrl)).toBe(parsedUrl);
+  });
+
+  it('uses an xAI-specific device URL when upstream output omits the URL', () => {
+    expect(resolveDeviceCodeVerificationUrl('xai', 'ABCD-1234', null)).toBe(
+      'https://accounts.x.ai/oauth2/device?user_code=ABCD-1234'
+    );
+  });
+});
 
 describe('oauth-process stderr parsing', () => {
   it('does not match provider-specific patterns for other providers', () => {
@@ -30,6 +60,13 @@ describe('oauth-process stderr parsing', () => {
     const stderr = 'level=error msg="Authentication failed: state mismatch"';
 
     expect(extractLikelyAuthFailureFromStderr('ghcp', stderr)).toBe('state mismatch');
+  });
+
+  it('extracts the current upstream xAI authentication failure format', () => {
+    const stderr =
+      'time="2026-07-18T00:00:00Z" level=error msg="xAI authentication failed: xai device code expired"';
+
+    expect(extractLikelyAuthFailureFromStderr('xai', stderr)).toBe('xai device code expired');
   });
 
   it('caps extracted message length to prevent noisy broadcasts', () => {

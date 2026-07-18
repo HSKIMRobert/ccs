@@ -1,7 +1,7 @@
 /**
  * OAuth Handler for CLIProxyAPI
  *
- * Manages OAuth authentication flow for CLIProxy providers (Gemini, Codex, Antigravity, Kiro, Copilot).
+ * Manages OAuth authentication flow for CLIProxy providers such as Gemini, Codex, xAI, and Kiro.
  * CLIProxyAPI handles OAuth internally - we just need to:
  * 1. Check if auth exists (token files in CCS auth directory)
  * 2. Trigger OAuth flow by spawning binary with auth flag
@@ -605,7 +605,7 @@ async function prepareBinary(
   }
 }
 
-function buildOAuthArgs(
+export function buildOAuthArgs(
   provider: CLIProxyProvider,
   configPath: string,
   headless: boolean,

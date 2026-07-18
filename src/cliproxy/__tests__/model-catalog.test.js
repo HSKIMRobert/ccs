@@ -63,6 +63,49 @@ describe('Model Catalog', () => {
     });
   });
 
+  describe('xAI models', () => {
+    it('contains the xAI provider catalog with the coding default', () => {
+      const { MODEL_CATALOG } = modelCatalog;
+      assert(MODEL_CATALOG.xai, 'Should have xai provider');
+      assert.strictEqual(MODEL_CATALOG.xai.provider, 'xai');
+      assert.strictEqual(MODEL_CATALOG.xai.displayName, 'xAI (Grok)');
+      assert.strictEqual(MODEL_CATALOG.xai.defaultModel, 'grok-build-0.1');
+    });
+
+    it('matches the CLIProxyAPI text-model fallback set', () => {
+      const { MODEL_CATALOG } = modelCatalog;
+      const ids = MODEL_CATALOG.xai.models.map((model) => model.id);
+      assert.deepStrictEqual(ids, [
+        'grok-build-0.1',
+        'grok-4.5',
+        'grok-4.3',
+        'grok-4.20-0309-reasoning',
+        'grok-4.20-0309-non-reasoning',
+        'grok-4.20-multi-agent-0309',
+        'grok-3-mini',
+        'grok-3-mini-fast',
+        'grok-composer-2.5-fast',
+      ]);
+    });
+
+    it('does not expose Claude [1m] suffix support for xAI model IDs', () => {
+      const { MODEL_CATALOG, supportsExtendedContext } = modelCatalog;
+
+      for (const model of MODEL_CATALOG.xai.models) {
+        assert.notStrictEqual(
+          model.extendedContext,
+          true,
+          `${model.id} must not advertise extended-context metadata`
+        );
+        assert.strictEqual(
+          supportsExtendedContext('xai', model.id),
+          false,
+          `${model.id} must not advertise [1m] suffix support`
+        );
+      }
+    });
+  });
+
   describe('AGY models', () => {
     it('has correct default model', () => {
       const { MODEL_CATALOG } = modelCatalog;

@@ -1,5 +1,9 @@
 import { COPILOT_SUBCOMMANDS } from '../copilot/constants';
-import { CLIPROXY_PROVIDER_IDS } from '../cliproxy/provider-capabilities';
+import {
+  CLIPROXY_PROVIDER_IDS,
+  getProviderCLIAliases,
+  getProviderDisplayName,
+} from '../cliproxy/provider-capabilities';
 
 export type HelpTopicName =
   | 'profiles'
@@ -200,6 +204,7 @@ export const BUILTIN_PROVIDER_SHORTCUTS: readonly ShortcutEntry[] = CLIPROXY_PRO
       {
         gemini: 'Google Gemini via CLIProxy OAuth',
         codex: 'OpenAI Codex via CLIProxy OAuth',
+        xai: 'xAI Grok via CLIProxy OAuth (alias: grok)',
         agy: 'Antigravity via CLIProxy OAuth',
         qwen: 'Qwen Code via CLIProxy; account linking unsupported',
         iflow: 'iFlow via CLIProxy OAuth',
@@ -215,6 +220,15 @@ export const BUILTIN_PROVIDER_SHORTCUTS: readonly ShortcutEntry[] = CLIPROXY_PRO
       }[name] || 'CLIProxy OAuth provider',
   })
 );
+
+/** Additional top-level CLI aliases; canonical provider lists remain alias-free. */
+export const BUILTIN_PROVIDER_ALIAS_SHORTCUTS: readonly ShortcutEntry[] =
+  CLIPROXY_PROVIDER_IDS.flatMap((provider) =>
+    getProviderCLIAliases(provider).map((name) => ({
+      name,
+      summary: `Alias for ${getProviderDisplayName(provider)} provider shortcut`,
+    }))
+  );
 
 export const ROOT_PROFILE_EXAMPLES: readonly ShortcutEntry[] = [
   { name: 'ccs auth create work', summary: 'Create a concurrent Claude account profile' },

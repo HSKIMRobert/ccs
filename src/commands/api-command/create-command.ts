@@ -22,6 +22,7 @@ import {
   isCLIProxyProvider,
 } from '../../cliproxy/provider-capabilities';
 import { syncToLocalConfig } from '../../cliproxy/sync/local-config-sync';
+import { canOverwriteGrandfatheredReservedProfileName } from '../../config/reserved-names';
 import type { TargetType } from '../../targets/target-adapter';
 import { color, dim, fail, header, info, infoBox, initUI, warn } from '../../utils/ui';
 import { InteractivePrompt } from '../../utils/prompt';
@@ -63,7 +64,8 @@ function showPresetDeprecationNotice(presetId?: string): void {
 
 async function resolveProfileName(
   providedName: string | undefined,
-  preset: ProviderPreset | null
+  preset: ProviderPreset | null,
+  force: boolean
 ): Promise<string> {
   const name = providedName || preset?.defaultProfileName;
   if (!name) {
@@ -73,7 +75,11 @@ async function resolveProfileName(
   }
 
   const error = validateApiName(name);
-  if (error) {
+  const canOverwriteGrandfatheredProfile = canOverwriteGrandfatheredReservedProfileName(name, {
+    force,
+    exists: apiProfileExists(name),
+  });
+  if (error && !canOverwriteGrandfatheredProfile) {
     console.log(fail(error));
     process.exit(1);
   }
@@ -83,11 +89,19 @@ async function resolveProfileName(
 async function resolveCliproxyProfileName(
   provider: string,
   providedName: string | undefined,
-  yes: boolean | undefined
+  yes: boolean | undefined,
+  force: boolean
 ): Promise<string | undefined> {
   if (providedName) {
     const error = validateApiName(providedName);
-    if (error) {
+    const canOverwriteGrandfatheredProfile = canOverwriteGrandfatheredReservedProfileName(
+      providedName,
+      {
+        force,
+        exists: apiProfileExists(providedName),
+      }
+    );
+    if (error && !canOverwriteGrandfatheredProfile) {
       console.log(fail(error));
       process.exit(1);
     }
@@ -368,7 +382,8 @@ export async function handleApiCreateCommand(args: string[]): Promise<void> {
     const name = await resolveCliproxyProfileName(
       cliproxyProvider,
       parsedArgs.name,
-      parsedArgs.yes
+      parsedArgs.yes,
+      parsedArgs.force === true
     );
     const target = await resolveDefaultTarget(null, parsedArgs.target, parsedArgs.yes);
 
@@ -456,7 +471,7 @@ export async function handleApiCreateCommand(args: string[]): Promise<void> {
 
   showPresetDeprecationNotice(parsedArgs.preset);
   const preset = resolvePresetOrExit(parsedArgs.preset);
-  const name = await resolveProfileName(parsedArgs.name, preset);
+  const name = await resolveProfileName(parsedArgs.name, preset, parsedArgs.force === true);
 
   if (apiProfileExists(name) && !parsedArgs.force) {
     console.log(fail(`API '${name}' already exists`));
@@ -503,7 +518,8 @@ export async function handleApiCreateCommand(args: string[]): Promise<void> {
     finalModels,
     target,
     undefined,
-    parsedArgs.extraModels
+    parsedArgs.extraModels,
+    { force: parsedArgs.force === true }
   );
   if (!result.success) {
     console.log(fail(`Failed to create API profile: ${result.error}`));

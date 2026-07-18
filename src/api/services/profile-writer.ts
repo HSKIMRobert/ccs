@@ -12,7 +12,10 @@ import { ensureWebSearchMcpOrThrow } from '../../utils/websearch-manager';
 import { ensureImageAnalysisMcpOrThrow } from '../../utils/image-analysis';
 import type { TargetType } from '../../targets/target-adapter';
 import { resolveDroidProvider } from '../../targets/droid-provider';
-import { isReservedName } from '../../config/reserved-names';
+import {
+  canOverwriteGrandfatheredReservedProfileName,
+  isReservedName,
+} from '../../config/reserved-names';
 import { mapExternalProviderName } from '../../cliproxy/provider-capabilities';
 import {
   extractProviderFromPathname,
@@ -266,8 +269,18 @@ export function createApiProfile(
   models: ModelMapping,
   target: TargetType = 'claude',
   provider?: string,
-  extraModels?: string[]
+  extraModels?: string[],
+  options?: { force?: boolean }
 ): CreateApiProfileResult {
+  const nameError = validateApiName(name);
+  const canOverwriteGrandfatheredProfile = canOverwriteGrandfatheredReservedProfileName(name, {
+    force: options?.force === true,
+    exists: apiProfileExists(name),
+  });
+  if (nameError && !canOverwriteGrandfatheredProfile) {
+    return { success: false, settingsFile: '', error: nameError };
+  }
+
   try {
     const deniedReason = getDeniedModelReason(baseUrl, models);
     if (deniedReason) {
@@ -304,10 +317,17 @@ export function createCliproxyBridgeProfile(
   const providedName = options.name?.trim();
   if (providedName) {
     const nameError = validateApiName(providedName);
-    if (nameError) {
+    const canOverwriteGrandfatheredProfile = canOverwriteGrandfatheredReservedProfileName(
+      providedName,
+      {
+        force: options.force === true,
+        exists: apiProfileExists(providedName),
+      }
+    );
+    if (nameError && !canOverwriteGrandfatheredProfile) {
       return { success: false, settingsFile: '', error: nameError };
     }
-    if (isReservedName(providedName)) {
+    if (isReservedName(providedName) && !canOverwriteGrandfatheredProfile) {
       return {
         success: false,
         settingsFile: '',
@@ -332,7 +352,9 @@ export function createCliproxyBridgeProfile(
     resolved.apiKey,
     resolved.models,
     resolved.target,
-    provider
+    provider,
+    undefined,
+    { force: options.force }
   );
   const detectedBridge = resolveCliproxyBridgeMetadata({
     env: {

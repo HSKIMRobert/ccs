@@ -9,7 +9,7 @@
  */
 
 import { info } from '../utils/ui';
-import { isCLIProxyProvider } from '../cliproxy/provider-capabilities';
+import { resolveCLIProxyProviderShortcut } from '../cliproxy/provider-capabilities';
 import { isCopilotSubcommandToken } from '../copilot/constants';
 import { isCursorSubcommandToken, LEGACY_CURSOR_PROFILE_NAME } from '../cursor/constants';
 import { isCacheStale } from '../utils/update-checker';
@@ -111,14 +111,11 @@ export async function runPreDispatchHandlers(ctx: PreDispatchContext): Promise<b
   }
 
   // Provider help shortcut: `ccs gemini --help` → provider-specific help page
-  if (
-    typeof firstArg === 'string' &&
-    isCLIProxyProvider(firstArg) &&
-    args.length > 1 &&
-    (args.includes('--help') || args.includes('-h'))
-  ) {
+  const shortcutProvider =
+    typeof firstArg === 'string' ? resolveCLIProxyProviderShortcut(firstArg) : null;
+  if (shortcutProvider && args.length > 1 && (args.includes('--help') || args.includes('-h'))) {
     const { showProviderShortcutHelp } = await import('../commands/help-command');
-    await showProviderShortcutHelp(firstArg);
+    await showProviderShortcutHelp(shortcutProvider);
     return true;
   }
 

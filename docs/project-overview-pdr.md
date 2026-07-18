@@ -31,7 +31,7 @@ Developers using Claude Code face these challenges:
 CCS provides:
 
 1. **Multi-Account Claude**: Isolated instances via `CLAUDE_CONFIG_DIR`
-2. **OAuth Providers**: Zero-config Gemini, Codex, Antigravity, Kiro, and other active OAuth integrations, with deprecated Copilot compatibility for existing setups
+2. **OAuth Providers**: Zero-config Gemini, Codex, xAI/Grok, Antigravity, Kiro, and other active OAuth integrations, with deprecated Copilot compatibility for existing setups
 3. **AI Providers**: Dedicated CLIProxy dashboard for Gemini, Codex, Claude, Vertex, and OpenAI-compatible API-key families
 4. **API Profiles**: GLM, Kimi, OpenRouter, any Anthropic-compatible API
 5. **Visual Dashboard**: React SPA for configuration management
@@ -68,8 +68,8 @@ CCS provides:
 - Share commands, skills, agents across accounts
 
 ### FR-003: OAuth Provider Integration
-- Support Gemini, Codex, Antigravity, Kiro, and deprecated Copilot compatibility OAuth flows
-- Browser-based authentication (Authorization Code flow for most, Device Code for ghcp compatibility)
+- Support Gemini, Codex, xAI/Grok, Antigravity, Kiro, and deprecated Copilot compatibility OAuth flows
+- Browser-based authentication with provider-specific Authorization Code, Device Code, or polling flows
 - Token caching and refresh
 
 ### FR-004: API Profile Management

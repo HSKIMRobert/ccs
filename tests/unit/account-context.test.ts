@@ -21,8 +21,9 @@ describe('account context helpers', () => {
   });
 
   it('rejects reserved account profile names', () => {
-    expect(isValidAccountProfileName('default')).toBe(false);
-    expect(isValidAccountProfileName('Default')).toBe(false);
+    for (const name of ['default', 'Default', 'xai', 'XAI', 'grok', 'GROK']) {
+      expect(isValidAccountProfileName(name)).toBe(false);
+    }
   });
 
   it('falls back to default shared group for invalid persisted metadata', () => {

@@ -82,6 +82,8 @@ describe('completion backend', () => {
     expect(values).toContain('cursor');
     expect(values).toContain('copilot');
     expect(values).toContain('gemini');
+    expect(values).toContain('xai');
+    expect(values).toContain('grok');
     expect(values).toContain('gitlab');
     expect(values).toContain('codebuddy');
     expect(values).toContain('kilo');
@@ -92,6 +94,11 @@ describe('completion backend', () => {
     expect(values).not.toContain('__complete');
     expect(values).not.toContain('--install');
     expect(values).not.toContain('--uninstall');
+  });
+
+  test('offers provider flags for both xai and grok shortcuts', () => {
+    expect(suggestionValues(['xai'])).toEqual(expect.arrayContaining(['--auth', '--accounts']));
+    expect(suggestionValues(['grok'])).toEqual(expect.arrayContaining(['--auth', '--accounts']));
   });
 
   test('suggests help topics from the help command', () => {

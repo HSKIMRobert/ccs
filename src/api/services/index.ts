@@ -5,7 +5,13 @@
  */
 
 // Validation services
-export { validateApiName, validateUrl, getUrlWarning, sanitizeBaseUrl } from './validation-service';
+export {
+  validateApiName,
+  validateApiNameSyntax,
+  validateUrl,
+  getUrlWarning,
+  sanitizeBaseUrl,
+} from './validation-service';
 
 // Profile types
 export {

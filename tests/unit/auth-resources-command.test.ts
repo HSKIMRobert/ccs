@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import * as childProcess from 'child_process';
 import ProfileRegistry from '../../src/auth/profile-registry';
 import InstanceManager from '../../src/management/instance-manager';
 import { handleResources } from '../../src/auth/commands/resources-command';
@@ -225,6 +226,103 @@ describe('auth resources command', () => {
     );
 
     expect(output).toContain('Unknown option(s): "--mode"');
+  });
+
+  it('rejects reserved xai and grok account profile names on auth create', async () => {
+    for (const profileName of ['xai', 'GROK']) {
+      const registry = new ProfileRegistry();
+      const instanceMgr = new InstanceManager();
+
+      const output = await expectProfileExit(() =>
+        handleCreate(
+          {
+            registry,
+            instanceMgr,
+            version: 'test',
+          },
+          [profileName]
+        )
+      );
+
+      expect(output).toContain('Invalid profile name');
+      expect(registry.hasAccountUnified(profileName)).toBe(false);
+    }
+  });
+
+  it('rejects --force for an absent reserved account profile', async () => {
+    const registry = new ProfileRegistry();
+    const instanceMgr = new InstanceManager();
+
+    const output = await expectProfileExit(() =>
+      handleCreate(
+        {
+          registry,
+          instanceMgr,
+          version: 'test',
+        },
+        ['xai', '--force']
+      )
+    );
+
+    expect(output).toContain('Invalid profile name');
+    expect(registry.hasAccountUnified('xai')).toBe(false);
+  });
+
+  it('allows --force to repair an exact existing xai account profile', async () => {
+    const ccsDir = path.join(tempRoot, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.yaml'),
+      [
+        'version: 12',
+        'accounts:',
+        '  xai:',
+        '    created: "2026-02-01T00:00:00.000Z"',
+        '    last_used: null',
+        'profiles: {}',
+        'cliproxy:',
+        '  oauth_accounts: {}',
+        '  providers: {}',
+        '  variants: {}',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const claudeDetector = await import('../../src/utils/claude-detector');
+    const cliSpy = spyOn(claudeDetector, 'getClaudeCliInfo').mockReturnValue({
+      path: '/usr/bin/claude',
+      isWindows: false,
+      needsShell: false,
+    });
+    const child = {
+      on: () => child,
+    } as unknown as ReturnType<typeof childProcess.spawn>;
+    const spawnSpy = spyOn(childProcess, 'spawn').mockReturnValue(child);
+    const ensureSpy = spyOn(InstanceManager.prototype, 'ensureInstance').mockResolvedValue(
+      path.join(ccsDir, 'instances', 'xai')
+    );
+    const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      const registry = new ProfileRegistry();
+      const instanceMgr = new InstanceManager();
+      await handleCreate(
+        {
+          registry,
+          instanceMgr,
+          version: 'test',
+        },
+        ['xai', '--force']
+      );
+
+      expect(spawnSpy).toHaveBeenCalled();
+      expect(registry.hasAccountUnified('xai')).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+      ensureSpy.mockRestore();
+      spawnSpy.mockRestore();
+      cliSpy.mockRestore();
+    }
   });
 
   it('rejects --mode on non-resources auth commands instead of silently ignoring it', async () => {
