@@ -87,11 +87,13 @@ describe('run-test-bucket', () => {
   test('isolates known sticky mock suites outside src', () => {
     const runs = bucket.getBunRuns('fast', [
       'tests/unit/scripts/run-test-bucket.test.js',
+      'tests/unit/commands/bar-command.test.ts',
       'tests/unit/targets/target-registry.test.ts',
     ]);
 
     expect(runs.map((run) => run.label)).toEqual([
       'shared',
+      'tests/unit/commands/bar-command.test.ts',
       'tests/unit/targets/target-registry.test.ts',
     ]);
   });
