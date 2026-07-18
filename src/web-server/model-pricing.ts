@@ -216,6 +216,21 @@ const PRICING_REGISTRY: Record<string, ModelPricing> = {
     cacheCreationPerMillion: 3.75,
     cacheReadPerMillion: 0.3,
   },
+  // Claude Sonnet 5 ($3/$15) — latest Sonnet; shares the standard Sonnet rates.
+  // Registered explicitly so it is a known model rather than relying on the
+  // unknown-model fallback that coincidentally matches these rates.
+  'claude-sonnet-5': {
+    inputPerMillion: 3.0,
+    outputPerMillion: 15.0,
+    cacheCreationPerMillion: 3.75,
+    cacheReadPerMillion: 0.3,
+  },
+  'claude-sonnet-5-thinking': {
+    inputPerMillion: 3.0,
+    outputPerMillion: 15.0,
+    cacheCreationPerMillion: 3.75,
+    cacheReadPerMillion: 0.3,
+  },
   // Claude 4 Opus ($15/$75)
   'claude-4-opus-20250514': {
     inputPerMillion: 15.0,

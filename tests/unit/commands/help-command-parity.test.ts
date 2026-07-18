@@ -57,6 +57,8 @@ describe('help command parity', () => {
     expect(rendered.includes('ccs help kiro')).toBe(true);
     expect(rendered.includes('gemini')).toBe(true);
     expect(rendered.includes('codex')).toBe(true);
+    expect(rendered.includes('xai')).toBe(true);
+    expect(rendered.includes('alias: grok')).toBe(true);
     expect(rendered.includes('ghcp')).toBe(true);
     expect(rendered.includes('gitlab')).toBe(true);
     expect(rendered.includes('codebuddy')).toBe(true);

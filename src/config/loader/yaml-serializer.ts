@@ -63,7 +63,7 @@ export function generateYamlWithComments(config: UnifiedConfig): string {
 
   // CLIProxy section
   lines.push('# ----------------------------------------------------------------------------');
-  lines.push('# CLIProxy: OAuth-based providers (gemini, codex, agy, qwen, iflow)');
+  lines.push('# CLIProxy: OAuth-based providers (gemini, codex, xai/grok, agy, qwen, iflow)');
   lines.push('# Each variant can reference a *.settings.json file for custom env vars.');
   lines.push('# Edit the settings file directly to customize model or other settings.');
   lines.push(

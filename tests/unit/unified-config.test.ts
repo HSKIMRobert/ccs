@@ -44,6 +44,8 @@ describe('reserved-names', () => {
       expect(RESERVED_PROFILE_NAMES).toContain('agy');
       expect(RESERVED_PROFILE_NAMES).toContain('qwen');
       expect(RESERVED_PROFILE_NAMES).toContain('iflow');
+      expect(RESERVED_PROFILE_NAMES).toContain('xai');
+      expect(RESERVED_PROFILE_NAMES).toContain('grok');
     });
 
     it('should include CLI commands', () => {
@@ -57,12 +59,16 @@ describe('reserved-names', () => {
     it('should return true for reserved names', () => {
       expect(isReservedName('gemini')).toBe(true);
       expect(isReservedName('codex')).toBe(true);
+      expect(isReservedName('xai')).toBe(true);
+      expect(isReservedName('grok')).toBe(true);
       expect(isReservedName('default')).toBe(true);
     });
 
     it('should be case-insensitive', () => {
       expect(isReservedName('GEMINI')).toBe(true);
       expect(isReservedName('Codex')).toBe(true);
+      expect(isReservedName('XAI')).toBe(true);
+      expect(isReservedName('GROK')).toBe(true);
       expect(isReservedName('DEFAULT')).toBe(true);
     });
 
@@ -76,6 +82,8 @@ describe('reserved-names', () => {
   describe('validateProfileName', () => {
     it('should throw for reserved names', () => {
       expect(() => validateProfileName('gemini')).toThrow(/reserved/i);
+      expect(() => validateProfileName('xai')).toThrow(/reserved/i);
+      expect(() => validateProfileName('grok')).toThrow(/reserved/i);
       expect(() => validateProfileName('default')).toThrow(/reserved/i);
     });
 

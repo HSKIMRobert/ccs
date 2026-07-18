@@ -43,6 +43,8 @@ export interface ModelEntry {
   };
   /** Highest codex reasoning-effort suffix this model supports in the dashboard UI. */
   codexMaxEffort?: CodexEffort;
+  /** Exact Codex reasoning-effort suffixes supported by this model in the dashboard UI. */
+  codexEfforts?: CodexEffort[];
   /** Additional Codex service-tier suffixes supported by this model in the dashboard UI. */
   codexServiceTiers?: CodexServiceTier[];
 }
@@ -70,6 +72,17 @@ interface ProviderModelSelectorProps {
   placeholder?: string;
   /** Custom className */
   className?: string;
+}
+
+const CUSTOM_MODEL_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/;
+const CUSTOM_MODEL_ID_SEPARATOR_PATTERN = /[._:/-]/;
+
+function isCustomModelId(value: string): boolean {
+  const trimmedValue = value.trim();
+  return (
+    CUSTOM_MODEL_ID_PATTERN.test(trimmedValue) &&
+    CUSTOM_MODEL_ID_SEPARATOR_PATTERN.test(trimmedValue)
+  );
 }
 
 function PaidBadge({ label }: { label: string }) {
@@ -336,12 +349,13 @@ function getPreferredOptionValue(
 
 function getModelOptionValues(
   codexMaxEffort: CodexEffort | undefined,
+  codexEfforts: readonly CodexEffort[] | undefined,
   codexServiceTiers: readonly CodexServiceTier[] | undefined,
   optionValue: string,
   isCodexProvider: boolean
 ): string[] {
   return isCodexProvider
-    ? getCodexEffortVariants(optionValue, codexMaxEffort, codexServiceTiers)
+    ? getCodexEffortVariants(optionValue, codexMaxEffort, codexServiceTiers, codexEfforts)
     : [optionValue];
 }
 
@@ -384,6 +398,7 @@ export function FlexibleModelSelector({
         resolvedCatalogModels.flatMap((model) =>
           getModelOptionValues(
             model.codexMaxEffort,
+            model.codexEfforts,
             model.codexServiceTiers,
             getPreferredOptionValue(model.id, routingHints.get(model.id.toLowerCase())),
             isCodexProvider
@@ -396,11 +411,31 @@ export function FlexibleModelSelector({
     () => routingHints.get(normalizeModelValue(value, routing).toLowerCase()),
     [routing, routingHints, value]
   );
+  const createCustomModelOption = (query: string) => {
+    const customModelId = query.trim();
+    if (!isCustomModelId(customModelId)) return null;
+
+    return {
+      value: customModelId,
+      groupKey: 'custom',
+      searchText: customModelId,
+      triggerContent: <span className="truncate font-mono text-xs">{customModelId}</span>,
+      itemContent: (
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate font-mono text-xs">{customModelId}</span>
+          <Badge variant="outline" className="text-[9px] h-4 px-1">
+            {t('providerModelSelector.customModel')}
+          </Badge>
+        </div>
+      ),
+    };
+  };
 
   const recommendedOptions = resolvedCatalogModels.flatMap((model) => {
     const routingHint = routingHints.get(model.id.toLowerCase());
     const optionValues = getModelOptionValues(
       model.codexMaxEffort,
+      model.codexEfforts,
       model.codexServiceTiers,
       getPreferredOptionValue(model.id, routingHint),
       isCodexProvider
@@ -455,6 +490,7 @@ export function FlexibleModelSelector({
     .flatMap((model) => {
       const routingHint = routingHints.get(model.id.toLowerCase());
       const optionValues = getModelOptionValues(
+        undefined,
         undefined,
         undefined,
         getPreferredOptionValue(model.id, routingHint),
@@ -544,6 +580,7 @@ export function FlexibleModelSelector({
             : t('providerModelSelector.noModelsAvailable')
         }
         triggerClassName="h-9"
+        createOption={createCustomModelOption}
         groups={[
           ...(selectedValueMissing && legacySelectedOption
             ? [
@@ -597,6 +634,14 @@ export function FlexibleModelSelector({
                 },
               ]
             : []),
+          {
+            key: 'custom',
+            label: (
+              <span className="text-xs text-muted-foreground">
+                {t('providerModelSelector.customModel')}
+              </span>
+            ),
+          },
         ]}
         options={[
           ...(selectedValueMissing && legacySelectedOption ? [legacySelectedOption] : []),

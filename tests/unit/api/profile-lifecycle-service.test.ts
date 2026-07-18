@@ -9,6 +9,7 @@ import {
   importApiProfileBundle,
   registerApiProfileOrphans,
 } from '../../../src/api/services/profile-lifecycle-service';
+import { createApiProfile } from '../../../src/api/services/profile-writer';
 import {
   loadConfigSafe,
   runWithScopedConfigDir,
@@ -68,7 +69,7 @@ describe('profile lifecycle service', () => {
     }
   });
 
-  it('discovers only API profile orphans (skips registered and reserved names)', async () => {
+  it('discovers grandfathered xai/grok orphans while skipping other reserved names', async () => {
     const ccsDir = path.join(tempHome, '.ccs');
     fs.mkdirSync(ccsDir, { recursive: true });
 
@@ -101,9 +102,59 @@ describe('profile lifecycle service', () => {
         2
       ) + '\n'
     );
+    for (const profileName of ['xai', 'grok']) {
+      fs.writeFileSync(
+        path.join(ccsDir, `${profileName}.settings.json`),
+        JSON.stringify(
+          {
+            env: {
+              ANTHROPIC_BASE_URL: 'https://api.example.com',
+              ANTHROPIC_AUTH_TOKEN: 'token',
+            },
+          },
+          null,
+          2
+        ) + '\n'
+      );
+    }
 
     const result = await runInScopedCcsDir(() => discoverApiProfileOrphans());
-    expect(result.orphans.map((orphan) => orphan.name)).toEqual(['extra']);
+    expect(result.orphans.map((orphan) => orphan.name).sort()).toEqual(['extra', 'grok', 'xai']);
+  });
+
+  it('registers a grandfathered xai orphan without opening general reserved-name creation', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'xai.settings.json'),
+      JSON.stringify(
+        { env: { ANTHROPIC_BASE_URL: 'https://api.example.com', ANTHROPIC_AUTH_TOKEN: 'token' } },
+        null,
+        2
+      ) + '\n'
+    );
+    fs.writeFileSync(
+      path.join(ccsDir, 'gemini.settings.json'),
+      JSON.stringify(
+        { env: { ANTHROPIC_BASE_URL: 'https://api.example.com', ANTHROPIC_AUTH_TOKEN: 'token' } },
+        null,
+        2
+      ) + '\n'
+    );
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.json'),
+      JSON.stringify({ profiles: {} }, null, 2) + '\n'
+    );
+
+    const result = await runInScopedCcsDir(() =>
+      registerApiProfileOrphans({ names: ['xai', 'gemini'] })
+    );
+    const config = await runInScopedCcsDir(() => loadConfigSafe());
+
+    expect(result.registered).toEqual(['xai']);
+    expect(result.skipped).toEqual([]);
+    expect(config.profiles.xai).toBe('~/.ccs/xai.settings.json');
+    expect(config.profiles.gemini).toBeUndefined();
   });
 
   it('treats explicit empty names list as no-op during orphan registration', async () => {
@@ -140,7 +191,10 @@ describe('profile lifecycle service', () => {
         2
       ) + '\n'
     );
-    fs.writeFileSync(path.join(ccsDir, 'config.json'), JSON.stringify({ profiles: {} }, null, 2) + '\n');
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.json'),
+      JSON.stringify({ profiles: {} }, null, 2) + '\n'
+    );
 
     const copyFileSpy = spyOn(fs, 'copyFileSync').mockImplementation(() => {
       throw new Error('copy failed');
@@ -168,8 +222,15 @@ describe('profile lifecycle service', () => {
         2
       ) + '\n'
     );
-    fs.writeFileSync(path.join(ccsDir, 'config.json'), JSON.stringify({ profiles: {} }, null, 2) + '\n');
-    fs.writeFileSync(path.join(ccsDir, 'config.yaml'), 'version: 12\nwebsearch:\n  enabled: false\n', 'utf8');
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.json'),
+      JSON.stringify({ profiles: {} }, null, 2) + '\n'
+    );
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.yaml'),
+      'version: 12\nwebsearch:\n  enabled: false\n',
+      'utf8'
+    );
 
     const originalCopyFileSync = fs.copyFileSync.bind(fs);
     const copyFileSpy = spyOn(fs, 'copyFileSync').mockImplementation((source, destination) => {
@@ -195,7 +256,10 @@ describe('profile lifecycle service', () => {
 
     const malformedPath = path.join(ccsDir, 'bad.settings.json');
     fs.writeFileSync(malformedPath, '{ invalid json', 'utf8');
-    fs.writeFileSync(path.join(ccsDir, 'config.json'), JSON.stringify({ profiles: {} }, null, 2) + '\n');
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.json'),
+      JSON.stringify({ profiles: {} }, null, 2) + '\n'
+    );
 
     const result = await runInScopedCcsDir(() =>
       registerApiProfileOrphans({ names: ['bad'], force: true })
@@ -247,6 +311,173 @@ describe('profile lifecycle service', () => {
     expect(result.error).toContain('Invalid source profile name');
   });
 
+  it('copies and exports grandfathered sources but rejects reserved destinations', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.json'),
+      JSON.stringify({ profiles: { xai: '~/.ccs/xai.settings.json' } }, null, 2) + '\n'
+    );
+    fs.writeFileSync(
+      path.join(ccsDir, 'xai.settings.json'),
+      JSON.stringify(
+        { env: { ANTHROPIC_BASE_URL: 'https://api.example.com', ANTHROPIC_AUTH_TOKEN: 'token' } },
+        null,
+        2
+      ) + '\n'
+    );
+
+    const exported = await runInScopedCcsDir(() => exportApiProfile('xai'));
+    const copied = await runInScopedCcsDir(() => copyApiProfile('xai', 'xai-backup'));
+    const rejectedDestination = await runInScopedCcsDir(() => copyApiProfile('xai', 'GROK'));
+
+    expect(exported.success).toBe(true);
+    expect(exported.bundle?.profile.name).toBe('xai');
+    expect(copied.success).toBe(true);
+    expect(fs.existsSync(path.join(ccsDir, 'xai-backup.settings.json'))).toBe(true);
+    expect(rejectedDestination.success).toBe(false);
+    expect(rejectedDestination.error).toContain('reserved name');
+    expect(fs.existsSync(path.join(ccsDir, 'GROK.settings.json'))).toBe(false);
+  });
+
+  it('allows force copy only onto an exact existing grandfathered destination', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.json'),
+      JSON.stringify(
+        {
+          profiles: {
+            source: '~/.ccs/source.settings.json',
+            xai: '~/.ccs/xai.settings.json',
+          },
+        },
+        null,
+        2
+      ) + '\n'
+    );
+    fs.writeFileSync(
+      path.join(ccsDir, 'source.settings.json'),
+      JSON.stringify(
+        {
+          env: {
+            ANTHROPIC_BASE_URL: 'https://source.example.com',
+            ANTHROPIC_AUTH_TOKEN: 'source-token',
+          },
+        },
+        null,
+        2
+      ) + '\n'
+    );
+    fs.writeFileSync(
+      path.join(ccsDir, 'xai.settings.json'),
+      JSON.stringify(
+        { env: { ANTHROPIC_BASE_URL: 'https://old.example.com', ANTHROPIC_AUTH_TOKEN: 'old' } },
+        null,
+        2
+      ) + '\n'
+    );
+
+    const nonForced = await runInScopedCcsDir(() => copyApiProfile('source', 'xai'));
+    const forced = await runInScopedCcsDir(() => copyApiProfile('source', 'xai', { force: true }));
+    const absentForced = await runInScopedCcsDir(() =>
+      copyApiProfile('source', 'grok', { force: true })
+    );
+
+    expect(nonForced.success).toBe(false);
+    expect(nonForced.error).toContain('reserved name');
+    expect(forced.success).toBe(true);
+    expect(absentForced.success).toBe(false);
+    expect(absentForced.error).toContain('reserved name');
+    expect(fs.existsSync(path.join(ccsDir, 'grok.settings.json'))).toBe(false);
+
+    const copiedSettings = JSON.parse(
+      fs.readFileSync(path.join(ccsDir, 'xai.settings.json'), 'utf8')
+    ) as {
+      env: Record<string, string>;
+    };
+    expect(copiedSettings.env.ANTHROPIC_BASE_URL).toBe('https://source.example.com');
+    expect(copiedSettings.env.ANTHROPIC_AUTH_TOKEN).toBe('source-token');
+  });
+
+  it('rejects an absent reserved name even when profile creation is forced', async () => {
+    const result = await runInScopedCcsDir(() =>
+      createApiProfile(
+        'XAI',
+        'https://api.example.com',
+        'token',
+        {
+          default: 'model',
+          opus: 'model',
+          sonnet: 'model',
+          haiku: 'model',
+        },
+        'claude',
+        undefined,
+        undefined,
+        { force: true }
+      )
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('reserved name');
+    expect(fs.existsSync(path.join(getScopedCcsDir(), 'XAI.settings.json'))).toBe(false);
+  });
+
+  it('allows force to repair an exact existing xai API profile', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.json'),
+      JSON.stringify({ profiles: { xai: '~/.ccs/xai.settings.json' } }, null, 2) + '\n'
+    );
+    fs.writeFileSync(
+      path.join(ccsDir, 'xai.settings.json'),
+      JSON.stringify(
+        { env: { ANTHROPIC_BASE_URL: 'https://old.example.com', ANTHROPIC_AUTH_TOKEN: 'old' } },
+        null,
+        2
+      ) + '\n'
+    );
+
+    const nonForced = await runInScopedCcsDir(() =>
+      createApiProfile('xai', 'https://new.example.com', 'new-token', {
+        default: 'model',
+        opus: 'model',
+        sonnet: 'model',
+        haiku: 'model',
+      })
+    );
+    const forced = await runInScopedCcsDir(() =>
+      createApiProfile(
+        'xai',
+        'https://new.example.com',
+        'new-token',
+        {
+          default: 'model',
+          opus: 'model',
+          sonnet: 'model',
+          haiku: 'model',
+        },
+        'claude',
+        undefined,
+        undefined,
+        { force: true }
+      )
+    );
+
+    expect(nonForced.success).toBe(false);
+    expect(nonForced.error).toContain('reserved name');
+    expect(forced.success).toBe(true);
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(ccsDir, 'xai.settings.json'), 'utf8')
+    ) as {
+      env: Record<string, string>;
+    };
+    expect(settings.env.ANTHROPIC_BASE_URL).toBe('https://new.example.com');
+    expect(settings.env.ANTHROPIC_AUTH_TOKEN).toBe('new-token');
+  });
+
   it('rolls back copied settings when local WebSearch tool setup fails', async () => {
     const ccsDir = path.join(tempHome, '.ccs');
     fs.mkdirSync(ccsDir, { recursive: true });
@@ -292,6 +523,62 @@ describe('profile lifecycle service', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('Invalid bundle profile target');
+  });
+
+  it('allows force import only for an exact existing grandfathered profile', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.json'),
+      JSON.stringify({ profiles: { xai: '~/.ccs/xai.settings.json' } }, null, 2) + '\n'
+    );
+    fs.writeFileSync(
+      path.join(ccsDir, 'xai.settings.json'),
+      JSON.stringify(
+        { env: { ANTHROPIC_BASE_URL: 'https://old.example.com', ANTHROPIC_AUTH_TOKEN: 'old' } },
+        null,
+        2
+      ) + '\n'
+    );
+
+    const bundle = {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      profile: { name: 'xai', target: 'claude' },
+      settings: {
+        env: {
+          ANTHROPIC_BASE_URL: 'https://repaired.example.com',
+          ANTHROPIC_AUTH_TOKEN: 'repaired-token',
+        },
+      },
+    };
+
+    const nonForced = await runInScopedCcsDir(() => importApiProfileBundle(bundle));
+    const forced = await runInScopedCcsDir(() => importApiProfileBundle(bundle, { force: true }));
+    const absentForced = await runInScopedCcsDir(() =>
+      importApiProfileBundle(
+        {
+          ...bundle,
+          profile: { ...bundle.profile, name: 'grok' },
+        },
+        { force: true }
+      )
+    );
+
+    expect(nonForced.success).toBe(false);
+    expect(nonForced.error).toContain('reserved name');
+    expect(forced.success).toBe(true);
+    expect(absentForced.success).toBe(false);
+    expect(absentForced.error).toContain('reserved name');
+    expect(fs.existsSync(path.join(ccsDir, 'grok.settings.json'))).toBe(false);
+
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(ccsDir, 'xai.settings.json'), 'utf8')
+    ) as {
+      env: Record<string, string>;
+    };
+    expect(settings.env.ANTHROPIC_BASE_URL).toBe('https://repaired.example.com');
+    expect(settings.env.ANTHROPIC_AUTH_TOKEN).toBe('repaired-token');
   });
 
   it('rolls back imported settings when local WebSearch tool setup fails', async () => {

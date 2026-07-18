@@ -127,6 +127,36 @@ function resolveAuthFlowType(options: OAuthProcessOptions): 'device_code' | 'aut
   return options.authFlowType || OAUTH_FLOW_TYPES[options.provider] || 'authorization_code';
 }
 
+export function extractDeviceCodePrompt(output: string): {
+  userCode: string;
+  verificationUrl: string | null;
+} | null {
+  const codeMatch = output.match(
+    /(?:enter\s+)?(?:this\s+)?(?:user\s+)?code[:\s]+["']?([A-Z0-9]{4,8}[-\s]?[A-Z0-9]{4,8})["']?/i
+  );
+  if (!codeMatch) return null;
+
+  const urlMatch = output.match(/(https?:\/\/[^\s]+device[^\s]*)/i);
+  return {
+    userCode: codeMatch[1].toUpperCase(),
+    verificationUrl: urlMatch?.[1] ?? null,
+  };
+}
+
+export function resolveDeviceCodeVerificationUrl(
+  provider: CLIProxyProvider,
+  userCode: string,
+  parsedUrl: string | null
+): string {
+  if (parsedUrl) {
+    return parsedUrl;
+  }
+  if (provider === 'xai') {
+    return `https://accounts.x.ai/oauth2/device?user_code=${encodeURIComponent(userCode)}`;
+  }
+  return 'https://github.com/login/device';
+}
+
 export function isLoopbackHost(hostname: string): boolean {
   const normalized = hostname.replace(/^\[|\]$/g, '').toLowerCase();
   return (
@@ -392,19 +422,18 @@ async function handleStdout(
 
   // Handle Device Code Flow: parse and display user code
   if (isDeviceCodeFlow && !state.deviceCodeDisplayed) {
-    // Parse device/user code from various formats:
-    // "Enter code: XXXX-YYYY" or "code XXXX-YYYY" or "user code: XXXX-YYYY"
-    const codeMatch = state.accumulatedOutput.match(
-      /(?:enter\s+)?(?:user\s+)?code[:\s]+["']?([A-Z0-9]{4,8}[-\s]?[A-Z0-9]{4,8})["']?/i
-    );
-    const urlMatch = state.accumulatedOutput.match(/(https?:\/\/[^\s]+device[^\s]*)/i);
+    const devicePrompt = extractDeviceCodePrompt(state.accumulatedOutput);
 
-    if (codeMatch) {
-      state.userCode = codeMatch[1].toUpperCase();
+    if (devicePrompt) {
+      state.userCode = devicePrompt.userCode;
       state.deviceCodeDisplayed = true;
       log(`Parsed device code: ${state.userCode}`);
 
-      const verificationUrl = urlMatch?.[1] || 'https://github.com/login/device';
+      const verificationUrl = resolveDeviceCodeVerificationUrl(
+        options.provider,
+        state.userCode,
+        devicePrompt.verificationUrl
+      );
 
       // Emit device code event for WebSocket broadcast to UI
       const deviceCodePrompt: DeviceCodePrompt = {
@@ -514,6 +543,7 @@ export function extractLikelyAuthFailureFromLogs(
     });
 
   const providerPatterns: Partial<Record<CLIProxyProvider, RegExp[]>> = {
+    xai: [/xai authentication failed:\s*(.+)/i],
     ghcp: [
       /github copilot authentication failed:\s*(.+)/i,
       /failed to verify copilot access[^:]*:\s*(.+)/i,

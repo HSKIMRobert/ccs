@@ -168,6 +168,26 @@ describe('applyExtendedContextConfig', () => {
     expect(env.ANTHROPIC_MODEL).toBe('gemini-2.5-pro(high)[1m]');
   });
 
+  it('preserves a saved [1m] preference for supported Claude models in auto mode', () => {
+    const env: NodeJS.ProcessEnv = {
+      ANTHROPIC_MODEL: 'claude-sonnet-4-5-20250929[1m]',
+    };
+
+    applyExtendedContextConfig(env, 'claude', undefined);
+
+    expect(env.ANTHROPIC_MODEL).toBe('claude-sonnet-4-5-20250929[1m]');
+  });
+
+  it('strips a stale [1m] preference from unsupported native Gemini models', () => {
+    const env: NodeJS.ProcessEnv = {
+      ANTHROPIC_MODEL: 'gemini-2.5-flash[1m]',
+    };
+
+    applyExtendedContextConfig(env, 'gemini', undefined);
+
+    expect(env.ANTHROPIC_MODEL).toBe('gemini-2.5-flash');
+  });
+
   it('handles empty env vars gracefully', () => {
     const env: NodeJS.ProcessEnv = {};
     applyExtendedContextConfig(env, 'gemini', undefined);

@@ -1,3 +1,5 @@
+import { ConfigError } from '../errors/error-types';
+
 /**
  * Reserved profile names that cannot be used for user-defined profiles.
  * These names are reserved for CLIProxy providers and CLI commands.
@@ -6,6 +8,8 @@ export const RESERVED_PROFILE_NAMES = [
   // CLIProxy providers (built-in OAuth)
   'gemini',
   'codex',
+  'xai',
+  'grok',
   'agy',
   'qwen',
   'iflow',
@@ -31,6 +35,14 @@ export const RESERVED_PROFILE_NAMES = [
 ] as const;
 
 export type ReservedProfileName = (typeof RESERVED_PROFILE_NAMES)[number];
+
+/**
+ * Reserved names that may still identify profiles created before the
+ * corresponding built-in provider shortcuts shipped.
+ */
+export const GRANDFATHERED_RESERVED_PROFILE_NAMES = ['xai', 'grok'] as const;
+export type GrandfatheredReservedProfileName =
+  (typeof GRANDFATHERED_RESERVED_PROFILE_NAMES)[number];
 
 /**
  * Windows reserved device names - cannot be used as filenames on Windows.
@@ -71,6 +83,27 @@ export function isReservedName(name: string): boolean {
 }
 
 /**
+ * Check whether a reserved name may identify an existing grandfathered profile.
+ * This does not permit creating a new profile with the name.
+ */
+export function isGrandfatheredReservedProfileName(name: string): boolean {
+  return GRANDFATHERED_RESERVED_PROFILE_NAMES.includes(
+    name.toLowerCase() as GrandfatheredReservedProfileName
+  );
+}
+
+/**
+ * Allow a reserved grandfathered name only for an explicit overwrite of the
+ * exact profile that already owns it.
+ */
+export function canOverwriteGrandfatheredReservedProfileName(
+  name: string,
+  options: { force: boolean; exists: boolean }
+): boolean {
+  return options.force && options.exists && isGrandfatheredReservedProfileName(name);
+}
+
+/**
  * Check if a name is a Windows reserved device name.
  * These cause filesystem errors on Windows systems.
  * @param name - The name to check
@@ -89,7 +122,7 @@ export function isWindowsReservedName(name: string): boolean {
  */
 export function validateProfileName(name: string): void {
   if (isReservedName(name)) {
-    throw new Error(
+    throw new ConfigError(
       `Profile name '${name}' is reserved. Reserved names: ${RESERVED_PROFILE_NAMES.join(', ')}`
     );
   }

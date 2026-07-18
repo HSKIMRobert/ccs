@@ -47,6 +47,7 @@ const slowTests = [
 const fastJsTests = new Set(['tests/unit/flag-parsing-simple.test.js']);
 
 const isolatedTests = new Set([
+  'tests/unit/commands/bar-command.test.ts',
   'tests/unit/targets/codex-adapter-exec.test.ts',
   'tests/unit/targets/codex-adapter.test.ts',
   'tests/unit/targets/droid-adapter.test.ts',

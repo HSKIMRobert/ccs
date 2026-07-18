@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseProfileArgs } from '../../../src/commands/cliproxy/variant-subcommand';
+import {
+  parseProfileArgs,
+  validateVariantCreateName,
+} from '../../../src/commands/cliproxy/variant-subcommand';
 
 describe('cliproxy variant arg parser', () => {
   test('parses --target value form', () => {
@@ -54,5 +57,18 @@ describe('cliproxy variant arg parser', () => {
     expect(parsed.target).toBeUndefined();
     expect(parsed.name).toBe('--target');
     expect(parsed.errors).toEqual([]);
+  });
+});
+
+describe('cliproxy variant create name policy', () => {
+  test('allows force repair of an exact existing grandfathered variant', () => {
+    expect(validateVariantCreateName('xai', true, true)).toBeNull();
+    expect(validateVariantCreateName('GROK', true, true)).toBeNull();
+  });
+
+  test('keeps absent, non-force, and other reserved variant names blocked', () => {
+    expect(validateVariantCreateName('xai', true, false)).toContain('reserved name');
+    expect(validateVariantCreateName('xai', false, true)).toContain('reserved name');
+    expect(validateVariantCreateName('gemini', true, true)).toContain('reserved name');
   });
 });

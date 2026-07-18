@@ -24,6 +24,8 @@ export interface ProviderCapabilities {
   authFilePrefixes: readonly string[];
   /** Token JSON "type" values accepted for this provider. */
   tokenTypeValues: readonly string[];
+  /** Alternative names accepted as first-class CCS CLI shortcuts. */
+  cliAliases?: readonly string[];
   /**
    * Alternative provider names used by CLIProxyAPI or stats endpoints.
    * These aliases normalize external names to canonical CCS provider IDs.
@@ -57,6 +59,20 @@ export const PROVIDER_CAPABILITIES: Record<CLIProxyProvider, ProviderCapabilitie
     authFilePrefixes: ['codex-', 'openai-'],
     tokenTypeValues: ['codex'],
     aliases: [],
+  },
+  xai: {
+    displayName: 'xAI (Grok)',
+    description: 'Grok coding and reasoning models',
+    oauthFlow: 'device_code',
+    callbackPort: null,
+    callbackProviderName: 'xai',
+    authUrlProviderName: 'xai',
+    refreshOwnership: 'cliproxy',
+    authStartSupport: 'cliproxy-cli',
+    authFilePrefixes: ['xai-'],
+    tokenTypeValues: ['xai'],
+    cliAliases: ['grok'],
+    aliases: ['grok', 'x-ai', 'x.ai'],
   },
   agy: {
     displayName: 'Antigravity',
@@ -296,8 +312,38 @@ export function buildProviderAliasMap(
 
 const PROVIDER_ALIAS_MAP: ReadonlyMap<string, CLIProxyProvider> = buildProviderAliasMap();
 
+const PROVIDER_CLI_SHORTCUT_MAP: ReadonlyMap<string, CLIProxyProvider> = (() => {
+  const shortcutMap = new Map<string, CLIProxyProvider>();
+  for (const provider of CLIPROXY_PROVIDER_IDS) {
+    shortcutMap.set(provider, provider);
+    for (const alias of PROVIDER_CAPABILITIES[provider].cliAliases ?? []) {
+      const normalized = alias.trim().toLowerCase();
+      if (!normalized) continue;
+      const existingProvider = shortcutMap.get(normalized);
+      if (existingProvider && existingProvider !== provider) {
+        throw new ConfigError(
+          `Provider CLI alias collision for "${normalized}": ${existingProvider} and ${provider}`
+        );
+      }
+      shortcutMap.set(normalized, provider);
+    }
+  }
+  return shortcutMap;
+})();
+
 export function isCLIProxyProvider(provider: string): provider is CLIProxyProvider {
   return PROVIDER_ID_SET.has(provider as CLIProxyProvider);
+}
+
+/** Resolve canonical provider IDs and explicitly supported CLI shortcut aliases. */
+export function resolveCLIProxyProviderShortcut(providerName: string): CLIProxyProvider | null {
+  const normalized = providerName.trim().toLowerCase();
+  if (!normalized) return null;
+  return PROVIDER_CLI_SHORTCUT_MAP.get(normalized) ?? null;
+}
+
+export function getProviderCLIAliases(provider: CLIProxyProvider): readonly string[] {
+  return PROVIDER_CAPABILITIES[provider].cliAliases ?? [];
 }
 
 export function getProviderCapabilities(provider: CLIProxyProvider): ProviderCapabilities {

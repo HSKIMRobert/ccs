@@ -22,7 +22,7 @@ import {
   apiProfileExists,
   listCliproxyBridgeProviders,
   listApiProfiles,
-  validateApiName,
+  validateApiNameSyntax,
 } from '../../api/services';
 import { normalizeDroidProvider } from '../../targets/droid-provider';
 import { getPersistedTargetChoices } from '../../targets/target-metadata';
@@ -284,7 +284,7 @@ router.post('/orphans/register', (req: Request, res: Response): void => {
     }
 
     names = payload.names.map((value) => value.trim());
-    const invalidName = names.find((name) => validateApiName(name) !== null);
+    const invalidName = names.find((name) => validateApiNameSyntax(name) !== null);
     if (invalidName) {
       res.status(400).json({ error: `Invalid profile name in names: ${invalidName}` });
       return;
@@ -321,7 +321,7 @@ router.post('/:name/copy', (req: Request, res: Response): void => {
   }
 
   const { name } = req.params;
-  const sourceNameError = validateApiName(name);
+  const sourceNameError = validateApiNameSyntax(name);
   if (sourceNameError) {
     res.status(400).json({ error: sourceNameError });
     return;
@@ -359,7 +359,7 @@ router.post('/:name/export', (req: Request, res: Response): void => {
   }
 
   const { name } = req.params;
-  const profileNameError = validateApiName(name);
+  const profileNameError = validateApiNameSyntax(name);
   if (profileNameError) {
     res.status(400).json({ error: profileNameError });
     return;

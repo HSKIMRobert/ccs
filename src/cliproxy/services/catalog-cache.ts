@@ -33,6 +33,7 @@ const CHANNEL_TO_PROVIDER: Record<string, CLIProxyProvider> = {
   claude: 'claude',
   gemini: 'gemini',
   codex: 'codex',
+  xai: 'xai',
   qwen: 'qwen',
   iflow: 'iflow',
   kimi: 'kimi',
@@ -214,13 +215,15 @@ function mapThinking(remote?: RemoteThinkingSupport): ThinkingSupport | undefine
 }
 
 /** Map RemoteModelInfo to ModelEntry */
-function mapRemoteToModelEntry(remote: RemoteModelInfo): ModelEntry {
+function mapRemoteToModelEntry(provider: CLIProxyProvider, remote: RemoteModelInfo): ModelEntry {
   const entry: ModelEntry = {
     id: remote.id,
     name: remote.display_name || remote.id,
   };
   if (remote.description) entry.description = remote.description;
-  if (remote.context_length && remote.context_length >= 1_000_000) {
+  // xAI context length is inherent to the model ID; its API does not accept
+  // Claude's [1m] model suffix.
+  if (provider !== 'xai' && remote.context_length && remote.context_length >= 1_000_000) {
     entry.extendedContext = true;
   }
   const thinking = mapThinking(remote.thinking);
@@ -263,7 +266,7 @@ export function mergeCatalog(
   const mergedModels: ModelEntry[] = [];
 
   for (const remote of filteredRemoteModels) {
-    const remoteEntry = mapRemoteToModelEntry(remote);
+    const remoteEntry = mapRemoteToModelEntry(provider, remote);
     const staticEntry = staticMap.get(remote.id.toLowerCase());
     if (staticEntry) {
       const mergedThinking = remoteEntry.thinking

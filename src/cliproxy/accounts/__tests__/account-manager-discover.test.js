@@ -128,6 +128,36 @@ describe('Account Manager - discoverExistingAccounts', () => {
       assert(accounts.providers.ghcp, 'copilot type should map to ghcp provider');
     });
 
+    it('discovers xAI accounts with type="xai"', () => {
+      createAuthFile('xai-user@example.com.json', {
+        type: 'xai',
+        email: 'user@example.com',
+      });
+
+      accountManager.discoverExistingAccounts();
+      const accounts = getAccountsFile();
+
+      assert(accounts.providers.xai, 'xai type should map to xai provider');
+      assert(accounts.providers.xai.accounts['user@example.com']);
+    });
+
+    it('keeps multiple xAI accounts distinct when token metadata has no email', () => {
+      createAuthFile('xai-subject-one.json', {
+        type: 'xai',
+      });
+      createAuthFile('xai-subject-two.json', {
+        type: 'xai',
+      });
+
+      accountManager.discoverExistingAccounts();
+      const accounts = getAccountsFile();
+
+      assert.deepStrictEqual(Object.keys(accounts.providers.xai.accounts).sort(), [
+        'subject-one',
+        'subject-two',
+      ]);
+    });
+
     it('handles case-insensitive type values', () => {
       createAuthFile('kiro-test.json', {
         type: 'KIRO',

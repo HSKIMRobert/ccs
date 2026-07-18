@@ -260,6 +260,48 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
     defaultModel: 'gpt-5.4',
     models: [
       {
+        id: 'gpt-5.6-sol',
+        name: 'GPT-5.6 Sol',
+        description: 'Latest frontier agentic coding model.',
+        codexMaxEffort: 'xhigh',
+        codexEfforts: ['low', 'medium', 'high', 'xhigh'],
+        codexServiceTiers: ['fast'],
+        presetMapping: {
+          default: 'gpt-5.6-sol',
+          opus: 'gpt-5.6-sol',
+          sonnet: 'gpt-5.6-sol',
+          haiku: 'gpt-5.4-mini',
+        },
+      },
+      {
+        id: 'gpt-5.6-terra',
+        name: 'GPT-5.6 Terra',
+        description: 'Balanced agentic coding model for everyday work.',
+        codexMaxEffort: 'xhigh',
+        codexEfforts: ['low', 'medium', 'high', 'xhigh'],
+        codexServiceTiers: ['fast'],
+        presetMapping: {
+          default: 'gpt-5.6-terra',
+          opus: 'gpt-5.6-terra',
+          sonnet: 'gpt-5.6-terra',
+          haiku: 'gpt-5.4-mini',
+        },
+      },
+      {
+        id: 'gpt-5.6-luna',
+        name: 'GPT-5.6 Luna',
+        description: 'Fast and affordable agentic coding model.',
+        codexMaxEffort: 'xhigh',
+        codexEfforts: ['low', 'medium', 'high', 'xhigh'],
+        codexServiceTiers: ['fast'],
+        presetMapping: {
+          default: 'gpt-5.6-luna',
+          opus: 'gpt-5.6-luna',
+          sonnet: 'gpt-5.6-luna',
+          haiku: 'gpt-5.4-mini',
+        },
+      },
+      {
         id: 'gpt-5.5',
         name: 'GPT-5.5',
         tier: 'paid',
@@ -337,6 +379,64 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
           sonnet: 'gpt-5.2',
           haiku: 'gpt-5.4-mini',
         },
+      },
+    ],
+  },
+  xai: {
+    provider: 'xai',
+    displayName: 'xAI (Grok)',
+    defaultModel: 'grok-build-0.1',
+    models: [
+      {
+        id: 'grok-build-0.1',
+        name: 'Grok Build 0.1',
+        description: 'Fast coding model for agentic software engineering workflows',
+        presetMapping: {
+          default: 'grok-build-0.1',
+          opus: 'grok-4.5',
+          sonnet: 'grok-build-0.1',
+          haiku: 'grok-composer-2.5-fast',
+        },
+      },
+      {
+        id: 'grok-4.5',
+        name: 'Grok 4.5',
+        description: 'Frontier model for coding, engineering, and agentic workflows',
+      },
+      {
+        id: 'grok-4.3',
+        name: 'Grok 4.3',
+        description: 'General-purpose Grok model with a one-million-token context window',
+      },
+      {
+        id: 'grok-4.20-0309-reasoning',
+        name: 'Grok 4.20 0309 Reasoning',
+        description: 'Reasoning model with a two-million-token context window',
+      },
+      {
+        id: 'grok-4.20-0309-non-reasoning',
+        name: 'Grok 4.20 0309 Non Reasoning',
+        description: 'Non-reasoning model with a two-million-token context window',
+      },
+      {
+        id: 'grok-4.20-multi-agent-0309',
+        name: 'Grok 4.20 Multi Agent 0309',
+        description: 'Multi-agent model with a two-million-token context window',
+      },
+      {
+        id: 'grok-3-mini',
+        name: 'Grok 3 Mini',
+        description: 'Compact reasoning model',
+      },
+      {
+        id: 'grok-3-mini-fast',
+        name: 'Grok 3 Mini Fast',
+        description: 'Faster compact reasoning model',
+      },
+      {
+        id: 'grok-composer-2.5-fast',
+        name: 'Grok Composer 2.5 Fast',
+        description: 'Fast Composer model for lightweight coding tasks',
       },
     ],
   },
@@ -680,8 +780,50 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
   ghcp: {
     provider: 'ghcp',
     displayName: 'GitHub Copilot (OAuth)',
-    defaultModel: 'claude-sonnet-4.5',
+    defaultModel: 'claude-sonnet-5',
     models: [
+      {
+        id: 'claude-sonnet-5',
+        name: 'Claude Sonnet 5',
+        description: 'Anthropic Claude Sonnet 5 via GitHub Copilot',
+        extendedContext: true,
+        presetMapping: {
+          default: 'claude-sonnet-5',
+          opus: 'claude-opus-4.8',
+          sonnet: 'claude-sonnet-5',
+          haiku: 'claude-haiku-4.5',
+        },
+      },
+      {
+        id: 'claude-opus-4.8',
+        name: 'Claude Opus 4.8',
+        description: 'Anthropic Claude Opus 4.8 via GitHub Copilot',
+        extendedContext: true,
+        presetMapping: {
+          default: 'claude-opus-4.8',
+          opus: 'claude-opus-4.8',
+          sonnet: 'claude-sonnet-5',
+          haiku: 'claude-haiku-4.5',
+        },
+      },
+      {
+        id: 'claude-opus-4.8-fast-mode',
+        name: 'Claude Opus 4.8 Fast Mode',
+        description: 'Anthropic Claude Opus 4.8 preview fast mode via GitHub Copilot',
+        extendedContext: true,
+      },
+      {
+        id: 'claude-opus-4.7',
+        name: 'Claude Opus 4.7',
+        description: 'Anthropic Claude Opus 4.7 via GitHub Copilot',
+        extendedContext: true,
+      },
+      {
+        id: 'claude-opus-4.6',
+        name: 'Claude Opus 4.6',
+        description: 'Anthropic Claude Opus 4.6 via GitHub Copilot',
+        extendedContext: true,
+      },
       {
         id: 'claude-opus-4.5',
         name: 'Claude Opus 4.5',
@@ -690,6 +832,18 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
           default: 'claude-opus-4.5',
           opus: 'claude-opus-4.5',
           sonnet: 'claude-sonnet-4.5',
+          haiku: 'claude-haiku-4.5',
+        },
+      },
+      {
+        id: 'claude-sonnet-4.6',
+        name: 'Claude Sonnet 4.6',
+        description: 'Anthropic Claude Sonnet 4.6 via GitHub Copilot',
+        extendedContext: true,
+        presetMapping: {
+          default: 'claude-sonnet-4.6',
+          opus: 'claude-opus-4.7',
+          sonnet: 'claude-sonnet-4.6',
           haiku: 'claude-haiku-4.5',
         },
       },
@@ -705,35 +859,55 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
         },
       },
       {
-        id: 'claude-sonnet-4',
-        name: 'Claude Sonnet 4',
-        description: 'Anthropic Claude Sonnet 4 via GitHub Copilot',
-      },
-      {
         id: 'claude-haiku-4.5',
         name: 'Claude Haiku 4.5',
         description: 'Anthropic Claude Haiku 4.5 via GitHub Copilot',
       },
       {
-        id: 'gpt-5.2',
-        name: 'GPT-5.2',
-        description: 'OpenAI GPT-5.2 via GitHub Copilot',
+        id: 'claude-fable-5',
+        name: 'Claude Fable 5',
+        description: 'Anthropic Claude Fable 5 via GitHub Copilot',
+        extendedContext: true,
+      },
+      {
+        id: 'gpt-5.5',
+        name: 'GPT-5.5',
+        description: 'OpenAI GPT-5.5 via GitHub Copilot',
+        extendedContext: true,
         presetMapping: {
-          default: 'gpt-5.2',
-          opus: 'gpt-5.2',
-          sonnet: 'gpt-5.1',
-          haiku: 'gpt-5-mini',
+          default: 'gpt-5.5',
+          opus: 'gpt-5.5',
+          sonnet: 'gpt-5.4',
+          haiku: 'gpt-5.4-mini',
         },
       },
       {
-        id: 'gpt-5.1',
-        name: 'GPT-5.1',
-        description: 'OpenAI GPT-5.1 via GitHub Copilot',
+        id: 'gpt-5.4',
+        name: 'GPT-5.4',
+        description: 'OpenAI GPT-5.4 via GitHub Copilot',
+        extendedContext: true,
       },
       {
-        id: 'gpt-5',
-        name: 'GPT-5',
-        description: 'OpenAI GPT-5 via GitHub Copilot',
+        id: 'gpt-5.4-mini',
+        name: 'GPT-5.4 Mini',
+        description: 'OpenAI GPT-5.4 Mini via GitHub Copilot',
+      },
+      {
+        id: 'gpt-5.4-nano',
+        name: 'GPT-5.4 Nano',
+        description: 'OpenAI GPT-5.4 Nano via GitHub Copilot',
+      },
+      {
+        id: 'gpt-5.3-codex',
+        name: 'GPT-5.3 Codex',
+        description: 'OpenAI GPT-5.3 Codex via GitHub Copilot',
+        extendedContext: true,
+        presetMapping: {
+          default: 'gpt-5.3-codex',
+          opus: 'gpt-5.3-codex',
+          sonnet: 'gpt-5.3-codex',
+          haiku: 'gpt-5-mini',
+        },
       },
       {
         id: 'gpt-5-mini',
@@ -741,17 +915,59 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
         description: 'OpenAI GPT-5 Mini via GitHub Copilot',
       },
       {
-        id: 'gemini-3-pro',
-        name: 'Gemini 3 Pro',
-        description: 'Google Gemini 3 Pro via GitHub Copilot',
+        id: 'gemini-2.5-pro',
+        name: 'Gemini 2.5 Pro',
+        description: 'Google Gemini 2.5 Pro via GitHub Copilot',
+      },
+      {
+        id: 'gemini-3-flash',
+        name: 'Gemini 3 Flash',
+        description: 'Google Gemini 3 Flash via GitHub Copilot',
+      },
+      {
+        id: 'gemini-3.1-pro',
+        name: 'Gemini 3.1 Pro',
+        description: 'Google Gemini 3.1 Pro via GitHub Copilot',
+      },
+      {
+        id: 'gemini-3.5-flash',
+        name: 'Gemini 3.5 Flash',
+        description: 'Google Gemini 3.5 Flash via GitHub Copilot',
+      },
+      {
+        id: 'kimi-k2.7-code',
+        name: 'Kimi K2.7 Code',
+        description: 'Moonshot Kimi K2.7 Code via GitHub Copilot',
+      },
+      {
+        id: 'mai-code-1-flash',
+        name: 'MAI-Code-1-Flash',
+        description: 'Microsoft MAI-Code-1-Flash via GitHub Copilot',
+      },
+      {
+        id: 'raptor-mini',
+        name: 'Raptor Mini',
+        description: 'Microsoft Raptor Mini via GitHub Copilot',
       },
     ],
   },
   claude: {
     provider: 'claude',
     displayName: 'Claude (Anthropic)',
-    defaultModel: 'claude-sonnet-4-6',
+    defaultModel: 'claude-sonnet-5',
     models: [
+      {
+        id: 'claude-sonnet-5',
+        name: 'Claude Sonnet 5',
+        description: 'Latest Sonnet model',
+        extendedContext: true,
+        presetMapping: {
+          default: 'claude-sonnet-5',
+          opus: 'claude-opus-4-8',
+          sonnet: 'claude-sonnet-5',
+          haiku: 'claude-haiku-4-5-20251001',
+        },
+      },
       {
         id: 'claude-fable-5',
         name: 'Claude Fable 5',
@@ -760,7 +976,7 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
         presetMapping: {
           default: 'claude-fable-5',
           opus: 'claude-fable-5',
-          sonnet: 'claude-sonnet-4-6',
+          sonnet: 'claude-sonnet-5',
           haiku: 'claude-haiku-4-5-20251001',
         },
       },
@@ -772,7 +988,7 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
         presetMapping: {
           default: 'claude-opus-4-8',
           opus: 'claude-opus-4-8',
-          sonnet: 'claude-sonnet-4-6',
+          sonnet: 'claude-sonnet-5',
           haiku: 'claude-haiku-4-5-20251001',
         },
       },
@@ -784,7 +1000,7 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
         presetMapping: {
           default: 'claude-opus-4-7',
           opus: 'claude-opus-4-7',
-          sonnet: 'claude-sonnet-4-6',
+          sonnet: 'claude-sonnet-5',
           haiku: 'claude-haiku-4-5-20251001',
         },
       },
@@ -904,7 +1120,8 @@ export function buildUiCatalog(
   provider: string,
   liveCatalog: ProviderCatalog | undefined
 ): ProviderCatalog | undefined {
-  const staticCatalog = MODEL_CATALOGS[provider.toLowerCase()];
+  const normalizedProvider = provider.toLowerCase();
+  const staticCatalog = MODEL_CATALOGS[normalizedProvider];
   if (!liveCatalog || liveCatalog.models.length === 0) {
     return staticCatalog;
   }
@@ -925,7 +1142,10 @@ export function buildUiCatalog(
       issueUrl: staticModel?.issueUrl,
       deprecated: staticModel?.deprecated,
       deprecationReason: staticModel?.deprecationReason,
-      extendedContext: model.extendedContext ?? staticModel?.extendedContext,
+      extendedContext:
+        normalizedProvider === 'xai'
+          ? undefined
+          : (model.extendedContext ?? staticModel?.extendedContext),
       presetMapping: staticModel?.presetMapping,
     };
   });
@@ -1124,5 +1344,6 @@ export function supportsExtendedContext(
   modelId: string,
   catalogOverride?: ProviderCatalog
 ): boolean {
+  if (provider.toLowerCase() === 'xai') return false;
   return findCatalogModel(provider, modelId, catalogOverride)?.extendedContext === true;
 }

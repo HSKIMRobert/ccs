@@ -63,6 +63,49 @@ describe('Model Catalog', () => {
     });
   });
 
+  describe('xAI models', () => {
+    it('contains the xAI provider catalog with the coding default', () => {
+      const { MODEL_CATALOG } = modelCatalog;
+      assert(MODEL_CATALOG.xai, 'Should have xai provider');
+      assert.strictEqual(MODEL_CATALOG.xai.provider, 'xai');
+      assert.strictEqual(MODEL_CATALOG.xai.displayName, 'xAI (Grok)');
+      assert.strictEqual(MODEL_CATALOG.xai.defaultModel, 'grok-build-0.1');
+    });
+
+    it('matches the CLIProxyAPI text-model fallback set', () => {
+      const { MODEL_CATALOG } = modelCatalog;
+      const ids = MODEL_CATALOG.xai.models.map((model) => model.id);
+      assert.deepStrictEqual(ids, [
+        'grok-build-0.1',
+        'grok-4.5',
+        'grok-4.3',
+        'grok-4.20-0309-reasoning',
+        'grok-4.20-0309-non-reasoning',
+        'grok-4.20-multi-agent-0309',
+        'grok-3-mini',
+        'grok-3-mini-fast',
+        'grok-composer-2.5-fast',
+      ]);
+    });
+
+    it('does not expose Claude [1m] suffix support for xAI model IDs', () => {
+      const { MODEL_CATALOG, supportsExtendedContext } = modelCatalog;
+
+      for (const model of MODEL_CATALOG.xai.models) {
+        assert.notStrictEqual(
+          model.extendedContext,
+          true,
+          `${model.id} must not advertise extended-context metadata`
+        );
+        assert.strictEqual(
+          supportsExtendedContext('xai', model.id),
+          false,
+          `${model.id} must not advertise [1m] suffix support`
+        );
+      }
+    });
+  });
+
   describe('AGY models', () => {
     it('has correct default model', () => {
       const { MODEL_CATALOG } = modelCatalog;
@@ -132,7 +175,19 @@ describe('Model Catalog', () => {
     });
     it('has correct default model', () => {
       const { MODEL_CATALOG } = modelCatalog;
-      assert.strictEqual(MODEL_CATALOG.claude.defaultModel, 'claude-sonnet-4-6');
+      assert.strictEqual(MODEL_CATALOG.claude.defaultModel, 'claude-sonnet-5');
+    });
+
+    it('includes Claude Sonnet 5 with adaptive levels and extended context', () => {
+      const { MODEL_CATALOG } = modelCatalog;
+      const sonnet = MODEL_CATALOG.claude.models.find((m) => m.id === 'claude-sonnet-5');
+      assert(sonnet, 'Should include Claude Sonnet 5');
+      assert.strictEqual(sonnet.name, 'Claude Sonnet 5');
+      assert.strictEqual(sonnet.thinking.type, 'levels');
+      assert.deepStrictEqual(sonnet.thinking.levels, ['low', 'medium', 'high', 'xhigh', 'max']);
+      assert.strictEqual(sonnet.thinking.maxLevel, 'max');
+      assert.strictEqual(sonnet.nativeImageInput, true);
+      assert.strictEqual(sonnet.extendedContext, true);
     });
 
     it('includes Claude Sonnet 4.6', () => {
@@ -235,6 +290,9 @@ describe('Model Catalog', () => {
       const { MODEL_CATALOG } = modelCatalog;
       const ids = MODEL_CATALOG.codex.models.map((m) => m.id);
       assert.deepStrictEqual(ids, [
+        'gpt-5.6-sol',
+        'gpt-5.6-terra',
+        'gpt-5.6-luna',
         'gpt-5.5',
         'gpt-5.4',
         'gpt-5.4-mini',

@@ -5,6 +5,8 @@
  * project workspace context with other accounts in the same context group.
  */
 
+import { isReservedName } from '../config/reserved-names';
+
 export type AccountContextMode = 'isolated' | 'shared';
 export type AccountContinuityMode = 'standard' | 'deeper';
 
@@ -57,7 +59,7 @@ export function isValidContextGroupName(value: string): boolean {
  * Validate account profile naming constraints.
  */
 export function isValidAccountProfileName(value: string): boolean {
-  return ACCOUNT_PROFILE_NAME_PATTERN.test(value);
+  return ACCOUNT_PROFILE_NAME_PATTERN.test(value) && !isReservedName(value);
 }
 
 /**

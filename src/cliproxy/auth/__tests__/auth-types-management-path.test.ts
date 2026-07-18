@@ -11,6 +11,7 @@ describe('auth-types paste-callback start path', () => {
       '/v0/management/gemini-cli-auth-url?is_webui=true'
     );
     expect(getPasteCallbackStartPath('codex')).toBe('/v0/management/codex-auth-url?is_webui=true');
+    expect(getPasteCallbackStartPath('xai')).toBe('/v0/management/xai-auth-url?is_webui=true');
     expect(getPasteCallbackStartPath('agy')).toBe(
       '/v0/management/antigravity-auth-url?is_webui=true'
     );

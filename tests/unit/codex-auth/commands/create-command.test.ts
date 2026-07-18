@@ -21,6 +21,24 @@ beforeEach(() => {
   fs.writeFileSync(path.join(homeDir, '.codex', 'agents', 'brainstormer.toml'), 'name = "b"\n');
   fs.mkdirSync(path.join(homeDir, '.codex', 'skills'), { recursive: true });
   fs.writeFileSync(path.join(homeDir, '.codex', 'skills', 'review.md'), '# Review\n');
+  fs.mkdirSync(
+    path.join(homeDir, '.codex', 'plugins', 'cache', 'claudekit', '1.0.0', 'skills', 'test'),
+    { recursive: true }
+  );
+  fs.writeFileSync(
+    path.join(
+      homeDir,
+      '.codex',
+      'plugins',
+      'cache',
+      'claudekit',
+      '1.0.0',
+      'skills',
+      'test',
+      'SKILL.md'
+    ),
+    '# Test skill\n'
+  );
   fs.mkdirSync(path.join(ccsHome, '.ccs'), { recursive: true });
   process.env.CCS_HOME = ccsHome;
   spyOn(os, 'homedir').mockReturnValue(homeDir);
@@ -96,6 +114,21 @@ describe('handleCreateCodex — happy path', () => {
     expect(fs.existsSync(instancesDir)).toBe(true);
     expect(fs.lstatSync(path.join(instancesDir, 'agents')).isSymbolicLink()).toBe(true);
     expect(fs.lstatSync(path.join(instancesDir, 'skills')).isSymbolicLink()).toBe(true);
+    expect(
+      fs.readFileSync(
+        path.join(
+          instancesDir,
+          'plugins',
+          'cache',
+          'claudekit',
+          '1.0.0',
+          'skills',
+          'test',
+          'SKILL.md'
+        ),
+        'utf8'
+      )
+    ).toBe('# Test skill\n');
   });
 });
 

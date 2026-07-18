@@ -191,6 +191,42 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
     defaultModel: 'gpt-5.4',
     models: [
       {
+        id: 'gpt-5.6-sol',
+        name: 'GPT-5.6 Sol',
+        description: 'Latest frontier agentic coding model.',
+        thinking: {
+          type: 'levels',
+          levels: ['low', 'medium', 'high', 'xhigh'],
+          maxLevel: 'xhigh',
+          dynamicAllowed: false,
+        },
+        codexServiceTiers: ['fast'],
+      },
+      {
+        id: 'gpt-5.6-terra',
+        name: 'GPT-5.6 Terra',
+        description: 'Balanced agentic coding model for everyday work.',
+        thinking: {
+          type: 'levels',
+          levels: ['low', 'medium', 'high', 'xhigh'],
+          maxLevel: 'xhigh',
+          dynamicAllowed: false,
+        },
+        codexServiceTiers: ['fast'],
+      },
+      {
+        id: 'gpt-5.6-luna',
+        name: 'GPT-5.6 Luna',
+        description: 'Fast and affordable agentic coding model.',
+        thinking: {
+          type: 'levels',
+          levels: ['low', 'medium', 'high', 'xhigh'],
+          maxLevel: 'xhigh',
+          dynamicAllowed: false,
+        },
+        codexServiceTiers: ['fast'],
+      },
+      {
         id: 'gpt-5.5',
         name: 'GPT-5.5',
         tier: 'pro',
@@ -262,6 +298,71 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
           maxLevel: 'xhigh',
           dynamicAllowed: false,
         },
+      },
+    ],
+  },
+  xai: {
+    provider: 'xai',
+    displayName: 'xAI (Grok)',
+    defaultModel: 'grok-build-0.1',
+    models: [
+      {
+        id: 'grok-build-0.1',
+        name: 'Grok Build 0.1',
+        description: 'Fast coding model for agentic software engineering workflows',
+      },
+      {
+        id: 'grok-4.5',
+        name: 'Grok 4.5',
+        description: 'Frontier model for coding, engineering, and agentic workflows',
+        thinking: {
+          type: 'levels',
+          levels: ['low', 'medium', 'high'],
+          zeroAllowed: false,
+        },
+      },
+      {
+        id: 'grok-4.3',
+        name: 'Grok 4.3',
+        description: 'General-purpose Grok model with a one-million-token context window',
+        thinking: {
+          type: 'levels',
+          levels: ['none', 'low', 'medium', 'high'],
+          zeroAllowed: true,
+        },
+      },
+      {
+        id: 'grok-4.20-0309-reasoning',
+        name: 'Grok 4.20 0309 Reasoning',
+        description: 'Reasoning model with a two-million-token context window',
+      },
+      {
+        id: 'grok-4.20-0309-non-reasoning',
+        name: 'Grok 4.20 0309 Non Reasoning',
+        description: 'Non-reasoning model with a two-million-token context window',
+      },
+      {
+        id: 'grok-4.20-multi-agent-0309',
+        name: 'Grok 4.20 Multi Agent 0309',
+        description: 'Multi-agent model with a two-million-token context window',
+        thinking: { type: 'levels', levels: ['low', 'medium', 'high'] },
+      },
+      {
+        id: 'grok-3-mini',
+        name: 'Grok 3 Mini',
+        description: 'Compact reasoning model',
+        thinking: { type: 'levels', levels: ['low', 'medium', 'high'] },
+      },
+      {
+        id: 'grok-3-mini-fast',
+        name: 'Grok 3 Mini Fast',
+        description: 'Faster compact reasoning model',
+        thinking: { type: 'levels', levels: ['low', 'medium', 'high'] },
+      },
+      {
+        id: 'grok-composer-2.5-fast',
+        name: 'Grok Composer 2.5 Fast',
+        description: 'Fast Composer model for lightweight coding tasks',
       },
     ],
   },
@@ -367,8 +468,22 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
   claude: {
     provider: 'claude',
     displayName: 'Claude (Anthropic)',
-    defaultModel: 'claude-sonnet-4-6',
+    defaultModel: 'claude-sonnet-5',
     models: [
+      {
+        id: 'claude-sonnet-5',
+        name: 'Claude Sonnet 5',
+        description: 'Latest Sonnet model',
+        nativeImageInput: true,
+        // Sonnet 5 uses adaptive thinking; manual budget_tokens is rejected with 400.
+        thinking: {
+          type: 'levels',
+          levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+          maxLevel: 'max',
+          dynamicAllowed: true,
+        },
+        extendedContext: true,
+      },
       {
         id: 'claude-fable-5',
         name: 'Claude Fable 5',
@@ -646,6 +761,7 @@ export function supportsThinking(provider: CLIProxyProvider, modelId: string): b
  * Returns true if model has extendedContext: true in catalog.
  */
 export function supportsExtendedContext(provider: CLIProxyProvider, modelId: string): boolean {
+  if (provider === 'xai') return false;
   const model = findModel(provider, modelId);
   return model?.extendedContext === true;
 }

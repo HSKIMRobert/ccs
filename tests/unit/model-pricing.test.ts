@@ -277,6 +277,14 @@ describe('model-pricing', () => {
       expect(fable5.cacheReadPerMillion).toBe(1.0);
     });
 
+    it('should return correct pricing for Claude Sonnet 5', () => {
+      const sonnet5 = getModelPricing('claude-sonnet-5');
+      expect(sonnet5.inputPerMillion).toBe(3.0);
+      expect(sonnet5.outputPerMillion).toBe(15.0);
+      expect(sonnet5.cacheCreationPerMillion).toBe(3.75);
+      expect(sonnet5.cacheReadPerMillion).toBe(0.3);
+    });
+
     it('should not map unknown future model families onto known family pricing', () => {
       const fallback = getModelPricing('unknown-model-xyz');
 
@@ -398,6 +406,17 @@ describe('model-pricing', () => {
       expect(cost).toBe(73.5); // 10 + 50 + 12.5 + 1.0
     });
 
+    it('should calculate Claude Sonnet 5 cost including cache token rates', () => {
+      const usage: TokenUsage = {
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+        cacheCreationTokens: 1_000_000,
+        cacheReadTokens: 1_000_000,
+      };
+      const cost = calculateCost(usage, 'claude-sonnet-5');
+      expect(cost).toBe(22.05); // 3 + 15 + 3.75 + 0.3
+    });
+
     it('should calculate fast-tier Claude Opus 4.8 cost (2x premium)', () => {
       const usage: TokenUsage = {
         inputTokens: 1_000_000,
@@ -426,12 +445,27 @@ describe('model-pricing', () => {
       const models = getKnownModels();
       expect(models.some((m) => m.startsWith('glm-'))).toBe(true);
     });
+
+    it('should include Claude Sonnet 5 as an explicitly registered model', () => {
+      // Sonnet 5 must be a first-class known model rather than relying on the
+      // unknown-model fallback that happens to share Sonnet's $3/$15 rates.
+      const models = getKnownModels();
+      expect(models).toContain('claude-sonnet-5');
+    });
   });
 
   describe('hasCustomPricing', () => {
     it('should return true for known models', () => {
       expect(hasCustomPricing('claude-sonnet-4-5')).toBe(true);
       expect(hasCustomPricing('glm-4.6')).toBe(true);
+    });
+
+    it('should treat Claude Sonnet 5 as a known model with explicit pricing', () => {
+      // Without an explicit registry entry Sonnet 5 falls through to
+      // UNKNOWN_MODEL_PRICING (which coincidentally matches Sonnet rates);
+      // register it so cost accounting is intentional, not accidental.
+      expect(hasCustomPricing('claude-sonnet-5')).toBe(true);
+      expect(hasCustomPricing('claude-sonnet-5-thinking')).toBe(true);
     });
 
     it('should return true for deterministic qwen3-coder alias', () => {

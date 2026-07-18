@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CLIPROXY_PROVIDER_SECTIONS,
+  CLIPROXY_PROVIDERS,
   CORE_CLIPROXY_PROVIDERS,
   formatRequestedUpstreamModelRules,
   getProviderDescription,
@@ -19,6 +20,7 @@ import {
   PROVIDER_COLORS,
   variantUsesPlusExtraProvider,
 } from '@/lib/provider-config';
+import { PROVIDERS as WIZARD_PROVIDERS } from '@/components/setup/wizard/constants';
 
 describe('provider model mapping helpers', () => {
   it('parses requested=upstream rules into stored upstream+alias pairs', () => {
@@ -61,6 +63,7 @@ describe('provider presentation metadata', () => {
     expect(CLIPROXY_PROVIDER_SECTIONS.map((section) => section.id)).toEqual(['core', 'plus-extra']);
     expect(CORE_CLIPROXY_PROVIDERS).toContain('gemini');
     expect(CORE_CLIPROXY_PROVIDERS).toContain('kimi');
+    expect(CORE_CLIPROXY_PROVIDERS).toContain('xai');
     expect(PLUS_EXTRA_CLIPROXY_PROVIDERS).toEqual([
       'kiro',
       'ghcp',
@@ -74,6 +77,12 @@ describe('provider presentation metadata', () => {
     expect(getProviderSection('gemini')?.id).toBe('core');
     expect(isPlusExtraProvider('cursor')).toBe(true);
     expect(isPlusExtraProvider('gemini')).toBe(false);
+  });
+
+  it('keeps every non-deprecated canonical provider available in the setup wizard', () => {
+    expect(WIZARD_PROVIDERS.map((provider) => provider.id).sort()).toEqual(
+      CLIPROXY_PROVIDERS.filter((provider) => provider !== 'ghcp').sort()
+    );
   });
 
   it('groups provider-backed data by shared section metadata', () => {
@@ -96,6 +105,7 @@ describe('provider presentation metadata', () => {
     expect(isDeviceCodeProvider('cursor')).toBe(false);
     expect(isDeviceCodeProvider('ghcp')).toBe(true);
     expect(isDeviceCodeProvider('qwen')).toBe(true);
+    expect(isDeviceCodeProvider('xai')).toBe(true);
   });
 
   it('detects plus-extra providers inside composite variants', () => {
@@ -120,6 +130,7 @@ describe('provider presentation metadata', () => {
   });
 
   it.each([
+    ['xai', 'xAI (Grok)', 'Grok coding and reasoning models', '/assets/providers/xai.svg'],
     ['cursor', 'Cursor', 'Cursor browser-authenticated provider', '/assets/sidebar/cursor.svg'],
     ['gitlab', 'GitLab Duo', 'GitLab Duo with OAuth or PAT auth', '/assets/providers/gitlab.svg'],
     [
@@ -153,10 +164,15 @@ describe('provider presentation metadata', () => {
       textClass: 'text-rose-600',
       letter: 'K',
     });
+    expect(getProviderFallbackVisual('xai')).toEqual({
+      textClass: 'text-slate-900',
+      letter: 'X',
+    });
 
     expect(PROVIDER_COLORS.cursor).toBe('#111827');
     expect(PROVIDER_COLORS.gitlab).toBe('#FC6D26');
     expect(PROVIDER_COLORS.codebuddy).toBe('#2563EB');
     expect(PROVIDER_COLORS.kilo).toBe('#E11D48');
+    expect(PROVIDER_COLORS.xai).toBe('#111827');
   });
 });
