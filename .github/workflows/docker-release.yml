@@ -365,6 +365,14 @@ jobs:
             -p 18317:8317 \
             "${{ steps.image.outputs.ref }}"
 
+          print_service_logs() {
+            docker logs "${CONTAINER_NAME}" --tail 100 >&2 || true
+            docker exec "${CONTAINER_NAME}" \
+              sh -c 'tail -n 100 /var/log/ccs/cliproxy.log' >&2 || true
+            docker exec "${CONTAINER_NAME}" \
+              sh -c 'tail -n 100 /var/log/ccs/ccs-dashboard.log' >&2 || true
+          }
+
           echo "[i] Waiting for container healthcheck (up to 60s)..."
           HEALTHY=0
           for i in $(seq 1 12); do
@@ -376,7 +384,7 @@ jobs:
             fi
             if [[ "${STATUS}" == "unhealthy" ]]; then
               echo "[X] Container marked unhealthy"
-              docker logs "${CONTAINER_NAME}" --tail 50 >&2
+              print_service_logs
               exit 1
             fi
             echo "    [${i}/12] status=${STATUS}, waiting 5s..."
@@ -384,7 +392,7 @@ jobs:
           done
           if [[ "${HEALTHY}" -ne 1 ]]; then
             echo "[X] Container did not become healthy within 60s (last status: ${STATUS})" >&2
-            docker logs "${CONTAINER_NAME}" --tail 100 >&2
+            print_service_logs
             docker inspect "${CONTAINER_NAME}" --format='{{json .State}}' >&2 || true
             exit 1
           fi

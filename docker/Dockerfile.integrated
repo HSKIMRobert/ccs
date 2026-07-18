@@ -7,6 +7,8 @@ FROM eceasy/cli-proxy-api:latest@sha256:4fa722b9ff83adfbe6e350d433b7dcb754756aa6
 
 ARG CCS_NPM_VERSION=latest
 
+ENV CCS_CLIPROXY_NO_PLUGIN_ASSET=1
+
 # CCS integrated image: CCS CLI + CLIProxy + supervisord.
 # Design choice (issue #1251 final scope): single-image strategy. The originally-
 # proposed `:full` variant bundling claude-code/gemini-cli/grok-cli/opencode was

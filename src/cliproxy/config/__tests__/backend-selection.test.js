@@ -24,6 +24,26 @@ describe('Backend Selection', () => {
     }
   }
 
+  function withEnvironmentVariable(name, value, callback) {
+    const originalValue = process.env[name];
+
+    if (value === undefined) {
+      delete process.env[name];
+    } else {
+      process.env[name] = value;
+    }
+
+    try {
+      callback();
+    } finally {
+      if (originalValue === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = originalValue;
+      }
+    }
+  }
+
   describe('BACKEND_CONFIG', () => {
     it('has correct configuration for original backend', () => {
       const config = platformDetector.BACKEND_CONFIG.original;
@@ -71,6 +91,62 @@ describe('Backend Selection', () => {
       const info = platformDetector.detectPlatform('6.6.51', 'original');
       assert(info.binaryName.startsWith('CLIProxyAPI_6.6.51_'));
       assert(!info.binaryName.includes('CLIProxyAPIPlus'));
+    });
+
+    it('uses static no-plugin assets when the integrated Linux image opts in', () => {
+      withEnvironmentVariable('CCS_CLIPROXY_NO_PLUGIN_ASSET', '1', () => {
+        withMockedProcessPlatform('linux', 'x64', () => {
+          assert.strictEqual(
+            platformDetector.detectPlatform('7.2.88', 'original').binaryName,
+            'CLIProxyAPI_7.2.88_linux_amd64_no-plugin.tar.gz'
+          );
+          assert.strictEqual(
+            platformDetector.getDownloadUrl('7.2.88', 'original'),
+            'https://github.com/router-for-me/CLIProxyAPI/releases/download/v7.2.88/CLIProxyAPI_7.2.88_linux_amd64_no-plugin.tar.gz'
+          );
+        });
+
+        withMockedProcessPlatform('linux', 'arm64', () => {
+          assert.strictEqual(
+            platformDetector.detectPlatform('7.2.88', 'original').binaryName,
+            'CLIProxyAPI_7.2.88_linux_aarch64_no-plugin.tar.gz'
+          );
+        });
+      });
+    });
+
+    it('keeps plugin-capable original archives for normal Linux installs', () => {
+      withMockedProcessPlatform('linux', 'arm64', () => {
+        assert.strictEqual(
+          platformDetector.detectPlatform('7.2.88', 'original').binaryName,
+          'CLIProxyAPI_7.2.88_linux_aarch64.tar.gz'
+        );
+      });
+    });
+
+    it('keeps original archive names compatible before Linux no-plugin assets existed', () => {
+      withEnvironmentVariable('CCS_CLIPROXY_NO_PLUGIN_ASSET', '1', () => {
+        withMockedProcessPlatform('linux', 'x64', () => {
+          assert.strictEqual(
+            platformDetector.detectPlatform('7.1.51', 'original').binaryName,
+            'CLIProxyAPI_7.1.51_linux_amd64.tar.gz'
+          );
+        });
+      });
+
+      withMockedProcessPlatform('darwin', 'arm64', () => {
+        assert.strictEqual(
+          platformDetector.detectPlatform('7.2.88', 'original').binaryName,
+          'CLIProxyAPI_7.2.88_darwin_aarch64.tar.gz'
+        );
+      });
+
+      withMockedProcessPlatform('win32', 'x64', () => {
+        assert.strictEqual(
+          platformDetector.detectPlatform('7.2.88', 'original').binaryName,
+          'CLIProxyAPI_7.2.88_windows_amd64.zip'
+        );
+      });
     });
 
     it('keeps old plus non-Windows archive names unsuffixed', () => {

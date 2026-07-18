@@ -166,7 +166,17 @@ export function detectPlatform(
   const ver = version || config.fallbackVersion;
   const extension: ArchiveExtension = os === 'windows' ? 'zip' : 'tar.gz';
   const assetArch = getReleaseArchForBackend(backend, ver, arch, releaseArch);
-  const assetVariant = backend === 'plus' && usesPlusNoPluginAsset(ver, os) ? '_no-plugin' : '';
+  // The integrated Alpine image opts into the portable static upstream asset.
+  // Normal Linux installs keep plugin-capable archives for backward compatibility.
+  const usesOriginalNoPluginAsset =
+    process.env.CCS_CLIPROXY_NO_PLUGIN_ASSET === '1' &&
+    backend === 'original' &&
+    os === 'linux' &&
+    isAtLeastVersion(ver, '7.1.52');
+  const assetVariant =
+    usesOriginalNoPluginAsset || (backend === 'plus' && usesPlusNoPluginAsset(ver, os))
+      ? '_no-plugin'
+      : '';
   const binaryName = `${config.binaryPrefix}_${ver}_${os}_${assetArch}${assetVariant}.${extension}`;
 
   return {
