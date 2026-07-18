@@ -631,11 +631,11 @@ export function createBarRouter(deps: BarRouterDeps): Router {
 
 import { getAllAccountsSummary } from '../../cliproxy/accounts/query';
 import {
-  getCachedQuota,
-  setCachedQuota,
-  invalidateQuotaCache,
-} from '../../cliproxy/quota/quota-response-cache';
-import { fetchAccountQuota } from '../../cliproxy/quota/quota-fetcher';
+  fetchBarPoolAccountQuota,
+  getCachedBarPoolAccountQuota,
+  invalidateCachedBarPoolAccountQuota,
+  setCachedBarPoolAccountQuota,
+} from './bar-pool-account-quota-adapter';
 import { getTodayCostByAccount } from '../usage/data-aggregator';
 import { loadCliproxySnapshotDetails } from '../usage/cliproxy-snapshot-reader';
 import { getCachedDailyData, getCachedHourlyData } from '../usage/aggregator';
@@ -644,10 +644,10 @@ import { getNativeAccountRows, getCachedNativeAccountRows } from '../usage/nativ
 /** Production bar router — wired to real dependencies */
 const barRouter: Router = createBarRouter({
   getAllAccountsSummary,
-  getCachedQuota,
-  setCachedQuota,
-  invalidateQuotaCache,
-  fetchAccountQuota,
+  getCachedQuota: getCachedBarPoolAccountQuota,
+  setCachedQuota: setCachedBarPoolAccountQuota,
+  invalidateQuotaCache: invalidateCachedBarPoolAccountQuota,
+  fetchAccountQuota: fetchBarPoolAccountQuota,
   getTodayCostByAccount,
   loadCliproxyDetails: loadCliproxySnapshotDetails,
   loadDailyUsage: () => getCachedDailyData(),
