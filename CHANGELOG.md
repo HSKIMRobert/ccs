@@ -1,3 +1,40 @@
+## [8.8.0](https://github.com/kaitranntt/ccs/compare/v8.7.0...v8.8.0) (2026-07-18)
+
+### Features
+
+* add Sonnet 5 to Claude provider catalog ([c8a4b42](https://github.com/kaitranntt/ccs/commit/c8a4b429906d0c9e08dc8ea27625676ff15c4bba))
+* **cliproxy:** add xAI Grok provider ([54a2b47](https://github.com/kaitranntt/ccs/commit/54a2b4759b7bf831ba6801cb71f97b6aef24481c))
+* **codex:** add GPT-5.6 model catalog ([24eae8a](https://github.com/kaitranntt/ccs/commit/24eae8ae8f0dec38e0e12b8bb1147ebc1e8a85ed)), closes [#1633](https://github.com/kaitranntt/ccs/issues/1633)
+* **pricing:** register Claude Sonnet 5 in the pricing registry ([1e63c37](https://github.com/kaitranntt/ccs/commit/1e63c37baf94468b855cf583453816fadcb209e8))
+* support custom GHCP model selection ([631a515](https://github.com/kaitranntt/ccs/commit/631a515986cd2224c3d89d8498399700f19e22c7))
+
+### Bug Fixes
+
+* **auth:** preserve xAI profile compatibility ([44718e9](https://github.com/kaitranntt/ccs/commit/44718e98ef2c3f9ec2cbe7434edb33cd9eecb390))
+* **bar:** preserve quota cache and reset semantics ([8996c92](https://github.com/kaitranntt/ccs/commit/8996c92fda4c71b702acf505d1cee4300586cac9))
+* **bar:** show Claude and Codex pool quota ([f77ed33](https://github.com/kaitranntt/ccs/commit/f77ed33cc70f8cd6b7ffb92f235eefb7b0386309))
+* cap native quota profile refresh fan-out ([#1627](https://github.com/kaitranntt/ccs/issues/1627)) ([0f9a876](https://github.com/kaitranntt/ccs/commit/0f9a87619c84efd268b8b717b54fc7cd3a7e8a45))
+* **ci:** isolate Bar command fast tests ([6dc199a](https://github.com/kaitranntt/ccs/commit/6dc199a0383b6f6ac8080ae358cba230f89b1be6))
+* claude model no get the 1m tag ([7f369f7](https://github.com/kaitranntt/ccs/commit/7f369f75dce8dbb1d5dde9b63c51219e46614533))
+* **cliproxy:** harden xAI provider contracts ([4e4c949](https://github.com/kaitranntt/ccs/commit/4e4c949967f3aa112795e1bf0cc3ee8ebdbd5b3b))
+* **codex-auth:** reject aliased plugin cache paths ([234dce3](https://github.com/kaitranntt/ccs/commit/234dce31500b2b147a0cfe3035722242fea74c40))
+* **codex-auth:** share plugin cache across profiles ([e5d4d86](https://github.com/kaitranntt/ccs/commit/e5d4d860b32e8f8ff97d2da9a76530c99bfb81a0))
+* **codex:** preview joined migration TOML repair ([77e73dd](https://github.com/kaitranntt/ccs/commit/77e73dd091c40fb2e9f91297b4030fb47ff1c08d)), closes [#1635](https://github.com/kaitranntt/ccs/issues/1635)
+* guard against missing modelBreakdowns in usage aggregation ([a7f3e4b](https://github.com/kaitranntt/ccs/commit/a7f3e4bc0eebadfaa62c87306855ec19526bf08b))
+* keep agy websearch permissions enabled ([#1625](https://github.com/kaitranntt/ccs/issues/1625)) ([05685d1](https://github.com/kaitranntt/ccs/commit/05685d1c21bab786a20e5cdccceb326b12a0e091))
+* prevent default profile credential collision ([#1628](https://github.com/kaitranntt/ccs/issues/1628)) ([343899f](https://github.com/kaitranntt/ccs/commit/343899f6c1529cbeb6e0a518a61908fd3171f20f))
+* reject case-variant symlinked file paths ([#1629](https://github.com/kaitranntt/ccs/issues/1629)) ([1ee7cac](https://github.com/kaitranntt/ccs/commit/1ee7cac5552313018bf14100a3393b90b31dbcfd))
+* strip stale Gemini extended context suffixes ([5943c8f](https://github.com/kaitranntt/ccs/commit/5943c8fa3cc16814e7f3cd44279f1a11be3b3609))
+* validate CCS Bar launch shim target integrity ([#1626](https://github.com/kaitranntt/ccs/issues/1626)) ([3621f8d](https://github.com/kaitranntt/ccs/commit/3621f8dcb1454cc9c6d25669cdd46f227282fbe7))
+
+### Documentation
+
+* **codex-auth:** document shared plugin cache ([3103af5](https://github.com/kaitranntt/ccs/commit/3103af5355448b9137828b062b50a64f8639902f))
+
+### Tests
+
+* **codex-auth:** cover profile cache repair entry points ([960d6e2](https://github.com/kaitranntt/ccs/commit/960d6e23a0c85aef6fceef2afbe789e285c5d940))
+
 ## [8.7.0](https://github.com/kaitranntt/ccs/compare/v8.6.1...v8.7.0) (2026-07-01)
 
 ### Features
