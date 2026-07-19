@@ -43,6 +43,15 @@ describe('docker release workflow context', () => {
     expect(dockerfile).toContain('HEALTHCHECK');
     expect(dockerfile).toContain('127.0.0.1:3000');
     expect(dockerfile).toContain('127.0.0.1:8317');
+    expect(dockerfile).toContain('ENV CCS_CLIPROXY_NO_PLUGIN_ASSET=1');
+  });
+
+  test('prints service logs when the integrated image fails its healthcheck', () => {
+    const workflow = readFileSync(join(repoRoot, '.github/workflows/docker-release.yml'), 'utf8');
+
+    expect(workflow).toContain('docker logs "${CONTAINER_NAME}"');
+    expect(workflow).toContain('/var/log/ccs/cliproxy.log');
+    expect(workflow).toContain('/var/log/ccs/ccs-dashboard.log');
   });
 
   test('lets network-contract smoke tests avoid fixed host port collisions', () => {
