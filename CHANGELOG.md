@@ -1,3 +1,9 @@
+## [8.8.1](https://github.com/kaitranntt/ccs/compare/v8.8.0...v8.8.1) (2026-07-19)
+
+### Hotfixes
+
+* **docker:** select Alpine-compatible CLIProxy asset ([003342f](https://github.com/kaitranntt/ccs/commit/003342f604a78e88fd958b3ef2e7d4506d41190c))
+
 ## [8.8.0](https://github.com/kaitranntt/ccs/compare/v8.7.0...v8.8.0) (2026-07-18)
 
 ### Features
