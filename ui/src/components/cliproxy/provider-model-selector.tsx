@@ -10,16 +10,30 @@ import { useTranslation } from 'react-i18next';
 
 import { Badge } from '@/components/ui/badge';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { CliproxyProviderRoutingHints } from '@/lib/api-client';
 import type { CodexEffort, CodexServiceTier } from '@/lib/codex-effort';
 import {
+  applyCodexEffortSuffix,
   getCodexEffortDisplay,
   getCodexEffortVariants,
+  getSelectableCodexEfforts,
   parseCodexEffort,
   parseCodexServiceTier,
+  stripCodexEffortSuffix,
 } from '@/lib/codex-effort';
-import { getResolvedCatalogModels, getSupplementalCatalogModels } from '@/lib/model-catalogs';
+import {
+  findCatalogModel,
+  getResolvedCatalogModels,
+  getSupplementalCatalogModels,
+} from '@/lib/model-catalogs';
 import { cn } from '@/lib/utils';
 
 /** Model entry from catalog */
@@ -561,6 +575,22 @@ export function FlexibleModelSelector({
       }
     : null;
   const hasAvailableModels = recommendedOptions.length + allModelOptions.length > 0;
+  const currentEffort = isCodexProvider ? parseCodexEffort(value) : undefined;
+  const baseModelId = isCodexProvider
+    ? stripCodexEffortSuffix(normalizeModelValue(value, routing))
+    : '';
+  const selectedCatalogModel =
+    isCodexProvider && baseModelId && catalog
+      ? findCatalogModel(catalog.provider, baseModelId, catalog)
+      : undefined;
+  const selectableEfforts = getSelectableCodexEfforts(
+    selectedCatalogModel?.codexMaxEffort,
+    selectedCatalogModel?.codexEfforts
+  );
+  const effortOptions =
+    currentEffort && !selectableEfforts.includes(currentEffort)
+      ? [...selectableEfforts, currentEffort]
+      : selectableEfforts;
 
   return (
     <div className="space-y-1.5">
@@ -568,87 +598,121 @@ export function FlexibleModelSelector({
         <label className="text-xs font-medium">{label}</label>
         {description && <p className="text-[10px] text-muted-foreground">{description}</p>}
       </div>
-      <SearchableSelect
-        value={value || undefined}
-        onChange={onChange}
-        disabled={disabled}
-        placeholder={t('providerModelSelector.selectModel')}
-        searchPlaceholder={t('searchableSelect.searchModels')}
-        emptyText={
-          hasAvailableModels
-            ? t('searchableSelect.noResults')
-            : t('providerModelSelector.noModelsAvailable')
-        }
-        triggerClassName="h-9"
-        createOption={createCustomModelOption}
-        groups={[
-          ...(selectedValueMissing && legacySelectedOption
-            ? [
-                {
-                  key: 'current',
-                  label: (
-                    <span className="text-xs text-muted-foreground">
-                      {t('providerModelSelector.currentValue')}
-                    </span>
-                  ),
-                },
-              ]
-            : []),
-          {
-            key: 'recommended',
-            label: (
-              <span className="text-xs text-primary">{t('providerModelSelector.recommended')}</span>
-            ),
-          },
-          ...(isCodexProvider
-            ? [
-                {
-                  key: 'codex-reasoning',
-                  label: (
-                    <span className="text-xs text-muted-foreground">
-                      {t('providerModelSelector.codexReasoningVariants')}
-                    </span>
-                  ),
-                },
-                {
-                  key: 'codex-fast',
-                  label: (
-                    <span className="text-xs text-amber-600">
-                      {t('providerModelSelector.codexFastVariants')}
-                    </span>
-                  ),
-                },
-              ]
-            : []),
-          ...(allModelOptions.length > 0
-            ? [
-                {
-                  key: 'all',
-                  label: (
-                    <span className="text-xs text-muted-foreground">
-                      {t('providerModelSelector.allModelsCount', {
-                        count: allModelOptions.length,
-                      })}
-                    </span>
-                  ),
-                },
-              ]
-            : []),
-          {
-            key: 'custom',
-            label: (
-              <span className="text-xs text-muted-foreground">
-                {t('providerModelSelector.customModel')}
-              </span>
-            ),
-          },
-        ]}
-        options={[
-          ...(selectedValueMissing && legacySelectedOption ? [legacySelectedOption] : []),
-          ...recommendedOptions,
-          ...allModelOptions,
-        ]}
-      />
+      <div className="flex gap-2">
+        <SearchableSelect
+          value={value || undefined}
+          onChange={onChange}
+          disabled={disabled}
+          placeholder={t('providerModelSelector.selectModel')}
+          searchPlaceholder={t('searchableSelect.searchModels')}
+          emptyText={
+            hasAvailableModels
+              ? t('searchableSelect.noResults')
+              : t('providerModelSelector.noModelsAvailable')
+          }
+          className="min-w-0 flex-1"
+          triggerClassName="h-9"
+          createOption={createCustomModelOption}
+          groups={[
+            ...(selectedValueMissing && legacySelectedOption
+              ? [
+                  {
+                    key: 'current',
+                    label: (
+                      <span className="text-xs text-muted-foreground">
+                        {t('providerModelSelector.currentValue')}
+                      </span>
+                    ),
+                  },
+                ]
+              : []),
+            {
+              key: 'recommended',
+              label: (
+                <span className="text-xs text-primary">
+                  {t('providerModelSelector.recommended')}
+                </span>
+              ),
+            },
+            ...(isCodexProvider
+              ? [
+                  {
+                    key: 'codex-reasoning',
+                    label: (
+                      <span className="text-xs text-muted-foreground">
+                        {t('providerModelSelector.codexReasoningVariants')}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'codex-fast',
+                    label: (
+                      <span className="text-xs text-amber-600">
+                        {t('providerModelSelector.codexFastVariants')}
+                      </span>
+                    ),
+                  },
+                ]
+              : []),
+            ...(allModelOptions.length > 0
+              ? [
+                  {
+                    key: 'all',
+                    label: (
+                      <span className="text-xs text-muted-foreground">
+                        {t('providerModelSelector.allModelsCount', {
+                          count: allModelOptions.length,
+                        })}
+                      </span>
+                    ),
+                  },
+                ]
+              : []),
+            {
+              key: 'custom',
+              label: (
+                <span className="text-xs text-muted-foreground">
+                  {t('providerModelSelector.customModel')}
+                </span>
+              ),
+            },
+          ]}
+          options={[
+            ...(selectedValueMissing && legacySelectedOption ? [legacySelectedOption] : []),
+            ...recommendedOptions,
+            ...allModelOptions,
+          ]}
+        />
+        {isCodexProvider && (
+          <Select
+            value={currentEffort ?? 'auto'}
+            onValueChange={(effort) =>
+              onChange(
+                applyCodexEffortSuffix(
+                  value,
+                  effort === 'auto' ? undefined : (effort as CodexEffort)
+                )
+              )
+            }
+            disabled={disabled || !value}
+          >
+            <SelectTrigger
+              className="h-9 w-28 shrink-0"
+              aria-label={t('providerModelSelector.effortLabel')}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">{t('providerModelSelector.effortAuto')}</SelectItem>
+              {effortOptions.map((effort) => (
+                <SelectItem key={effort} value={effort}>
+                  {effort}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
       {selectedRoutingHint ? (
         <div
           className={cn(
