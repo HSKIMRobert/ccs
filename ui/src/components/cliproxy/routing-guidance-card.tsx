@@ -7,8 +7,14 @@ import type {
   RoutingStrategy,
   CliproxySessionAffinityState,
 } from '@/lib/api-client';
+import { useCliproxyRetryConfig, useUpdateCliproxyRetryConfig } from '@/hooks/use-cliproxy';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
+
+/** Retry fields accept only non-negative integers (matches the CLIProxy schema bounds). */
+function isValidRetryFieldValue(value: number): boolean {
+  return Number.isInteger(value) && value >= 0;
+}
 
 interface RoutingGuidanceCardProps {
   className?: string;
@@ -73,6 +79,17 @@ export function RoutingGuidanceCard({
   const pendingAffinityRef = useRef<{ enabled: boolean; ttl: string } | null>(null);
   const suppressNextAffinityBlurRef = useRef(false);
 
+  const retryConfigQuery = useCliproxyRetryConfig();
+  const updateRetryConfig = useUpdateCliproxyRetryConfig();
+  const currentRequestRetry = retryConfigQuery.data?.request_retry ?? 0;
+  const currentMaxRetryInterval = retryConfigQuery.data?.max_retry_interval ?? 0;
+  const [requestRetryInput, setRequestRetryInput] = useState(String(currentRequestRetry));
+  const [maxRetryIntervalInput, setMaxRetryIntervalInput] = useState(
+    String(currentMaxRetryInterval)
+  );
+  const [retryFieldError, setRetryFieldError] = useState<string | null>(null);
+  const retryControlDisabled = retryConfigQuery.isLoading || updateRetryConfig.isPending;
+
   useEffect(() => {
     setSelected(currentStrategy);
   }, [currentStrategy]);
@@ -81,6 +98,11 @@ export function RoutingGuidanceCard({
     setSelectedAffinityEnabled(currentAffinityEnabled);
     setSelectedAffinityTtl(currentAffinityTtl);
   }, [currentAffinityEnabled, currentAffinityTtl]);
+
+  useEffect(() => {
+    setRequestRetryInput(String(currentRequestRetry));
+    setMaxRetryIntervalInput(String(currentMaxRetryInterval));
+  }, [currentRequestRetry, currentMaxRetryInterval]);
 
   useEffect(() => {
     if (isSaving || !pendingAffinityRef.current) {
@@ -120,6 +142,34 @@ export function RoutingGuidanceCard({
     }
     pendingAffinityRef.current = { enabled: selectedAffinityEnabled, ttl: nextTtl };
     onApplyAffinity({ enabled: selectedAffinityEnabled, ttl: nextTtl });
+  };
+
+  const handleRetryBlur = () => {
+    const nextRequestRetry = Number(requestRetryInput.trim());
+    const nextMaxRetryInterval = Number(maxRetryIntervalInput.trim());
+
+    if (
+      !isValidRetryFieldValue(nextRequestRetry) ||
+      !isValidRetryFieldValue(nextMaxRetryInterval)
+    ) {
+      setRetryFieldError(t('routingGuidance.retryRangeError'));
+      setRequestRetryInput(String(currentRequestRetry));
+      setMaxRetryIntervalInput(String(currentMaxRetryInterval));
+      return;
+    }
+
+    setRetryFieldError(null);
+    if (
+      nextRequestRetry === currentRequestRetry &&
+      nextMaxRetryInterval === currentMaxRetryInterval
+    ) {
+      return;
+    }
+
+    updateRetryConfig.mutate({
+      request_retry: nextRequestRetry,
+      max_retry_interval: nextMaxRetryInterval,
+    });
   };
 
   if (compact) {
@@ -272,6 +322,44 @@ export function RoutingGuidanceCard({
         {sessionAffinityState?.message ? (
           <div className="rounded-lg border border-border/60 bg-muted/20 px-2 py-1.5 text-[10px] text-muted-foreground">
             {sessionAffinityState.message}
+          </div>
+        ) : null}
+
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/20 px-2 py-1.5">
+          <div className="min-w-0">
+            <div className="text-[10px] font-medium text-foreground">
+              {t('routingGuidance.retryTitle')}
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              {t('routingGuidance.retryHint')}
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <input
+              aria-label={t('routingGuidance.requestRetryLabel')}
+              inputMode="numeric"
+              className="h-6 w-10 rounded border border-border/70 bg-background px-1.5 text-[10px] text-foreground"
+              value={requestRetryInput}
+              onChange={(event) => setRequestRetryInput(event.target.value.replace(/\D/g, ''))}
+              onBlur={handleRetryBlur}
+              disabled={retryControlDisabled}
+            />
+            <span className="text-[10px] text-muted-foreground">/</span>
+            <input
+              aria-label={t('routingGuidance.maxRetryIntervalLabel')}
+              inputMode="numeric"
+              className="h-6 w-10 rounded border border-border/70 bg-background px-1.5 text-[10px] text-foreground"
+              value={maxRetryIntervalInput}
+              onChange={(event) => setMaxRetryIntervalInput(event.target.value.replace(/\D/g, ''))}
+              onBlur={handleRetryBlur}
+              disabled={retryControlDisabled}
+            />
+          </div>
+        </div>
+
+        {retryFieldError ? (
+          <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-2 py-1.5 text-[10px] text-destructive">
+            {retryFieldError}
           </div>
         ) : null}
       </div>

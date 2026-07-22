@@ -16,6 +16,7 @@ import { getAuthDir, getProviderAuthDir, getConfigPathForPort } from './path-res
 import { CLIPROXY_DEFAULT_PORT } from './port-manager';
 import { loadOrCreateUnifiedConfig } from '../../config/config-loader-facade';
 import { getActiveDockerLegacyApiKeys } from '../../docker/docker-key-rotation';
+import { isValidCliproxyRetryValue } from '../../config/schemas/cliproxy';
 
 /** Internal API key for CCS-managed requests */
 export const CCS_INTERNAL_API_KEY = 'ccs-internal-managed';
@@ -190,6 +191,25 @@ function getSessionAffinityEnabled(): boolean {
 function getSessionAffinityTtl(): string {
   const ttl = loadOrCreateUnifiedConfig().cliproxy?.routing?.session_affinity_ttl?.trim();
   return ttl && GO_DURATION_PATTERN.test(ttl) && hasPositiveDuration(ttl) ? ttl : '1h';
+}
+
+/**
+ * Number of times CLIProxy retries a request on a transient error
+ * (403, 408, 500, 502, 503, 504). Opt-in via config.cliproxy.retry.request_retry;
+ * defaults to 0 (disabled) to avoid burning quota on multi-account pools.
+ */
+function getRequestRetry(): number {
+  const value = loadOrCreateUnifiedConfig().cliproxy?.retry?.request_retry;
+  return isValidCliproxyRetryValue(value) ? value : 0;
+}
+
+/**
+ * Maximum wait time in seconds for a cooled-down credential before CLIProxy
+ * retries. Opt-in via config.cliproxy.retry.max_retry_interval; defaults to 0.
+ */
+function getMaxRetryInterval(): number {
+  const value = loadOrCreateUnifiedConfig().cliproxy?.retry?.max_retry_interval;
+  return isValidCliproxyRetryValue(value) ? value : 0;
 }
 
 function normalizeManagementPanelRepository(value: unknown): string | undefined {
@@ -659,6 +679,8 @@ function generateUnifiedConfigContent(
   const routingStrategy = getRoutingStrategy();
   const sessionAffinityEnabled = getSessionAffinityEnabled();
   const sessionAffinityTtl = getSessionAffinityTtl();
+  const requestRetry = getRequestRetry();
+  const maxRetryInterval = getMaxRetryInterval();
   const managementPanelRepository = getManagementPanelRepository();
 
   // Get effective auth tokens (respects user customization)
@@ -751,8 +773,8 @@ ${coolingComment}
 disable-cooling: ${disableCoolingValue}
 
 # Auto-retry on transient errors (403, 408, 500, 502, 503, 504)
-request-retry: 0
-max-retry-interval: 0
+request-retry: ${requestRetry}
+max-retry-interval: ${maxRetryInterval}
 ${poolRoutingBlock}
 # Auto-switch accounts on quota exceeded (429)
 # This enables seamless multi-account rotation when rate limited

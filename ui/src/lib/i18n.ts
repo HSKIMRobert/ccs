@@ -1954,6 +1954,11 @@ const resources = {
         sessionRecognitionTitle: 'Session recognition',
         sessionRecognitionDescription:
           'CCS does not promise one universal precedence order here. In practice, upstream backends prefer explicit session or thread IDs first, then fall back to metadata fields and finally a hash based on the opening prompt history.',
+        retryTitle: 'Auto-retry',
+        retryHint: 'Retries / max wait (s)',
+        requestRetryLabel: 'Request retry count',
+        maxRetryIntervalLabel: 'Max retry interval (seconds)',
+        retryRangeError: 'Must be a whole number, 0 or greater.',
       },
       extendedContext: {
         extendedContext: 'Extended Context',
@@ -2347,6 +2352,7 @@ const resources = {
         noProfilesToSync: 'No profiles to sync',
         syncFailed: 'Sync failed: {{error}}',
         sessionAffinityUpdated: 'Session affinity {{state}}.',
+        cliproxyRetryUpdated: 'Retry settings updated.',
         providerAuthSuccess: '{{provider}} authentication successful',
         providerDeviceCodeInCallback: 'Provider returned Device Code flow in callback mode',
         providerAuthTimeout: 'Authentication timed out. Please try again.',
@@ -4587,6 +4593,11 @@ const resources = {
         sessionRecognitionTitle: '会话识别',
         sessionRecognitionDescription:
           'CCS 不承诺所有后端都使用同一优先级顺序。通常上游会优先使用显式会话或线程 ID，然后回退到元数据字段，最后再回退到基于开场提示历史的哈希。',
+        retryTitle: '自动重试',
+        retryHint: '重试次数 / 最大等待（秒）',
+        requestRetryLabel: '重试次数',
+        maxRetryIntervalLabel: '最大重试间隔（秒）',
+        retryRangeError: '必须是 0 或更大的整数。',
       },
       extendedContext: {
         extendedContext: '扩展上下文',
@@ -4963,6 +4974,7 @@ const resources = {
         noProfilesToSync: '没有可同步的配置',
         syncFailed: '同步失败：{{error}}',
         sessionAffinityUpdated: '会话粘性已{{state}}。',
+        cliproxyRetryUpdated: '重试设置已更新。',
         providerAuthSuccess: '{{provider}} 认证成功',
         providerDeviceCodeInCallback: '提供商在回调模式中返回了设备码流程',
         providerAuthTimeout: '认证超时，请重试。',
@@ -7295,6 +7307,11 @@ const resources = {
         sessionRecognitionTitle: 'Nhận diện phiên',
         sessionRecognitionDescription:
           'CCS không cam kết một thứ tự ưu tiên chung cho mọi backend. Trên thực tế, backend upstream thường ưu tiên session hoặc thread id tường minh, rồi mới fallback sang metadata và cuối cùng là hàm băm của lịch sử prompt mở đầu.',
+        retryTitle: 'Tự động thử lại',
+        retryHint: 'Số lần thử lại / chờ tối đa (giây)',
+        requestRetryLabel: 'Số lần thử lại yêu cầu',
+        maxRetryIntervalLabel: 'Khoảng chờ thử lại tối đa (giây)',
+        retryRangeError: 'Phải là số nguyên từ 0 trở lên.',
       },
       extendedContext: {
         extendedContext: 'Ngữ cảnh mở rộng',
@@ -7676,6 +7693,7 @@ const resources = {
         noProfilesToSync: 'Không có hồ sơ để đồng bộ',
         syncFailed: 'Đồng bộ thất bại: {{error}}',
         sessionAffinityUpdated: 'Ghim phiên đã {{state}}.',
+        cliproxyRetryUpdated: 'Đã cập nhật cài đặt thử lại.',
         providerAuthSuccess: 'Xác thực {{provider}} thành công',
         providerDeviceCodeInCallback: 'Nhà cung cấp trả về Device Code flow trong chế độ callback',
         providerAuthTimeout: 'Đã hết thời gian xác thực. Vui lòng thử lại.',
@@ -10475,6 +10493,11 @@ const resources = {
         sessionRecognitionTitle: 'セッション認識',
         sessionRecognitionDescription:
           'CCS はすべてのバックエンドで同一の優先順位を保証しません。一般に上流バックエンドは明示的なセッション / スレッド ID を優先し、その後にメタデータ、最後に冒頭プロンプト履歴のハッシュへフォールバックします。',
+        retryTitle: '自動リトライ',
+        retryHint: 'リトライ回数 / 最大待機（秒）',
+        requestRetryLabel: 'リトライ回数',
+        maxRetryIntervalLabel: '最大リトライ間隔（秒）',
+        retryRangeError: '0 以上の整数を入力してください。',
       },
       settingsDialog: {
         editProfile: 'プロファイルを編集: {{name}}',
@@ -10706,6 +10729,7 @@ const resources = {
         noProfilesToSync: '同期するプロファイルがありません',
         syncFailed: '同期に失敗しました: {{error}}',
         sessionAffinityUpdated: 'セッション固定を{{state}}にしました。',
+        cliproxyRetryUpdated: '再試行設定を更新しました。',
         providerAuthSuccess: '{{provider}} の認証に成功しました',
         providerDeviceCodeInCallback:
           'コールバックモードでプロバイダーがデバイスコードフローを返しました',
@@ -12762,6 +12786,11 @@ const resources = {
         sessionRecognitionTitle: '세션 인식',
         sessionRecognitionDescription:
           'CCS는 여기서 보편적인 우선순위를 약속하지 않습니다. 실제로 업스트림 백엔드는 명시적 세션 또는 스레드 ID를 먼저 선호한 다음, 메타데이터 필드로 폴백하고 최종적으로 시작 프롬프트 기록 기반 해시로 폴백합니다.',
+        retryTitle: '자동 재시도',
+        retryHint: '재시도 횟수 / 최대 대기(초)',
+        requestRetryLabel: '재시도 횟수',
+        maxRetryIntervalLabel: '최대 재시도 간격(초)',
+        retryRangeError: '0 이상의 정수여야 합니다.',
       },
       extendedContext: {
         extendedContext: '확장 컨텍스트',
@@ -13158,6 +13187,7 @@ const resources = {
         noProfilesToSync: '동기화할 프로필이 없습니다',
         syncFailed: '동기화 실패: {{error}}',
         sessionAffinityUpdated: '세션 어피니티 {{state}}.',
+        cliproxyRetryUpdated: '재시도 설정이 업데이트되었습니다.',
         providerAuthSuccess: '{{provider}} 인증 성공',
         providerDeviceCodeInCallback:
           '프로바이더가 콜백 모드에서 디바이스 코드 흐름을 반환했습니다',
