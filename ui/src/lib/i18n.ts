@@ -230,6 +230,7 @@ const resources = {
         codexFastVariants: 'Fast variants',
         effortLabel: 'Effort',
         effortAuto: 'Auto',
+        fastTier: 'Fast',
       },
       createAuthProfileDialog: {
         title: 'Create New Account',
@@ -2958,6 +2959,7 @@ const resources = {
         codexFastVariants: '快速变体',
         effortLabel: '推理强度',
         effortAuto: '自动',
+        fastTier: '快速',
       },
       createAuthProfileDialog: {
         title: '创建新账号',
@@ -5569,6 +5571,7 @@ const resources = {
         codexFastVariants: 'Biến thể nhanh',
         effortLabel: 'Mức suy luận',
         effortAuto: 'Tự động',
+        fastTier: 'Nhanh',
       },
       createAuthProfileDialog: {
         title: 'Tạo tài khoản mới',
@@ -8296,6 +8299,7 @@ const resources = {
         codexFastVariants: '高速バリアント',
         effortLabel: '推論レベル',
         effortAuto: '自動',
+        fastTier: '高速',
       },
       createAuthProfileDialog: {
         title: '新しいアカウントを作成',
@@ -11046,6 +11050,7 @@ const resources = {
         codexFastVariants: '빠른 변형',
         effortLabel: '추론 강도',
         effortAuto: '자동',
+        fastTier: '고속',
       },
       createAuthProfileDialog: {
         title: '새 계정 생성',

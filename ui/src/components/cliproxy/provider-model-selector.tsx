@@ -18,15 +18,22 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import type { CliproxyProviderRoutingHints } from '@/lib/api-client';
 import type { CodexEffort, CodexServiceTier } from '@/lib/codex-effort';
 import {
+  applyCodexServiceTierSuffix,
   getCodexEffortDisplay,
   getCodexEffortVariants,
   parseCodexEffort,
   parseCodexServiceTier,
+  stripCodexEffortSuffix,
 } from '@/lib/codex-effort';
-import { getResolvedCatalogModels, getSupplementalCatalogModels } from '@/lib/model-catalogs';
+import {
+  findCatalogModel,
+  getResolvedCatalogModels,
+  getSupplementalCatalogModels,
+} from '@/lib/model-catalogs';
 import { getReasoningAdapter } from '@/lib/reasoning-control';
 import { cn } from '@/lib/utils';
 
@@ -586,6 +593,19 @@ export function FlexibleModelSelector({
     !selectableReasoningLevels.includes(currentReasoningLevel)
       ? [...selectableReasoningLevels, currentReasoningLevel]
       : selectableReasoningLevels;
+  const currentServiceTier = isCodexProvider ? parseCodexServiceTier(value) : undefined;
+  const selectedCodexBaseModel =
+    isCodexProvider && catalog && value
+      ? findCatalogModel(
+          catalog.provider,
+          stripCodexEffortSuffix(normalizeModelValue(value, routing)),
+          catalog
+        )
+      : undefined;
+  const showFastToggle =
+    isCodexProvider &&
+    (selectedCodexBaseModel?.codexServiceTiers?.includes('fast') === true ||
+      currentServiceTier === 'fast');
 
   return (
     <div className="space-y-1.5">
@@ -701,6 +721,19 @@ export function FlexibleModelSelector({
               ))}
             </SelectContent>
           </Select>
+        )}
+        {showFastToggle && (
+          <label className="flex h-9 shrink-0 items-center gap-1.5">
+            <Switch
+              checked={currentServiceTier === 'fast'}
+              onCheckedChange={(checked) => onChange(applyCodexServiceTierSuffix(value, checked))}
+              disabled={disabled || !value}
+              aria-label={t('providerModelSelector.fastTier')}
+            />
+            <span className="text-xs text-muted-foreground">
+              {t('providerModelSelector.fastTier')}
+            </span>
+          </label>
         )}
       </div>
       {selectedRoutingHint ? (

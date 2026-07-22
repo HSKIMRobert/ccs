@@ -66,6 +66,12 @@ export function applyCodexEffortSuffix(
   return [normalizedModelId, effort, parsed.serviceTier].filter(Boolean).join('-');
 }
 
+export function applyCodexServiceTierSuffix(modelId: string | undefined, enabled: boolean): string {
+  const parsed = parseCodexTuningSuffix(modelId);
+  if (!parsed.baseModel) return parsed.baseModel;
+  return [parsed.baseModel, parsed.effort, enabled ? 'fast' : undefined].filter(Boolean).join('-');
+}
+
 export function getCodexEffortVariants(
   modelId: string,
   maxEffort: CodexEffort | undefined,

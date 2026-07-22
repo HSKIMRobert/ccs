@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyCodexEffortSuffix,
+  applyCodexServiceTierSuffix,
   getCodexEffortDisplay,
   getCodexEffortVariants,
   getSelectableCodexEfforts,
@@ -108,6 +109,40 @@ describe('codex effort helpers', () => {
       'gpt-5.4-high',
       'gpt-5.4-high-fast',
     ]);
+  });
+});
+
+describe('applyCodexServiceTierSuffix', () => {
+  it('adds the fast tier while preserving the effort suffix', () => {
+    expect(applyCodexServiceTierSuffix('gpt-5.4-high', true)).toBe('gpt-5.4-high-fast');
+  });
+
+  it('removes only the fast tier', () => {
+    expect(applyCodexServiceTierSuffix('gpt-5.4-high-fast', false)).toBe('gpt-5.4-high');
+    expect(applyCodexServiceTierSuffix('gpt-5.4-fast', false)).toBe('gpt-5.4');
+  });
+
+  it('preserves routing prefixes', () => {
+    expect(applyCodexServiceTierSuffix('codex/gpt-5.6-sol', true)).toBe('codex/gpt-5.6-sol-fast');
+  });
+
+  it('is idempotent and safe on empty input', () => {
+    expect(applyCodexServiceTierSuffix('gpt-5.4-fast', true)).toBe('gpt-5.4-fast');
+    expect(applyCodexServiceTierSuffix('gpt-5.4', false)).toBe('gpt-5.4');
+    expect(applyCodexServiceTierSuffix(undefined, true)).toBe('');
+    expect(applyCodexServiceTierSuffix('', true)).toBe('');
+  });
+
+  it('composes with applyCodexEffortSuffix in both orders', () => {
+    expect(applyCodexEffortSuffix(applyCodexServiceTierSuffix('gpt-5.4', true), 'high')).toBe(
+      'gpt-5.4-high-fast'
+    );
+    expect(applyCodexServiceTierSuffix(applyCodexEffortSuffix('gpt-5.4', 'high'), true)).toBe(
+      'gpt-5.4-high-fast'
+    );
+    expect(
+      applyCodexEffortSuffix(applyCodexServiceTierSuffix('gpt-5.4-high-fast', false), 'low')
+    ).toBe('gpt-5.4-low');
   });
 });
 
