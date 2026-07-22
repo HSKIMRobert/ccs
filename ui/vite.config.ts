@@ -62,10 +62,18 @@ export default defineConfig({
       allow: [UI_ROOT, REPO_ROOT],
     },
     proxy: {
-      '/api': 'http://localhost:3000',
+      // The dashboard's CSRF guard rejects loopback origins on a different
+      // port, so the dev proxy must present the API server's own origin.
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        headers: { origin: 'http://localhost:3000' },
+      },
       '/ws': {
         target: 'ws://localhost:3000',
         ws: true,
+        changeOrigin: true,
+        headers: { origin: 'http://localhost:3000' },
       },
     },
   },
