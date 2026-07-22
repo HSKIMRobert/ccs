@@ -12,6 +12,8 @@ import {
   type CreatePreset,
   type RoutingStrategy,
   type CliproxySessionAffinityApplyResult,
+  type CliproxyRetryApplyResult,
+  type CliproxyRetryValues,
 } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -106,57 +108,23 @@ export function useUpdateCliproxySessionAffinity() {
   });
 }
 
-/** CLIProxy request-retry config (config.cliproxy.retry). Defaults to disabled (0/0). */
-export interface CliproxyRetryConfig {
-  request_retry: number;
-  max_retry_interval: number;
-}
-
-const DEFAULT_CLIPROXY_RETRY_CONFIG: CliproxyRetryConfig = {
-  request_retry: 0,
-  max_retry_interval: 0,
-};
-
 export function useCliproxyRetryConfig() {
   return useQuery({
     queryKey: ['cliproxy-retry-config'],
-    queryFn: async (): Promise<CliproxyRetryConfig> => {
-      const config = await api.config.get();
-      const cliproxy = config.cliproxy as { retry?: Partial<CliproxyRetryConfig> } | undefined;
-      return {
-        request_retry:
-          cliproxy?.retry?.request_retry ?? DEFAULT_CLIPROXY_RETRY_CONFIG.request_retry,
-        max_retry_interval:
-          cliproxy?.retry?.max_retry_interval ?? DEFAULT_CLIPROXY_RETRY_CONFIG.max_retry_interval,
-      };
-    },
+    queryFn: () => api.cliproxy.getRetrySettings(),
   });
 }
 
-/**
- * Save CLIProxy retry config. Reuses the generic unified-config save path
- * (PUT /config) — retry is a static opt-in default, not a live-proxy setting
- * like routing.strategy/session_affinity, so it does not need a dedicated
- * management-API round trip.
- */
 export function useUpdateCliproxyRetryConfig() {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
 
   return useMutation({
-    mutationFn: async (retry: CliproxyRetryConfig): Promise<CliproxyRetryConfig> => {
-      const config = await api.config.get();
-      const existingCliproxy = (config.cliproxy ?? {}) as Record<string, unknown>;
-      await api.config.update({
-        ...config,
-        cliproxy: { ...existingCliproxy, retry },
-      });
-      return retry;
-    },
-    onSuccess: (retry) => {
-      queryClient.setQueryData(['cliproxy-retry-config'], retry);
+    mutationFn: (retry: CliproxyRetryValues) => api.cliproxy.updateRetrySettings(retry),
+    onSuccess: (result: CliproxyRetryApplyResult) => {
+      queryClient.setQueryData(['cliproxy-retry-config'], result);
       queryClient.invalidateQueries({ queryKey: ['cliproxy-retry-config'] });
-      toast.success(t('toasts.cliproxyRetryUpdated'));
+      toast.success(result.message || t('toasts.cliproxyRetryUpdated'));
     },
     onError: (error: Error) => {
       toast.error(error.message);
