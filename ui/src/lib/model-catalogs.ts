@@ -1150,6 +1150,9 @@ export function buildUiCatalog(
           : (model.extendedContext ?? staticModel?.extendedContext),
       presetMapping: staticModel?.presetMapping,
       reasoningLevels: model.reasoningLevels ?? staticModel?.reasoningLevels,
+      codexMaxEffort: model.codexMaxEffort ?? staticModel?.codexMaxEffort,
+      codexEfforts: model.codexEfforts ?? staticModel?.codexEfforts,
+      codexServiceTiers: model.codexServiceTiers ?? staticModel?.codexServiceTiers,
     };
   });
 
