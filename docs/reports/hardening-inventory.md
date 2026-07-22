@@ -6,12 +6,12 @@ Scope: `src/**/*.{ts,tsx,js,jsx,mjs,cjs}`
 
 | Metric | Value |
 |---|---:|
-| Sync fs occurrences (all) | 2301 |
-| Sync fs files affected (all) | 247 |
-| Sync fs occurrences (runtime hotpaths) | 1946 |
-| Sync fs files affected (runtime hotpaths) | 197 |
-| Legacy shim markers | 427 |
-| Legacy shim files affected | 164 |
+| Sync fs occurrences (all) | 2358 |
+| Sync fs files affected (all) | 253 |
+| Sync fs occurrences (runtime hotpaths) | 1991 |
+| Sync fs files affected (runtime hotpaths) | 202 |
+| Legacy shim markers | 454 |
+| Legacy shim files affected | 170 |
 
 ## Top Runtime Hotpath Sync fs Files
 
@@ -33,6 +33,7 @@ Scope: `src/**/*.{ts,tsx,js,jsx,mjs,cjs}`
 | File | Marker Count |
 |---|---:|
 | `src/auth/profile-detector.ts` | 18 |
+| `src/web-server/usage/native-quota-collector.ts` | 15 |
 | `src/utils/config-manager.ts` | 13 |
 | `src/cliproxy/__tests__/pool-onboarding-phase5.test.ts` | 12 |
 | `src/cliproxy/executor/__tests__/variant-port-allocation.test.js` | 12 |
@@ -41,7 +42,6 @@ Scope: `src/**/*.{ts,tsx,js,jsx,mjs,cjs}`
 | `src/config/migration-manager.ts` | 9 |
 | `src/cliproxy/config/__tests__/env-builder-provider-url.test.ts` | 8 |
 | `src/cliproxy/executor/__tests__/variant-port-edge-cases.test.js` | 8 |
-| `src/cliproxy/config/__tests__/config-generator.test.js` | 7 |
 
 ## Explicit Shim/Re-export Files
 
@@ -56,14 +56,14 @@ Scope: `src/**/*.{ts,tsx,js,jsx,mjs,cjs}`
 
 | Metric | Value |
 |---|---:|
-| typed-error adoption (typed/total throws) | 8.6% (37/431) |
-| typed-error adoption (P4 locked subdomains) | 91.3% (21/23), target 40% |
-| hotpath console.error/warn occurrences | 267 (569 total, 302 CLI-UX exempt) |
+| typed-error adoption (typed/total throws) | 15.4% (68/440) |
+| typed-error adoption (P4 locked subdomains) | 91.7% (22/24), target 40% |
+| hotpath console.error/warn occurrences | 266 (571 total, 305 CLI-UX exempt) |
 | hotpath console.error/warn files | 82 |
-| files with createLogger | 64/745 |
+| files with createLogger | 65/751 |
 | subdomains with zero createLogger | 15 (api, bin, channels, cliproxy, cliproxy/accounts, cliproxy/ai-providers, cliproxy/binary, cliproxy/config, cliproxy/management, cliproxy/sync, cliproxy/types, config, dispatcher, shared, types) |
-| files > 400 LOC | 89 |
-| files > 600 LOC | 39 |
+| files > 400 LOC | 91 |
+| files > 600 LOC | 42 |
 
 ### Top Hotpath console.error/warn Files
 
@@ -89,19 +89,19 @@ Scope: `src/**/*.{ts,tsx,js,jsx,mjs,cjs}`
 
 | File | LOC |
 |---|---:|
-| `src/web-server/routes/cliproxy-auth-routes.ts` | 1515 |
-| `src/cliproxy/auth/oauth-handler.ts` | 1455 |
+| `src/web-server/usage/native-quota-collector.ts` | 1662 |
+| `src/web-server/routes/cliproxy-auth-routes.ts` | 1531 |
+| `src/cliproxy/auth/oauth-handler.ts` | 1467 |
 | `src/cursor/cursor-executor.ts` | 1234 |
-| `src/web-server/model-pricing.ts` | 1070 |
+| `src/web-server/model-pricing.ts` | 1105 |
+| `src/cliproxy/auth/oauth-process.ts` | 1048 |
 | `src/web-server/routes/settings-routes.ts` | 1041 |
-| `src/cliproxy/config/env-builder.ts` | 1037 |
 | `src/cliproxy/proxy/tool-sanitization-proxy.ts` | 1020 |
-| `src/cliproxy/auth/oauth-process.ts` | 1018 |
+| `src/cliproxy/config/env-builder.ts` | 1017 |
 | `src/cliproxy/config/generator.ts` | 1012 |
-| `src/commands/cliproxy/variant-subcommand.ts` | 978 |
+| `src/commands/cliproxy/variant-subcommand.ts` | 997 |
 | `src/cliproxy/quota/quota-manager.ts` | 954 |
 | `src/web-server/services/codex-dashboard-service.ts` | 940 |
 | `src/glmt/glmt-proxy.ts` | 939 |
 | `src/cliproxy/accounts/registry.ts` | 871 |
-| `src/channels/official-channels-runtime.ts` | 867 |
 
