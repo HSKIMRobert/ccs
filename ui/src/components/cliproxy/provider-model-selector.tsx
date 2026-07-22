@@ -21,19 +21,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import type { CliproxyProviderRoutingHints } from '@/lib/api-client';
 import type { CodexEffort, CodexServiceTier } from '@/lib/codex-effort';
 import {
-  applyCodexEffortSuffix,
   getCodexEffortDisplay,
   getCodexEffortVariants,
-  getSelectableCodexEfforts,
   parseCodexEffort,
   parseCodexServiceTier,
-  stripCodexEffortSuffix,
 } from '@/lib/codex-effort';
-import {
-  findCatalogModel,
-  getResolvedCatalogModels,
-  getSupplementalCatalogModels,
-} from '@/lib/model-catalogs';
+import { getResolvedCatalogModels, getSupplementalCatalogModels } from '@/lib/model-catalogs';
+import { getReasoningAdapter } from '@/lib/reasoning-control';
 import { cn } from '@/lib/utils';
 
 /** Model entry from catalog */
@@ -61,6 +55,8 @@ export interface ModelEntry {
   codexEfforts?: CodexEffort[];
   /** Additional Codex service-tier suffixes supported by this model in the dashboard UI. */
   codexServiceTiers?: CodexServiceTier[];
+  /** Reasoning-level suffixes this model supports via paren syntax in the dashboard UI. */
+  reasoningLevels?: string[];
 }
 
 /** Provider catalog */
@@ -575,22 +571,21 @@ export function FlexibleModelSelector({
       }
     : null;
   const hasAvailableModels = recommendedOptions.length + allModelOptions.length > 0;
-  const currentEffort = isCodexProvider ? parseCodexEffort(value) : undefined;
-  const baseModelId = isCodexProvider
-    ? stripCodexEffortSuffix(normalizeModelValue(value, routing))
-    : '';
-  const selectedCatalogModel =
-    isCodexProvider && baseModelId && catalog
-      ? findCatalogModel(catalog.provider, baseModelId, catalog)
-      : undefined;
-  const selectableEfforts = getSelectableCodexEfforts(
-    selectedCatalogModel?.codexMaxEffort,
-    selectedCatalogModel?.codexEfforts
-  );
-  const effortOptions =
-    currentEffort && !selectableEfforts.includes(currentEffort)
-      ? [...selectableEfforts, currentEffort]
-      : selectableEfforts;
+  const reasoningAdapter = getReasoningAdapter(catalog?.provider);
+  const currentReasoningLevel = reasoningAdapter?.parse(value);
+  const selectableReasoningLevels =
+    reasoningAdapter && catalog
+      ? reasoningAdapter.getOptions(
+          reasoningAdapter.strip(normalizeModelValue(value, routing)),
+          catalog
+        )
+      : null;
+  const reasoningOptions =
+    selectableReasoningLevels &&
+    currentReasoningLevel &&
+    !selectableReasoningLevels.includes(currentReasoningLevel)
+      ? [...selectableReasoningLevels, currentReasoningLevel]
+      : selectableReasoningLevels;
 
   return (
     <div className="space-y-1.5">
@@ -683,16 +678,11 @@ export function FlexibleModelSelector({
             ...allModelOptions,
           ]}
         />
-        {isCodexProvider && (
+        {reasoningAdapter && reasoningOptions && (
           <Select
-            value={currentEffort ?? 'auto'}
-            onValueChange={(effort) =>
-              onChange(
-                applyCodexEffortSuffix(
-                  value,
-                  effort === 'auto' ? undefined : (effort as CodexEffort)
-                )
-              )
+            value={currentReasoningLevel ?? 'auto'}
+            onValueChange={(level) =>
+              onChange(reasoningAdapter.apply(value, level === 'auto' ? undefined : level))
             }
             disabled={disabled || !value}
           >
@@ -704,9 +694,9 @@ export function FlexibleModelSelector({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="auto">{t('providerModelSelector.effortAuto')}</SelectItem>
-              {effortOptions.map((effort) => (
-                <SelectItem key={effort} value={effort}>
-                  {effort}
+              {reasoningOptions.map((level) => (
+                <SelectItem key={level} value={level}>
+                  {level}
                 </SelectItem>
               ))}
             </SelectContent>
