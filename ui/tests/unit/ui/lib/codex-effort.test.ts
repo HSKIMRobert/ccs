@@ -3,6 +3,7 @@ import {
   applyCodexEffortSuffix,
   getCodexEffortDisplay,
   getCodexEffortVariants,
+  getSelectableCodexEfforts,
   parseCodexEffort,
   parseCodexServiceTier,
   stripCodexEffortSuffix,
@@ -85,6 +86,15 @@ describe('codex effort helpers', () => {
     ]);
   });
 
+  it('replaces effort while preserving the fast service tier', () => {
+    expect(applyCodexEffortSuffix('gpt-5.4-high-fast', 'low')).toBe('gpt-5.4-low-fast');
+    expect(applyCodexEffortSuffix('gpt-5.4-high-fast', undefined)).toBe('gpt-5.4-fast');
+  });
+
+  it('applies effort suffixes to routing-prefixed model ids', () => {
+    expect(applyCodexEffortSuffix('codex/gpt-5.6-sol', 'high')).toBe('codex/gpt-5.6-sol-high');
+  });
+
   it('builds fast variants for models with a fast service tier', () => {
     expect(getCodexEffortVariants('gpt-5.4', 'high', ['fast'])).toEqual([
       'gpt-5.4',
@@ -97,6 +107,38 @@ describe('codex effort helpers', () => {
       'gpt-5.4-medium-fast',
       'gpt-5.4-high',
       'gpt-5.4-high-fast',
+    ]);
+  });
+});
+
+describe('getSelectableCodexEfforts', () => {
+  it('returns the explicit efforts list when provided', () => {
+    expect(getSelectableCodexEfforts('xhigh', ['low', 'medium', 'high', 'xhigh'])).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+    ]);
+  });
+
+  it('returns efforts up to and including the max effort', () => {
+    expect(getSelectableCodexEfforts('xhigh')).toEqual([
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+    ]);
+    expect(getSelectableCodexEfforts('medium')).toEqual(['minimal', 'low', 'medium']);
+  });
+
+  it('returns all efforts for custom models without catalog metadata', () => {
+    expect(getSelectableCodexEfforts(undefined)).toEqual([
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
     ]);
   });
 });
