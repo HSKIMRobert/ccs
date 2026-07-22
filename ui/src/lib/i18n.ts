@@ -228,6 +228,9 @@ const resources = {
           'Pinned model is not currently advertised by the proxy: {{model}}',
         codexReasoningVariants: 'Reasoning variants',
         codexFastVariants: 'Fast variants',
+        effortLabel: 'Effort',
+        effortAuto: 'Auto',
+        fastTier: 'Fast',
       },
       createAuthProfileDialog: {
         title: 'Create New Account',
@@ -1582,7 +1585,7 @@ const resources = {
       // ========================================
       heroSection: {
         title: 'CCS Config',
-        subtitle: 'Claude Code Switch Dashboard',
+        subtitle: 'Claude Codex Switch Dashboard',
       },
       hubFooter: {
         logs: 'Logs',
@@ -2960,6 +2963,9 @@ const resources = {
         pinnedModelNotAdvertised: '固定模型当前未被代理广播：{{model}}',
         codexReasoningVariants: '推理变体',
         codexFastVariants: '快速变体',
+        effortLabel: '推理强度',
+        effortAuto: '自动',
+        fastTier: '快速',
       },
       createAuthProfileDialog: {
         title: '创建新账号',
@@ -4233,7 +4239,7 @@ const resources = {
       },
       heroSection: {
         title: 'CCS Config',
-        subtitle: 'Claude Code Switch Dashboard',
+        subtitle: 'Claude Codex Switch Dashboard',
       },
       hubFooter: {
         logs: '日志',
@@ -5575,6 +5581,9 @@ const resources = {
         pinnedModelNotAdvertised: 'Mô hình ghim hiện không được proxy quảng bá: {{model}}',
         codexReasoningVariants: 'Biến thể lý luận',
         codexFastVariants: 'Biến thể nhanh',
+        effortLabel: 'Mức suy luận',
+        effortAuto: 'Tự động',
+        fastTier: 'Nhanh',
       },
       createAuthProfileDialog: {
         title: 'Tạo tài khoản mới',
@@ -6943,7 +6952,7 @@ const resources = {
       },
       heroSection: {
         title: 'CCS Config',
-        subtitle: 'Bảng điều khiển Claude Code Switch',
+        subtitle: 'Bảng điều khiển Claude Codex Switch',
       },
       hubFooter: {
         logs: 'Nhật ký',
@@ -8306,6 +8315,9 @@ const resources = {
         pinnedModelNotAdvertised: 'ピンモデルは現在プロキシから通知されていません: {{model}}',
         codexReasoningVariants: '推論バリアント',
         codexFastVariants: '高速バリアント',
+        effortLabel: '推論レベル',
+        effortAuto: '自動',
+        fastTier: '高速',
       },
       createAuthProfileDialog: {
         title: '新しいアカウントを作成',
@@ -10136,7 +10148,7 @@ const resources = {
       },
       heroSection: {
         title: 'CCS Config',
-        subtitle: 'Claude Code Switch Dashboard',
+        subtitle: 'Claude Codex Switch Dashboard',
       },
       homePageV2: {
         title: 'ホーム',
@@ -11060,6 +11072,9 @@ const resources = {
         pinnedModelNotAdvertised: '고정된 모델이 현재 프록시에서 알리지 않고 있습니다: {{model}}',
         codexReasoningVariants: '추론 변형',
         codexFastVariants: '빠른 변형',
+        effortLabel: '추론 강도',
+        effortAuto: '자동',
+        fastTier: '고속',
       },
       createAuthProfileDialog: {
         title: '새 계정 생성',
@@ -12414,7 +12429,7 @@ const resources = {
       // ========================================
       heroSection: {
         title: 'CCS Config',
-        subtitle: 'Claude Code Switch 대시보드',
+        subtitle: 'Claude Codex Switch 대시보드',
       },
       hubFooter: {
         logs: '로그',
