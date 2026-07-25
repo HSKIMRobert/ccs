@@ -983,6 +983,18 @@ export const MODEL_CATALOGS: Record<string, ProviderCatalog> = {
         },
       },
       {
+        id: 'claude-opus-5',
+        name: 'Claude Opus 5',
+        description: 'Latest premium model',
+        extendedContext: true,
+        presetMapping: {
+          default: 'claude-opus-5',
+          opus: 'claude-opus-5',
+          sonnet: 'claude-sonnet-5',
+          haiku: 'claude-haiku-4-5-20251001',
+        },
+      },
+      {
         id: 'claude-opus-4-8',
         name: 'Claude Opus 4.8',
         description: 'Latest flagship model',
