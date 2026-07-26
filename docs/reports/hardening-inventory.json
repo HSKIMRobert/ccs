@@ -1,118 +1,11 @@
 {
   "scope": "src/**/*.{ts,tsx,js,jsx,mjs,cjs}",
   "syncFs": {
-    "totalOccurrences": 2358,
-    "filesAffected": 253,
-    "hotpathOccurrences": 1991,
-    "hotpathFilesAffected": 202,
+    "totalOccurrences": 2378,
+    "filesAffected": 254,
+    "hotpathOccurrences": 1102,
+    "hotpathFilesAffected": 150,
     "topHotpathFiles": [
-      {
-        "file": "src/cliproxy/__tests__/pool-routing-phase3.test.ts",
-        "count": 96,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "mkdtempSync",
-          "readFileSync",
-          "rmSync",
-          "writeFileSync"
-        ],
-        "markers": []
-      },
-      {
-        "file": "src/cliproxy/config/__tests__/config-generator.test.js",
-        "count": 88,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "mkdtempSync",
-          "readFileSync",
-          "rmSync",
-          "writeFileSync"
-        ],
-        "markers": []
-      },
-      {
-        "file": "src/cliproxy/config/__tests__/claude-model-neutral.test.ts",
-        "count": 63,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "mkdtempSync",
-          "readFileSync",
-          "rmSync",
-          "statSync",
-          "writeFileSync"
-        ],
-        "markers": []
-      },
-      {
-        "file": "src/cliproxy/accounts/__tests__/account-safety-quota-exhaustion.test.ts",
-        "count": 48,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "mkdtempSync",
-          "readFileSync",
-          "rmSync",
-          "writeFileSync"
-        ],
-        "markers": []
-      },
-      {
-        "file": "src/cliproxy/accounts/__tests__/account-registry-integrity.test.ts",
-        "count": 45,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "mkdtempSync",
-          "readdirSync",
-          "readFileSync",
-          "rmSync",
-          "writeFileSync"
-        ],
-        "markers": []
-      },
-      {
-        "file": "src/cliproxy/executor/__tests__/variant-port-integration.test.js",
-        "count": 36,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "readdirSync",
-          "readFileSync",
-          "rmSync",
-          "unlinkSync",
-          "writeFileSync"
-        ],
-        "markers": []
-      },
-      {
-        "file": "src/cliproxy/executor/__tests__/composite-variant-service.test.ts",
-        "count": 33,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "mkdtempSync",
-          "readFileSync",
-          "rmSync",
-          "writeFileSync"
-        ],
-        "markers": []
-      },
-      {
-        "file": "src/cliproxy/executor/__tests__/variant-port-edge-cases.test.js",
-        "count": 33,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "readdirSync",
-          "rmSync",
-          "unlinkSync",
-          "writeFileSync"
-        ],
-        "markers": []
-      },
       {
         "file": "src/utils/browser/mcp-installer.ts",
         "count": 32,
@@ -130,14 +23,136 @@
         "markers": []
       },
       {
-        "file": "src/cliproxy/__tests__/session-tracker-port.test.js",
-        "count": 31,
+        "file": "src/utils/image-analysis/mcp-installer.ts",
+        "count": 30,
+        "calls": [
+          "chmodSync",
+          "copyFileSync",
+          "existsSync",
+          "mkdirSync",
+          "readFileSync",
+          "renameSync",
+          "statSync",
+          "unlinkSync",
+          "writeFileSync"
+        ],
+        "markers": []
+      },
+      {
+        "file": "src/utils/claude-symlink-manager.ts",
+        "count": 27,
+        "calls": [
+          "copyFileSync",
+          "existsSync",
+          "lstatSync",
+          "mkdirSync",
+          "readdirSync",
+          "readlinkSync",
+          "renameSync",
+          "rmSync",
+          "statSync",
+          "symlinkSync",
+          "unlinkSync"
+        ],
+        "markers": []
+      },
+      {
+        "file": "src/cliproxy/config/env-builder.ts",
+        "count": 25,
         "calls": [
           "existsSync",
           "mkdirSync",
-          "readdirSync",
           "readFileSync",
+          "writeFileSync"
+        ],
+        "markers": []
+      },
+      {
+        "file": "src/management/shared-manager/migrations.ts",
+        "count": 25,
+        "calls": [
+          "copyFileSync",
+          "cpSync",
+          "existsSync",
+          "lstatSync",
+          "mkdirSync",
+          "readdirSync",
+          "symlinkSync",
+          "unlinkSync",
+          "writeFileSync"
+        ],
+        "markers": []
+      },
+      {
+        "file": "src/utils/websearch/mcp-installer.ts",
+        "count": 25,
+        "calls": [
+          "chmodSync",
+          "copyFileSync",
+          "existsSync",
+          "mkdirSync",
+          "readFileSync",
+          "renameSync",
+          "statSync",
+          "unlinkSync",
+          "writeFileSync"
+        ],
+        "markers": []
+      },
+      {
+        "file": "src/cliproxy/services/variant-settings.ts",
+        "count": 23,
+        "calls": [
+          "existsSync",
+          "mkdirSync",
+          "readFileSync",
+          "renameSync",
+          "unlinkSync",
+          "writeFileSync"
+        ],
+        "markers": []
+      },
+      {
+        "file": "src/management/recovery-manager.ts",
+        "count": 23,
+        "calls": [
+          "copyFileSync",
+          "existsSync",
+          "lstatSync",
+          "mkdirSync",
+          "renameSync",
+          "statSync",
+          "unlinkSync",
+          "writeFileSync"
+        ],
+        "markers": []
+      },
+      {
+        "file": "src/utils/shell-completion.ts",
+        "count": 23,
+        "calls": [
+          "appendFileSync",
+          "copyFileSync",
+          "existsSync",
+          "mkdirSync",
+          "readFileSync",
+          "statSync"
+        ],
+        "markers": []
+      },
+      {
+        "file": "src/utils/claude-dir-installer.ts",
+        "count": 21,
+        "calls": [
+          "copyFileSync",
+          "cpSync",
+          "existsSync",
+          "lstatSync",
+          "mkdirSync",
+          "readdirSync",
+          "renameSync",
           "rmSync",
+          "statSync",
           "unlinkSync",
           "writeFileSync"
         ],
@@ -285,8 +300,8 @@
     ]
   },
   "legacyShim": {
-    "totalMarkers": 454,
-    "filesAffected": 170,
+    "totalMarkers": 456,
+    "filesAffected": 171,
     "topFiles": [
       {
         "file": "src/auth/profile-detector.ts",
@@ -476,11 +491,11 @@
   },
   "maintainability": {
     "typedErrors": {
-      "totalThrows": 440,
-      "typedThrows": 68,
+      "totalThrows": 446,
+      "typedThrows": 74,
       "plainThrows": 312,
       "otherThrows": 60,
-      "adoptionRatio": 0.1545,
+      "adoptionRatio": 0.1659,
       "topSubdomainsByThrows": [
         {
           "subdomain": "web-server",
@@ -558,8 +573,8 @@
     },
     "loggerCoverage": {
       "filesWithCreateLogger": 65,
-      "totalSourceFiles": 751,
-      "coverageRatio": 0.0866,
+      "totalSourceFiles": 752,
+      "coverageRatio": 0.0864,
       "subdomainsWithZeroCreateLogger": [
         "api",
         "bin",
@@ -728,7 +743,11 @@
         },
         {
           "file": "src/web-server/routes/settings-routes.ts",
-          "loc": 1041
+          "loc": 1042
+        },
+        {
+          "file": "src/cliproxy/config/generator.ts",
+          "loc": 1034
         },
         {
           "file": "src/cliproxy/proxy/tool-sanitization-proxy.ts",
@@ -737,10 +756,6 @@
         {
           "file": "src/cliproxy/config/env-builder.ts",
           "loc": 1017
-        },
-        {
-          "file": "src/cliproxy/config/generator.ts",
-          "loc": 1012
         },
         {
           "file": "src/commands/cliproxy/variant-subcommand.ts",
