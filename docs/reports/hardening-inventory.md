@@ -93,7 +93,7 @@ Scope: `src/**/*.{ts,tsx,js,jsx,mjs,cjs}`
 | `src/web-server/routes/cliproxy-auth-routes.ts` | 1531 |
 | `src/cliproxy/auth/oauth-handler.ts` | 1467 |
 | `src/cursor/cursor-executor.ts` | 1234 |
-| `src/web-server/model-pricing.ts` | 1105 |
+| `src/web-server/model-pricing.ts` | 1127 |
 | `src/cliproxy/auth/oauth-process.ts` | 1048 |
 | `src/web-server/routes/settings-routes.ts` | 1042 |
 | `src/cliproxy/config/generator.ts` | 1034 |
