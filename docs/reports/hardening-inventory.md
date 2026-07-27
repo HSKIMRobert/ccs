@@ -6,27 +6,27 @@ Scope: `src/**/*.{ts,tsx,js,jsx,mjs,cjs}`
 
 | Metric | Value |
 |---|---:|
-| Sync fs occurrences (all) | 2358 |
-| Sync fs files affected (all) | 253 |
-| Sync fs occurrences (runtime hotpaths) | 1991 |
-| Sync fs files affected (runtime hotpaths) | 202 |
-| Legacy shim markers | 454 |
-| Legacy shim files affected | 170 |
+| Sync fs occurrences (all) | 2378 |
+| Sync fs files affected (all) | 254 |
+| Sync fs occurrences (runtime hotpaths) | 1102 |
+| Sync fs files affected (runtime hotpaths) | 150 |
+| Legacy shim markers | 456 |
+| Legacy shim files affected | 171 |
 
 ## Top Runtime Hotpath Sync fs Files
 
 | File | Sync Calls | API Names |
 |---|---:|---|
-| `src/cliproxy/__tests__/pool-routing-phase3.test.ts` | 96 | existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync |
-| `src/cliproxy/config/__tests__/config-generator.test.js` | 88 | existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync |
-| `src/cliproxy/config/__tests__/claude-model-neutral.test.ts` | 63 | existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync |
-| `src/cliproxy/accounts/__tests__/account-safety-quota-exhaustion.test.ts` | 48 | existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync |
-| `src/cliproxy/accounts/__tests__/account-registry-integrity.test.ts` | 45 | existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync |
-| `src/cliproxy/executor/__tests__/variant-port-integration.test.js` | 36 | existsSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync |
-| `src/cliproxy/executor/__tests__/composite-variant-service.test.ts` | 33 | existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync |
-| `src/cliproxy/executor/__tests__/variant-port-edge-cases.test.js` | 33 | existsSync, mkdirSync, readdirSync, rmSync, unlinkSync, writeFileSync |
 | `src/utils/browser/mcp-installer.ts` | 32 | chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync |
-| `src/cliproxy/__tests__/session-tracker-port.test.js` | 31 | existsSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync |
+| `src/utils/image-analysis/mcp-installer.ts` | 30 | chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync |
+| `src/utils/claude-symlink-manager.ts` | 27 | copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync |
+| `src/cliproxy/config/env-builder.ts` | 25 | existsSync, mkdirSync, readFileSync, writeFileSync |
+| `src/management/shared-manager/migrations.ts` | 25 | copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, symlinkSync, unlinkSync, writeFileSync |
+| `src/utils/websearch/mcp-installer.ts` | 25 | chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync |
+| `src/cliproxy/services/variant-settings.ts` | 23 | existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync |
+| `src/management/recovery-manager.ts` | 23 | copyFileSync, existsSync, lstatSync, mkdirSync, renameSync, statSync, unlinkSync, writeFileSync |
+| `src/utils/shell-completion.ts` | 23 | appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync |
+| `src/utils/claude-dir-installer.ts` | 21 | copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync |
 
 ## Top Legacy Shim Marker Files
 
@@ -56,11 +56,11 @@ Scope: `src/**/*.{ts,tsx,js,jsx,mjs,cjs}`
 
 | Metric | Value |
 |---|---:|
-| typed-error adoption (typed/total throws) | 15.4% (68/440) |
+| typed-error adoption (typed/total throws) | 16.6% (74/446) |
 | typed-error adoption (P4 locked subdomains) | 91.7% (22/24), target 40% |
 | hotpath console.error/warn occurrences | 266 (571 total, 305 CLI-UX exempt) |
 | hotpath console.error/warn files | 82 |
-| files with createLogger | 65/751 |
+| files with createLogger | 65/752 |
 | subdomains with zero createLogger | 15 (api, bin, channels, cliproxy, cliproxy/accounts, cliproxy/ai-providers, cliproxy/binary, cliproxy/config, cliproxy/management, cliproxy/sync, cliproxy/types, config, dispatcher, shared, types) |
 | files > 400 LOC | 91 |
 | files > 600 LOC | 42 |
@@ -95,10 +95,10 @@ Scope: `src/**/*.{ts,tsx,js,jsx,mjs,cjs}`
 | `src/cursor/cursor-executor.ts` | 1234 |
 | `src/web-server/model-pricing.ts` | 1105 |
 | `src/cliproxy/auth/oauth-process.ts` | 1048 |
-| `src/web-server/routes/settings-routes.ts` | 1041 |
+| `src/web-server/routes/settings-routes.ts` | 1042 |
+| `src/cliproxy/config/generator.ts` | 1034 |
 | `src/cliproxy/proxy/tool-sanitization-proxy.ts` | 1020 |
 | `src/cliproxy/config/env-builder.ts` | 1017 |
-| `src/cliproxy/config/generator.ts` | 1012 |
 | `src/commands/cliproxy/variant-subcommand.ts` | 997 |
 | `src/cliproxy/quota/quota-manager.ts` | 954 |
 | `src/web-server/services/codex-dashboard-service.ts` | 940 |
