@@ -29,6 +29,13 @@ export type {
   CLIProxyLoggingConfig,
   CLIProxySafetyConfig,
   CLIProxyRoutingConfig,
+  CLIProxyRetryConfig,
+  CLIProxyPoolRoutingConfig,
+  CLIProxyOAuthModelAliasEntry,
+  CLIProxyOAuthModelAliasConfig,
+  CLIProxyPayloadModelSelector,
+  CLIProxyPayloadOverrideRule,
+  CLIProxyPayloadConfig,
   CLIProxyConfig,
 } from './cliproxy';
 
