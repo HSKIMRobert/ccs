@@ -7,6 +7,7 @@ const resources = {
     translation: {
       locale: {
         en: 'English',
+        'pt-BR': 'Brazilian Portuguese',
         'zh-CN': 'Simplified Chinese',
         vi: 'Vietnamese',
         ja: 'Japanese',
@@ -2791,7 +2792,7 @@ const resources = {
         configurationRequired: 'Configuração Necessária',
       },
       auth: {
-        dashboardTitle: 'Painel CCS',
+        dashboardTitle: 'Claude Codex Switch Dashboard',
         protectedAccessLabel: 'Acesso protegido',
         remoteGuardLabel: 'Proteção de acesso remoto',
         loading: 'Verificando acesso ao painel…',
@@ -2819,7 +2820,7 @@ const resources = {
         safetyNoteLocal:
           'Se você estiver na mesma máquina, a URL localhost continua sendo o caminho mais simples para entrar.',
         safetyNoteSession:
-          'Logins bem-sucedidos criam uma sessão somente HTTP que fica restrita a este host do painel.',
+          'Logins bem-sucedidos criam um cookie HttpOnly restrito a este host do painel.',
         hostStepTitle: 'No host do CCS',
         hostStepDescription:
           'Crie ou reative as credenciais do painel e, em seguida, reabra esta página a partir do dispositivo remoto.',
@@ -2975,6 +2976,9 @@ const resources = {
           'O modelo fixado não está sendo anunciado atualmente pelo proxy: {{model}}',
         codexReasoningVariants: 'Variantes de raciocínio',
         codexFastVariants: 'Variantes rápidas',
+        effortLabel: 'Esforço de raciocínio',
+        effortAuto: 'Automático',
+        fastTier: 'Rápido',
       },
       createAuthProfileDialog: {
         title: 'Criar Nova Conta',
@@ -4747,6 +4751,11 @@ const resources = {
         sessionRecognitionTitle: 'Reconhecimento de sessão',
         sessionRecognitionDescription:
           'O CCS não promete uma ordem de precedência universal aqui. Na prática, os back-ends upstream preferem IDs explícitos de sessão ou thread primeiro, depois recorrem a campos de metadados e, por fim, a um hash baseado no histórico do prompt inicial.',
+        retryTitle: 'Nova tentativa automática',
+        retryHint: 'Tentativas / espera máxima (s)',
+        requestRetryLabel: 'Tentativas da solicitação',
+        maxRetryIntervalLabel: 'Intervalo máximo entre tentativas (segundos)',
+        retryRangeError: 'Deve ser um número inteiro igual ou maior que 0.',
       },
       extendedContext: {
         extendedContext: 'Contexto Estendido',
@@ -5147,6 +5156,7 @@ const resources = {
         noProfilesToSync: 'Nenhum perfil para sincronizar',
         syncFailed: 'Falha na sincronização: {{error}}',
         sessionAffinityUpdated: 'Afinidade de sessão {{state}}.',
+        cliproxyRetryUpdated: 'Configurações de nova tentativa atualizadas.',
         providerAuthSuccess: 'Autenticação do {{provider}} bem-sucedida',
         providerDeviceCodeInCallback: 'O provedor retornou o fluxo Device Code no modo callback',
         providerAuthTimeout: 'A autenticação expirou. Tente novamente.',
