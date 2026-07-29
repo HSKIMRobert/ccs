@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import {
+  buildCursorClaudeLaunchArgs,
   executeCursorProfile,
   generateCursorEnv,
   resolveCursorImageAnalysisEnv,
@@ -18,6 +19,13 @@ const BASE_CONFIG: CursorConfig = {
   ghost_mode: true,
   model: 'gpt-5.3-codex',
 };
+
+it('disallows native WebSearch without CCS steering when the Cursor snapshot is disabled', () => {
+  const args = buildCursorClaudeLaunchArgs(['smoke'], false);
+  expect(args).toContain('--disallowedTools');
+  expect(args).toContain('WebSearch');
+  expect(args).not.toContain('--append-system-prompt');
+});
 
 describe('cursor-profile-executor', () => {
   let originalCcsHome: string | undefined;

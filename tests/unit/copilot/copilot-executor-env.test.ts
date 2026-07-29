@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import {
+  buildCopilotClaudeLaunchArgs,
   generateCopilotEnv,
   resolveCopilotImageAnalysisEnv,
 } from '../../../src/copilot/copilot-executor';
@@ -14,6 +15,13 @@ const baseConfig: CopilotConfig = {
   wait_on_limit: true,
   model: 'gpt-4.1',
 };
+
+it('disallows native WebSearch without CCS steering when the Copilot snapshot is disabled', () => {
+  const args = buildCopilotClaudeLaunchArgs(['smoke'], false, false);
+  expect(args).toContain('--disallowedTools');
+  expect(args).toContain('WebSearch');
+  expect(args).not.toContain('--append-system-prompt');
+});
 
 describe('generateCopilotEnv', () => {
   it('normalizes deprecated raptor-mini model selections to the safe default', () => {
