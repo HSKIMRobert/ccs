@@ -34,7 +34,9 @@ export function displayClaudeQuotaSection(
     const defaultMark = accountInfo?.isDefault ? color(' (default)', 'info') : '';
 
     if (!quota.success) {
-      console.log(`  ${fail(accountLabel)}${defaultMark}`);
+      const statusIcon =
+        quota.errorCode === 'usage_probe_unavailable' ? warn(accountLabel) : fail(accountLabel);
+      console.log(`  ${statusIcon}${defaultMark}`);
       displayQuotaFailure(quota);
       console.log('');
       continue;
