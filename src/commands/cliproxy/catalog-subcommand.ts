@@ -181,6 +181,7 @@ interface CatalogJsonModel {
   name: string;
   tier?: 'free' | 'pro' | 'ultra';
   description?: string;
+  contextWindow?: number;
   deprecated?: boolean;
   deprecationReason?: string;
   broken?: boolean;
@@ -206,6 +207,7 @@ export function handleCatalogJson(): void {
       const entry: CatalogJsonModel = { id: m.id, name: m.name };
       if (m.tier !== undefined) entry.tier = m.tier;
       if (m.description !== undefined) entry.description = m.description;
+      if (m.contextWindow !== undefined) entry.contextWindow = m.contextWindow;
       if (m.deprecated !== undefined) entry.deprecated = m.deprecated;
       if (m.deprecationReason !== undefined) entry.deprecationReason = m.deprecationReason;
       if (m.broken !== undefined) entry.broken = m.broken;

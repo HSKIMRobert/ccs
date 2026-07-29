@@ -38,6 +38,7 @@ import {
 } from '../../config/config-loader-facade';
 import { buildCliproxyProviderPath, buildLocalProviderBaseUrl } from './provider-route';
 import { ConfigError } from '../../errors/error-types';
+import { findModel } from '../model-catalog';
 
 export { buildCliproxyProviderPath, buildLocalProviderBaseUrl } from './provider-route';
 
@@ -68,9 +69,36 @@ const CURSOR_LEGACY_ENV_OVERRIDE_KEYS = new Set([
   'ANTHROPIC_AUTH_TOKEN',
   'ANTHROPIC_API_KEY',
 ]);
+const CLAUDE_AUTO_COMPACT_WINDOW_ENV = 'CLAUDE_CODE_AUTO_COMPACT_WINDOW';
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Add Claude Code's auto-compact window for a known effective model.
+ * Existing env keys win by presence, including an explicit empty value.
+ */
+export function applyClaudeAutoCompactWindow(
+  envVars: NodeJS.ProcessEnv,
+  provider: CLIProxyProvider
+): NodeJS.ProcessEnv {
+  if (Object.prototype.hasOwnProperty.call(envVars, CLAUDE_AUTO_COMPACT_WINDOW_ENV)) {
+    return envVars;
+  }
+
+  const modelId = envVars.ANTHROPIC_MODEL;
+  if (typeof modelId !== 'string' || modelId.trim().length === 0) return envVars;
+
+  const contextWindow = findModel(provider, modelId)?.contextWindow;
+  if (typeof contextWindow !== 'number' || !Number.isInteger(contextWindow) || contextWindow <= 0) {
+    return envVars;
+  }
+
+  return {
+    ...envVars,
+    [CLAUDE_AUTO_COMPACT_WINDOW_ENV]: String(contextWindow),
+  };
 }
 
 /**

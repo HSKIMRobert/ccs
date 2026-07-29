@@ -52,6 +52,8 @@ export interface ModelEntry {
   tier?: 'free' | 'pro' | 'ultra';
   /** Optional description for the model */
   description?: string;
+  /** Total context window in tokens when authoritatively known */
+  contextWindow?: number;
   /** Model has known issues - show warning when selected */
   broken?: boolean;
   /** Issue URL for broken models */
@@ -95,6 +97,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'claude-opus-4-6-thinking',
         name: 'Claude Opus 4.6 Thinking',
         description: 'Latest flagship, extended thinking',
+        contextWindow: 200000,
         nativeImageInput: true,
         thinking: {
           type: 'budget',
@@ -111,6 +114,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'claude-sonnet-4-6',
         name: 'Claude Sonnet 4.6',
         description: 'Latest Sonnet with thinking budget support',
+        contextWindow: 200000,
         nativeImageInput: true,
         thinking: {
           type: 'budget',
@@ -194,6 +198,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'gpt-5.6-sol',
         name: 'GPT-5.6 Sol',
         description: 'Latest frontier agentic coding model.',
+        contextWindow: 372000,
         thinking: {
           type: 'levels',
           levels: ['low', 'medium', 'high', 'xhigh'],
@@ -206,6 +211,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'gpt-5.6-terra',
         name: 'GPT-5.6 Terra',
         description: 'Balanced agentic coding model for everyday work.',
+        contextWindow: 372000,
         thinking: {
           type: 'levels',
           levels: ['low', 'medium', 'high', 'xhigh'],
@@ -218,6 +224,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'gpt-5.6-luna',
         name: 'GPT-5.6 Luna',
         description: 'Fast and affordable agentic coding model.',
+        contextWindow: 372000,
         thinking: {
           type: 'levels',
           levels: ['low', 'medium', 'high', 'xhigh'],
@@ -232,6 +239,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         tier: 'pro',
         description:
           'Newest Codex-released GPT-5 family model; falls back to GPT-5.4 on free plans',
+        contextWindow: 272000,
         thinking: {
           type: 'levels',
           levels: ['low', 'medium', 'high', 'xhigh'],
@@ -244,6 +252,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'gpt-5.4',
         name: 'GPT-5.4',
         description: 'Recommended Codex default for most coding and agentic tasks',
+        contextWindow: 1050000,
         thinking: {
           type: 'levels',
           levels: ['low', 'medium', 'high', 'xhigh'],
@@ -256,6 +265,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'gpt-5.4-mini',
         name: 'GPT-5.4 Mini',
         description: 'Fast, lower-cost Codex option for lighter tasks and haiku-tier routing',
+        contextWindow: 400000,
         thinking: {
           type: 'levels',
           levels: ['low', 'medium', 'high'],
@@ -281,6 +291,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         tier: 'pro',
         description:
           'Research preview model for ChatGPT Pro subscribers, optimized for near-instant coding iteration',
+        contextWindow: 128000,
         thinking: {
           type: 'levels',
           levels: ['low', 'medium', 'high', 'xhigh'],
@@ -310,11 +321,13 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'grok-build-0.1',
         name: 'Grok Build 0.1',
         description: 'Fast coding model for agentic software engineering workflows',
+        contextWindow: 256000,
       },
       {
         id: 'grok-4.5',
         name: 'Grok 4.5',
         description: 'Frontier model for coding, engineering, and agentic workflows',
+        contextWindow: 500000,
         thinking: {
           type: 'levels',
           levels: ['low', 'medium', 'high'],
@@ -325,6 +338,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'grok-4.3',
         name: 'Grok 4.3',
         description: 'General-purpose Grok model with a one-million-token context window',
+        contextWindow: 1000000,
         thinking: {
           type: 'levels',
           levels: ['none', 'low', 'medium', 'high'],
@@ -335,34 +349,40 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'grok-4.20-0309-reasoning',
         name: 'Grok 4.20 0309 Reasoning',
         description: 'Reasoning model with a two-million-token context window',
+        contextWindow: 2000000,
       },
       {
         id: 'grok-4.20-0309-non-reasoning',
         name: 'Grok 4.20 0309 Non Reasoning',
         description: 'Non-reasoning model with a two-million-token context window',
+        contextWindow: 2000000,
       },
       {
         id: 'grok-4.20-multi-agent-0309',
         name: 'Grok 4.20 Multi Agent 0309',
         description: 'Multi-agent model with a two-million-token context window',
+        contextWindow: 2000000,
         thinking: { type: 'levels', levels: ['low', 'medium', 'high'] },
       },
       {
         id: 'grok-3-mini',
         name: 'Grok 3 Mini',
         description: 'Compact reasoning model',
+        contextWindow: 131072,
         thinking: { type: 'levels', levels: ['low', 'medium', 'high'] },
       },
       {
         id: 'grok-3-mini-fast',
         name: 'Grok 3 Mini Fast',
         description: 'Faster compact reasoning model',
+        contextWindow: 131072,
         thinking: { type: 'levels', levels: ['low', 'medium', 'high'] },
       },
       {
         id: 'grok-composer-2.5-fast',
         name: 'Grok Composer 2.5 Fast',
         description: 'Fast Composer model for lightweight coding tasks',
+        contextWindow: 200000,
       },
     ],
   },
@@ -375,56 +395,67 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'qoder/auto',
         name: 'Qoder Auto',
         description: 'Auto selects the best Qoder model for your prompt',
+        contextWindow: 180000,
       },
       {
         id: 'qoder/ultimate',
         name: 'Qoder Ultimate',
         description: 'Highest quality Qoder tier',
+        contextWindow: 180000,
       },
       {
         id: 'qoder/performance',
         name: 'Qoder Performance',
         description: 'Balanced quality and speed',
+        contextWindow: 272000,
       },
       {
         id: 'qoder/efficient',
         name: 'Qoder Efficient',
         description: 'Cost-efficient Qoder tier',
+        contextWindow: 180000,
       },
       {
         id: 'qoder/lite',
         name: 'Qoder Lite',
         description: 'Fastest and most affordable Qoder tier',
+        contextWindow: 180000,
       },
       {
         id: 'qoder/qmodel',
         name: 'Qwen 3.6 Plus (via Qoder)',
         description: 'Qwen 3.6 Plus frontier model',
+        contextWindow: 180000,
       },
       {
         id: 'qoder/dmodel',
         name: 'DeepSeek V4 Pro (via Qoder)',
         description: 'DeepSeek V4 Pro frontier model',
+        contextWindow: 180000,
       },
       {
         id: 'qoder/dfmodel',
         name: 'DeepSeek V4 Flash (via Qoder)',
         description: 'DeepSeek V4 Flash frontier model',
+        contextWindow: 180000,
       },
       {
         id: 'qoder/gm51model',
         name: 'GLM 5.1 (via Qoder)',
         description: 'GLM 5.1 frontier model',
+        contextWindow: 180000,
       },
       {
         id: 'qoder/kmodel',
         name: 'Kimi K2.6 (via Qoder)',
         description: 'Kimi K2.6 frontier model',
+        contextWindow: 256000,
       },
       {
         id: 'qoder/mmodel',
         name: 'MiniMax M2.7 (via Qoder)',
         description: 'MiniMax M2.7 frontier model',
+        contextWindow: 180000,
       },
     ],
   },
@@ -437,6 +468,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'kimi-k2.5',
         name: 'Kimi K2.5',
         description: 'Latest multimodal model (262K context)',
+        contextWindow: 262144,
         nativeImageInput: true,
         thinking: {
           type: 'budget',
@@ -450,6 +482,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'kimi-k2-thinking',
         name: 'Kimi K2 Thinking',
         description: 'Extended reasoning model',
+        contextWindow: 131072,
         thinking: {
           type: 'budget',
           min: 1024,
@@ -462,6 +495,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'kimi-k2',
         name: 'Kimi K2',
         description: 'Flagship coding model',
+        contextWindow: 131072,
       },
     ],
   },
@@ -474,6 +508,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'claude-sonnet-5',
         name: 'Claude Sonnet 5',
         description: 'Latest Sonnet model',
+        contextWindow: 1000000,
         nativeImageInput: true,
         // Sonnet 5 uses adaptive thinking; manual budget_tokens is rejected with 400.
         thinking: {
@@ -488,6 +523,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'claude-fable-5',
         name: 'Claude Fable 5',
         description: 'Most powerful model',
+        contextWindow: 1000000,
         nativeImageInput: true,
         // New tier above Opus. Same adaptive-thinking surface as Opus 4.8:
         // Anthropic accepts only effort levels; manual budget_tokens is rejected with 400.
@@ -520,6 +556,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'claude-opus-4-8',
         name: 'Claude Opus 4.8',
         description: 'Latest flagship model',
+        contextWindow: 1000000,
         nativeImageInput: true,
         // Mirrors 4.7: Anthropic accepts only adaptive thinking levels on the
         // current Opus generation; manual budget_tokens is rejected with 400.
@@ -535,6 +572,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'claude-opus-4-7',
         name: 'Claude Opus 4.7',
         description: 'Previous flagship model',
+        contextWindow: 1000000,
         nativeImageInput: true,
         // Opus 4.7 only supports adaptive thinking on the Anthropic API; manual
         // thinking.type: "enabled" with budget_tokens is rejected with 400.
@@ -552,6 +590,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'claude-opus-4-6',
         name: 'Claude Opus 4.6',
         description: 'Older flagship model',
+        contextWindow: 1000000,
         nativeImageInput: true,
         thinking: {
           type: 'budget',
@@ -566,6 +605,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'claude-sonnet-4-6',
         name: 'Claude Sonnet 4.6',
         description: 'Balanced performance and speed',
+        contextWindow: 200000,
         nativeImageInput: true,
         thinking: {
           type: 'budget',
@@ -580,6 +620,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'claude-opus-4-5-20251101',
         name: 'Claude Opus 4.5',
         description: 'Most capable Claude model',
+        contextWindow: 200000,
         nativeImageInput: true,
         thinking: {
           type: 'budget',
@@ -594,6 +635,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'claude-sonnet-4-5-20250929',
         name: 'Claude Sonnet 4.5',
         description: 'Balanced performance and speed',
+        contextWindow: 200000,
         nativeImageInput: true,
         thinking: {
           type: 'budget',
@@ -608,6 +650,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'claude-sonnet-4-20250514',
         name: 'Claude Sonnet 4',
         description: 'Previous generation Sonnet',
+        contextWindow: 200000,
         nativeImageInput: true,
         thinking: {
           type: 'budget',
@@ -622,6 +665,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         id: 'claude-haiku-4-5-20251001',
         name: 'Claude Haiku 4.5',
         description: 'Fast and efficient',
+        contextWindow: 200000,
         nativeImageInput: true,
         thinking: { type: 'none' },
       },
@@ -675,6 +719,16 @@ export function findModel(provider: CLIProxyProvider, modelId: string): ModelEnt
     .trim()
     .toLowerCase();
   const lookupCandidates = new Set([normalizedId, providerNormalizedId]);
+  if (provider === 'codex') {
+    for (const candidate of [...lookupCandidates]) {
+      const tuningMatch = candidate.match(
+        /^(.*?)(?:-(?:minimal|low|medium|high|xhigh)(?:-fast)?|-fast(?:-(?:minimal|low|medium|high|xhigh))?)$/i
+      );
+      if (tuningMatch?.[1]) {
+        lookupCandidates.add(tuningMatch[1].trim());
+      }
+    }
+  }
   if (isAntigravityProvider(provider)) {
     const migratedRaw = migrateDeniedAntigravityModelAliases(normalizedId).trim().toLowerCase();
     const migratedProvider = migrateDeniedAntigravityModelAliases(providerNormalizedId)
