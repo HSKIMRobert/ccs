@@ -40,6 +40,7 @@ const slowTests = [
   'tests/unit/targets/settings-profile-websearch-launch.test.ts',
   'tests/unit/web-server/cursor-routes.test.ts',
   'tests/unit/web-server/websearch-routes.test.ts',
+  'src/cliproxy/auth/__tests__/oauth-handler-gemini-backend-guidance.test.ts',
 ];
 // CommonJS-heavy JS suites stay slow by default because many of them mutate
 // module cache or process state. Opt them into `test:fast` only after they are

@@ -244,6 +244,7 @@ export class BinaryManager {
 
 export interface EnsureCLIProxyBinaryOptions {
   allowInstall?: boolean;
+  backend?: CLIProxyBackend;
   skipAutoUpdate?: boolean;
 }
 
@@ -252,7 +253,7 @@ export async function ensureCLIProxyBinary(
   verbose = false,
   options: EnsureCLIProxyBinaryOptions = {}
 ): Promise<string> {
-  const configuredBackend = getConfiguredOrDefaultBackend();
+  const configuredBackend = options.backend ?? getConfiguredOrDefaultBackend();
   const backend = resolveLocalBackend(configuredBackend, { notifyOnPlus: true });
 
   // Migrate old shared pin to backend-specific location (one-time migration)

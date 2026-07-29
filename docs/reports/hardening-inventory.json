@@ -300,8 +300,8 @@
     ]
   },
   "legacyShim": {
-    "totalMarkers": 456,
-    "filesAffected": 171,
+    "totalMarkers": 458,
+    "filesAffected": 173,
     "topFiles": [
       {
         "file": "src/auth/profile-detector.ts",
@@ -491,11 +491,11 @@
   },
   "maintainability": {
     "typedErrors": {
-      "totalThrows": 446,
-      "typedThrows": 74,
+      "totalThrows": 452,
+      "typedThrows": 80,
       "plainThrows": 312,
       "otherThrows": 60,
-      "adoptionRatio": 0.1659,
+      "adoptionRatio": 0.177,
       "topSubdomainsByThrows": [
         {
           "subdomain": "web-server",
@@ -540,6 +540,12 @@
           "plain": 17
         },
         {
+          "subdomain": "cliproxy/auth",
+          "count": 16,
+          "typed": 16,
+          "plain": 0
+        },
+        {
           "subdomain": "cliproxy/accounts",
           "count": 13,
           "typed": 0,
@@ -550,12 +556,6 @@
           "count": 12,
           "typed": 12,
           "plain": 0
-        },
-        {
-          "subdomain": "cliproxy/ai-providers",
-          "count": 12,
-          "typed": 0,
-          "plain": 12
         }
       ]
     },
@@ -566,15 +566,15 @@
         "web-server/routes",
         "auth"
       ],
-      "numerator": 22,
-      "denominator": 24,
-      "ratio": 0.9167,
+      "numerator": 28,
+      "denominator": 30,
+      "ratio": 0.9333,
       "targetRatio": 0.4
     },
     "loggerCoverage": {
       "filesWithCreateLogger": 65,
-      "totalSourceFiles": 756,
-      "coverageRatio": 0.086,
+      "totalSourceFiles": 758,
+      "coverageRatio": 0.0858,
       "subdomainsWithZeroCreateLogger": [
         "api",
         "bin",
@@ -609,6 +609,11 @@
           "withLogger": 1
         },
         {
+          "subdomain": "cliproxy/auth",
+          "count": 32,
+          "withLogger": 1
+        },
+        {
           "subdomain": "management",
           "count": 32,
           "withLogger": 1
@@ -617,11 +622,6 @@
           "subdomain": "cliproxy/quota",
           "count": 31,
           "withLogger": 5
-        },
-        {
-          "subdomain": "cliproxy/auth",
-          "count": 30,
-          "withLogger": 1
         },
         {
           "subdomain": "config",
@@ -727,7 +727,7 @@
         },
         {
           "file": "src/cliproxy/auth/oauth-handler.ts",
-          "loc": 1467
+          "loc": 1510
         },
         {
           "file": "src/cursor/cursor-executor.ts",

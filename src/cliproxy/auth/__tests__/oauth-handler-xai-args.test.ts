@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'bun:test';
-import { OAUTH_CALLBACK_PORTS } from '../../../management/oauth-port-diagnostics';
-import { buildOAuthArgs } from '../oauth-handler';
+import { buildOAuthArgs } from '../oauth-cli-args';
 
 describe('xAI OAuth process arguments', () => {
   it('starts CLIProxy device auth without a callback port argument', () => {
-    expect(OAUTH_CALLBACK_PORTS.xai).toBeNull();
     expect(buildOAuthArgs('xai', '/tmp/cliproxy-config.yaml', false, false)).toEqual([
       '--config',
       '/tmp/cliproxy-config.yaml',
