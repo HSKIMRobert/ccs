@@ -10,7 +10,8 @@ For a third-party Claude launch, CCS:
 
 1. suppresses the native `WebSearch` tool because the third-party backend cannot
    execute it;
-2. adds a short steering prompt that prefers the CCS MCP `WebSearch` tool;
+2. when WebSearch is enabled, adds a short steering prompt that prefers the CCS
+   MCP `WebSearch` tool;
 3. when WebSearch is enabled, installs the managed MCP server and adds the
    `ccs-websearch` entry to the applicable Claude configuration;
 4. searches enabled and ready providers in deterministic order.
