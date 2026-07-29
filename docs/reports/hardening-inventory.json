@@ -1,8 +1,8 @@
 {
   "scope": "src/**/*.{ts,tsx,js,jsx,mjs,cjs}",
   "syncFs": {
-    "totalOccurrences": 2379,
-    "filesAffected": 255,
+    "totalOccurrences": 2382,
+    "filesAffected": 256,
     "hotpathOccurrences": 1103,
     "hotpathFilesAffected": 151,
     "topHotpathFiles": [
@@ -742,6 +742,10 @@
           "loc": 1048
         },
         {
+          "file": "src/cliproxy/config/env-builder.ts",
+          "loc": 1045
+        },
+        {
           "file": "src/web-server/routes/settings-routes.ts",
           "loc": 1042
         },
@@ -752,10 +756,6 @@
         {
           "file": "src/cliproxy/proxy/tool-sanitization-proxy.ts",
           "loc": 1020
-        },
-        {
-          "file": "src/cliproxy/config/env-builder.ts",
-          "loc": 1017
         },
         {
           "file": "src/commands/cliproxy/variant-subcommand.ts",
