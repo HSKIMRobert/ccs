@@ -6,8 +6,8 @@ Scope: `src/**/*.{ts,tsx,js,jsx,mjs,cjs}`
 
 | Metric | Value |
 |---|---:|
-| Sync fs occurrences (all) | 2382 |
-| Sync fs files affected (all) | 256 |
+| Sync fs occurrences (all) | 2388 |
+| Sync fs files affected (all) | 257 |
 | Sync fs occurrences (runtime hotpaths) | 1103 |
 | Sync fs files affected (runtime hotpaths) | 151 |
 | Legacy shim markers | 456 |
@@ -60,7 +60,7 @@ Scope: `src/**/*.{ts,tsx,js,jsx,mjs,cjs}`
 | typed-error adoption (P4 locked subdomains) | 91.7% (22/24), target 40% |
 | hotpath console.error/warn occurrences | 266 (571 total, 305 CLI-UX exempt) |
 | hotpath console.error/warn files | 82 |
-| files with createLogger | 65/754 |
+| files with createLogger | 65/756 |
 | subdomains with zero createLogger | 15 (api, bin, channels, cliproxy, cliproxy/accounts, cliproxy/ai-providers, cliproxy/binary, cliproxy/config, cliproxy/management, cliproxy/sync, cliproxy/types, config, dispatcher, shared, types) |
 | files > 400 LOC | 91 |
 | files > 600 LOC | 42 |
@@ -94,10 +94,10 @@ Scope: `src/**/*.{ts,tsx,js,jsx,mjs,cjs}`
 | `src/cliproxy/auth/oauth-handler.ts` | 1467 |
 | `src/cursor/cursor-executor.ts` | 1234 |
 | `src/web-server/model-pricing.ts` | 1127 |
+| `src/cliproxy/config/generator.ts` | 1109 |
 | `src/cliproxy/auth/oauth-process.ts` | 1048 |
 | `src/cliproxy/config/env-builder.ts` | 1045 |
 | `src/web-server/routes/settings-routes.ts` | 1042 |
-| `src/cliproxy/config/generator.ts` | 1034 |
 | `src/cliproxy/proxy/tool-sanitization-proxy.ts` | 1020 |
 | `src/commands/cliproxy/variant-subcommand.ts` | 997 |
 | `src/cliproxy/quota/quota-manager.ts` | 954 |
