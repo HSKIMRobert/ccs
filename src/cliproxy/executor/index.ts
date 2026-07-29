@@ -52,7 +52,7 @@ import {
   resolveCliproxyImageAnalysisEnv,
 } from './env-resolver';
 import { checkOrJoinProxy, registerProxySession } from './session-bridge';
-import { getWebSearchHookEnv } from '../../utils/websearch-manager';
+import { resolveWebSearchLaunchState } from '../../utils/websearch-manager';
 import {
   handleLogout,
   handleImport,
@@ -276,10 +276,9 @@ export async function execClaudeWithCLIProxy(
   await handleImport(authCtx);
 
   // Setup first-class CCS WebSearch runtime for non-strict user launches.
-  const shouldDisplayWebSearchStatus = ensureWebSearchMcpForLaunch();
-  if (shouldDisplayWebSearchStatus) {
-    displayWebSearchStatus();
-  }
+  const webSearchLaunch = resolveWebSearchLaunchState();
+  ensureWebSearchMcpForLaunch(webSearchLaunch.config);
+  displayWebSearchStatus(webSearchLaunch.config);
 
   // 3. Ensure OAuth completed (if provider requires it)
   const remoteAuthToken = proxyConfig.authToken?.trim();
@@ -483,6 +482,7 @@ export async function execClaudeWithCLIProxy(
     compositeDefaultTier: cfg.compositeDefaultTier,
     claudeConfigDir: inheritedClaudeConfigDir,
     imageAnalysisEnv,
+    webSearchEnv: webSearchLaunch.hookEnv,
   });
 
   // 9b. Build env-dependent proxy chain (tool-sanitization + codex-reasoning)
@@ -527,6 +527,7 @@ export async function execClaudeWithCLIProxy(
     compositeDefaultTier: cfg.compositeDefaultTier,
     claudeConfigDir: inheritedClaudeConfigDir,
     imageAnalysisEnv,
+    webSearchEnv: webSearchLaunch.hookEnv,
     browserRuntimeEnv,
   });
 
@@ -542,7 +543,7 @@ export async function execClaudeWithCLIProxy(
     );
   }
 
-  const webSearchEnv = getWebSearchHookEnv();
+  const webSearchEnv = webSearchLaunch.hookEnv;
   if (process.env.CCS_DEBUG) {
     logger.info('browser-env-keys', 'CCS_BROWSER_* keys in environment', {
       keys: Object.keys(env)
@@ -580,6 +581,7 @@ export async function execClaudeWithCLIProxy(
     skipLocalAuth,
     sessionId,
     imageAnalysisMcpReady,
+    webSearchLaunch,
     browserRuntimeEnv,
     inheritedClaudeConfigDir,
     codexReasoningProxy,

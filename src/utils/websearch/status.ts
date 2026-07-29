@@ -18,6 +18,7 @@ import { getOpenCodeCliStatus } from './opencode-cli';
 import { getWebSearchApiKeyStates } from './provider-secrets';
 import { normalizeSearxngBaseUrl, type WebSearchCliInfo, type WebSearchStatus } from './types';
 import { getWebSearchConfig } from '../../config/config-loader-facade';
+import type { WebSearchConfigSnapshot } from './launch-state';
 
 const PROVIDER_STATE_FILE = 'websearch-provider-state.json';
 
@@ -112,8 +113,7 @@ function applyCooldownStatus(
   };
 }
 
-function getLegacyProviderStatuses(): WebSearchCliInfo[] {
-  const wsConfig = getWebSearchConfig();
+function getLegacyProviderStatuses(wsConfig: WebSearchConfigSnapshot): WebSearchCliInfo[] {
   const agyStatus = getAgyCliStatus();
   const geminiStatus = getGeminiCliStatus();
   const grokStatus = getGrokCliStatus();
@@ -197,8 +197,9 @@ function getLegacyProviderStatuses(): WebSearchCliInfo[] {
 /**
  * Get all WebSearch providers with their current status.
  */
-export function getWebSearchCliProviders(): WebSearchCliInfo[] {
-  const wsConfig = getWebSearchConfig();
+export function getWebSearchCliProviders(
+  wsConfig: WebSearchConfigSnapshot = getWebSearchConfig()
+): WebSearchCliInfo[] {
   const apiKeyStates = getWebSearchApiKeyStates();
   const cooldowns = readProviderCooldowns();
   const providers: WebSearchCliInfo[] = [
@@ -283,7 +284,7 @@ export function getWebSearchCliProviders(): WebSearchCliInfo[] {
     },
   ];
 
-  return [...providers, ...getLegacyProviderStatuses()].map((provider) =>
+  return [...providers, ...getLegacyProviderStatuses(wsConfig)].map((provider) =>
     applyCooldownStatus(provider, cooldowns)
   );
 }
@@ -355,17 +356,20 @@ export function buildWebSearchReadiness(
 /**
  * Get WebSearch readiness status for display.
  */
-export function getWebSearchReadiness(): WebSearchStatus {
-  const wsConfig = getWebSearchConfig();
-  const providers = getWebSearchCliProviders();
+export function getWebSearchReadiness(
+  wsConfig: WebSearchConfigSnapshot = getWebSearchConfig()
+): WebSearchStatus {
+  const providers = getWebSearchCliProviders(wsConfig);
   return buildWebSearchReadiness(wsConfig.enabled, providers);
 }
 
 /**
  * Display WebSearch status (single line, equilibrium UX).
  */
-export function displayWebSearchStatus(): void {
-  const status = getWebSearchReadiness();
+export function displayWebSearchStatus(
+  wsConfig: WebSearchConfigSnapshot = getWebSearchConfig()
+): void {
+  const status = getWebSearchReadiness(wsConfig);
 
   switch (status.readiness) {
     case 'ready':
