@@ -331,9 +331,9 @@ const PRICING_REGISTRY: Record<string, ModelPricing> = {
       fast: OPUS_48_FAST_RATES,
     },
   },
-  // Claude Opus 5 ($5/$25) — Claude 5 generation Opus (released 2026-07-14).
-  // Rates mirror Opus 4.8 (same Opus tier); fast mode reuses the 2x premium
-  // pending official Opus 5 numbers. Registered explicitly so it resolves to
+  // Claude Opus 5 ($5/$25) — Claude 5 generation Opus (released 2026-07-24).
+  // Rates mirror Opus 4.8 (same Opus tier); fast mode uses Anthropic's documented
+  // $10/$50 rates. Registered explicitly so it resolves to
   // Opus-tier pricing instead of the unknown-model fallback.
   'claude-opus-5': {
     inputPerMillion: 5.0,

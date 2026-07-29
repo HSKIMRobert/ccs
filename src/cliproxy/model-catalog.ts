@@ -504,7 +504,7 @@ export const MODEL_CATALOG: Partial<Record<CLIProxyProvider, ProviderCatalog>> =
         name: 'Claude Opus 5',
         description: 'Latest premium model',
         nativeImageInput: true,
-        // Opus 5 (released 2026-07-14) uses adaptive thinking, matching Sonnet 5
+        // Opus 5 (released 2026-07-24) uses adaptive thinking, matching Sonnet 5
         // and Opus 4.8: Anthropic accepts only effort levels; manual budget_tokens
         // is rejected with 400. Proxy metadata reports zero + dynamic allowed.
         thinking: {
