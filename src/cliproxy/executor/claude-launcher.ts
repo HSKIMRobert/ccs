@@ -15,6 +15,7 @@ import {
   appendThirdPartyWebSearchToolArgs,
   createWebSearchTraceContext,
 } from '../../utils/websearch-manager';
+import type { WebSearchLaunchState } from '../../utils/websearch-manager';
 import { appendThirdPartyImageAnalysisToolArgs } from '../../utils/image-analysis';
 import { appendBrowserToolArgs } from '../../utils/browser';
 import { getDefaultAccount } from '../accounts/account-manager';
@@ -51,6 +52,8 @@ export interface ClaudeLaunchContext {
   sessionId: string | undefined;
   /** Whether image analysis MCP is ready */
   imageAnalysisMcpReady: boolean;
+  /** WebSearch state captured when launch provisioning ran */
+  webSearchLaunch: WebSearchLaunchState;
   /** Browser runtime environment variables (undefined if browser not active) */
   browserRuntimeEnv: NodeJS.ProcessEnv | undefined;
   /** Inherited Claude config dir for continuity */
@@ -82,6 +85,7 @@ export async function launchClaude(context: ClaudeLaunchContext): Promise<ChildP
     skipLocalAuth,
     sessionId,
     imageAnalysisMcpReady,
+    webSearchLaunch,
     browserRuntimeEnv,
     inheritedClaudeConfigDir,
     codexReasoningProxy,
@@ -124,8 +128,12 @@ export async function launchClaude(context: ClaudeLaunchContext): Promise<ChildP
     ? appendBrowserToolArgs(imageAnalysisArgs)
     : imageAnalysisArgs;
   const launchArgs = isSubcommand
-    ? appendThirdPartyWebSearchToolArgs(browserArgs)
-    : ['--settings', settingsPath, ...appendThirdPartyWebSearchToolArgs(browserArgs)];
+    ? appendThirdPartyWebSearchToolArgs(browserArgs, webSearchLaunch.enabled)
+    : [
+        '--settings',
+        settingsPath,
+        ...appendThirdPartyWebSearchToolArgs(browserArgs, webSearchLaunch.enabled),
+      ];
 
   // Inject web search trace context into env
   const traceEnv = createWebSearchTraceContext({

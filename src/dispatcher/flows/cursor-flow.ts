@@ -5,7 +5,10 @@
  */
 
 import { fail, info } from '../../utils/ui';
-import { ensureWebSearchMcpForLaunch } from '../../utils/websearch-manager';
+import {
+  ensureWebSearchMcpForLaunch,
+  resolveWebSearchLaunchState,
+} from '../../utils/websearch-manager';
 import { ensureProfileHooks as ensureImageAnalyzerHooks } from '../../utils/hooks/image-analyzer-profile-hook-injector';
 import { installImageAnalyzerHook } from '../../utils/hooks';
 import type { ProfileDispatchContext } from '../dispatcher-context';
@@ -19,7 +22,8 @@ export async function runCursorFlow(ctx: ProfileDispatchContext): Promise<void> 
     resolveProfileContinuityInheritance,
   } = ctx;
 
-  ensureWebSearchMcpForLaunch();
+  const webSearchLaunch = resolveWebSearchLaunchState();
+  ensureWebSearchMcpForLaunch(webSearchLaunch.config);
   installImageAnalyzerHook();
   ensureImageAnalyzerHooks({
     profileName: profileInfo.name,
@@ -48,7 +52,8 @@ export async function runCursorFlow(ctx: ProfileDispatchContext): Promise<void> 
     cursorConfig,
     remainingArgs,
     continuityInheritance.claudeConfigDir,
-    claudeCli
+    claudeCli,
+    webSearchLaunch
   );
   process.exit(exitCode);
 }

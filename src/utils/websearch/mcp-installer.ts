@@ -16,6 +16,7 @@ import {
   isClaudeUserConfigLockUnavailableError as isLockUnavailableError,
   withClaudeUserConfigLock,
 } from '../claude-user-config-lock';
+import type { WebSearchConfigSnapshot } from './launch-state';
 
 const WEBSEARCH_MCP_SERVER = 'ccs-websearch-server.cjs';
 const WEBSEARCH_MCP_SERVER_NAME = 'ccs-websearch';
@@ -189,14 +190,15 @@ function removeManagedServerConfig(configPath: string): boolean {
   }
 }
 
-export function installWebSearchMcpServer(): boolean {
-  const wsConfig = getWebSearchConfig();
+export function installWebSearchMcpServer(
+  wsConfig: WebSearchConfigSnapshot = getWebSearchConfig()
+): boolean {
   if (!wsConfig.enabled) {
     appendWebSearchTrace('websearch_mcp_install_skipped', { reason: 'disabled' });
     return false;
   }
 
-  if (!installWebSearchHook()) {
+  if (!installWebSearchHook(wsConfig)) {
     appendWebSearchTrace('websearch_mcp_install_failed', { reason: 'hook_unavailable' });
     if (process.env.CCS_DEBUG) {
       process.stderr.write(
@@ -267,8 +269,9 @@ export function installWebSearchMcpServer(): boolean {
   }
 }
 
-export function ensureWebSearchMcpConfig(): boolean {
-  const wsConfig = getWebSearchConfig();
+export function ensureWebSearchMcpConfig(
+  wsConfig: WebSearchConfigSnapshot = getWebSearchConfig()
+): boolean {
   if (!wsConfig.enabled) {
     appendWebSearchTrace('websearch_mcp_config_skipped', { reason: 'disabled' });
     return false;
@@ -366,15 +369,16 @@ export function ensureWebSearchMcpConfig(): boolean {
   }
 }
 
-export function ensureWebSearchMcp(): boolean {
-  const wsConfig = getWebSearchConfig();
+export function ensureWebSearchMcp(
+  wsConfig: WebSearchConfigSnapshot = getWebSearchConfig()
+): boolean {
   if (!wsConfig.enabled) {
     appendWebSearchTrace('websearch_mcp_ensure_skipped', { reason: 'disabled' });
     return false;
   }
 
-  const installed = installWebSearchMcpServer();
-  const configured = installed && ensureWebSearchMcpConfig();
+  const installed = installWebSearchMcpServer(wsConfig);
+  const configured = installed && ensureWebSearchMcpConfig(wsConfig);
   appendWebSearchTrace('websearch_mcp_ensure_result', { installed, configured });
   return installed && configured;
 }
@@ -428,13 +432,14 @@ export function uninstallWebSearchMcp(): boolean {
   return removedConfig || removedServer;
 }
 
-export function ensureWebSearchMcpOrThrow(): void {
-  const wsConfig = getWebSearchConfig();
+export function ensureWebSearchMcpOrThrow(
+  wsConfig: WebSearchConfigSnapshot = getWebSearchConfig()
+): void {
   if (!wsConfig.enabled) {
     return;
   }
 
-  if (!ensureWebSearchMcp()) {
+  if (!ensureWebSearchMcp(wsConfig)) {
     throw new Error('WebSearch is enabled, but CCS could not prepare the local WebSearch tool.');
   }
 }
@@ -447,7 +452,6 @@ export function ensureWebSearchMcpOrThrow(): void {
  * native WebSearch and inject fallback steering while the constrained MCP
  * search path is unavailable.
  */
-export function ensureWebSearchMcpForLaunch(): boolean {
-  ensureWebSearchMcpOrThrow();
-  return true;
+export function ensureWebSearchMcpForLaunch(wsConfig: WebSearchConfigSnapshot): void {
+  ensureWebSearchMcpOrThrow(wsConfig);
 }

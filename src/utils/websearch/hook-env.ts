@@ -9,6 +9,7 @@
 import { normalizeSearxngBaseUrl } from './types';
 import { resolveAllowedWebSearchTraceFile } from './trace';
 import { getWebSearchConfig } from '../../config/config-loader-facade';
+import type { WebSearchConfigSnapshot } from './launch-state';
 
 /**
  * Get environment variables for WebSearch hook configuration.
@@ -17,8 +18,9 @@ import { getWebSearchConfig } from '../../config/config-loader-facade';
  *
  * @returns Record of environment variables to set before spawning Claude
  */
-export function getWebSearchHookEnv(): Record<string, string> {
-  const wsConfig = getWebSearchConfig();
+export function getWebSearchHookEnv(
+  wsConfig: WebSearchConfigSnapshot = getWebSearchConfig()
+): Record<string, string> {
   const env: Record<string, string> = {
     CCS_WEBSEARCH_ENABLED: '0',
     CCS_WEBSEARCH_SKIP: '0',

@@ -14,6 +14,7 @@ import { getCcsHooksDir } from '../config-manager';
 import { getClaudeSettingsPath } from '../claude-config-path';
 import { isCcsWebSearchHook, deduplicateCcsHooks } from './hook-utils';
 import { getWebSearchConfig } from '../../config/config-loader-facade';
+import type { WebSearchConfigSnapshot } from './launch-state';
 
 // Hook file name
 const WEBSEARCH_HOOK = 'websearch-transformer.cjs';
@@ -35,9 +36,10 @@ export function getHookPath(): string {
  * Get WebSearch hook configuration for settings.json
  * Timeout is computed from max provider timeout in config.yaml + buffer
  */
-export function getWebSearchHookConfig(): Record<string, unknown> {
+export function getWebSearchHookConfig(
+  wsConfig: WebSearchConfigSnapshot = getWebSearchConfig()
+): Record<string, unknown> {
   const hookPath = getHookPath();
-  const wsConfig = getWebSearchConfig();
 
   // Compute max timeout from enabled providers
   const timeouts: number[] = [];

@@ -573,8 +573,8 @@
     },
     "loggerCoverage": {
       "filesWithCreateLogger": 65,
-      "totalSourceFiles": 753,
-      "coverageRatio": 0.0863,
+      "totalSourceFiles": 754,
+      "coverageRatio": 0.0862,
       "subdomainsWithZeroCreateLogger": [
         "api",
         "bin",
@@ -605,7 +605,7 @@
         },
         {
           "subdomain": "utils",
-          "count": 89,
+          "count": 90,
           "withLogger": 1
         },
         {

@@ -5,7 +5,10 @@
  */
 
 import { fail, info } from '../../utils/ui';
-import { ensureWebSearchMcpForLaunch } from '../../utils/websearch-manager';
+import {
+  ensureWebSearchMcpForLaunch,
+  resolveWebSearchLaunchState,
+} from '../../utils/websearch-manager';
 import { ensureImageAnalysisMcpOrThrow } from '../../utils/image-analysis';
 import {
   ensureProfileHooks as ensureImageAnalyzerHooks,
@@ -23,7 +26,8 @@ export async function runCopilotFlow(ctx: ProfileDispatchContext): Promise<void>
     resolveProfileContinuityInheritance,
   } = ctx;
 
-  ensureWebSearchMcpForLaunch();
+  const webSearchLaunch = resolveWebSearchLaunchState();
+  ensureWebSearchMcpForLaunch(webSearchLaunch.config);
   const imageAnalysisMcpReady = ensureImageAnalysisMcpOrThrow();
   if (resolvedTarget === 'claude') {
     if (imageAnalysisMcpReady) {
@@ -60,7 +64,8 @@ export async function runCopilotFlow(ctx: ProfileDispatchContext): Promise<void>
     copilotConfig,
     remainingArgs,
     continuityInheritance.claudeConfigDir,
-    claudeCli
+    claudeCli,
+    webSearchLaunch
   );
   process.exit(exitCode);
 }

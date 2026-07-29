@@ -18,11 +18,11 @@ import { normalizeCopilotConfigWithWarnings } from './copilot-model-normalizer';
 import { CopilotStatus } from './types';
 import { fail, info, ok, warn } from '../utils/ui';
 import {
-  getWebSearchHookEnv,
   appendThirdPartyWebSearchToolArgs,
   createWebSearchTraceContext,
   syncWebSearchMcpToConfigDir,
 } from '../utils/websearch-manager';
+import type { WebSearchLaunchState } from '../utils/websearch-manager';
 import {
   appendThirdPartyImageAnalysisToolArgs,
   ensureImageAnalysisMcpOrThrow,
@@ -69,6 +69,17 @@ export async function getCopilotStatus(config: CopilotConfig): Promise<CopilotSt
       port: normalizedConfig.port,
     },
   };
+}
+
+export function buildCopilotClaudeLaunchArgs(
+  claudeArgs: string[],
+  imageAnalysisMcpReady: boolean,
+  webSearchEnabled: boolean
+): string[] {
+  const imageAnalysisArgs = imageAnalysisMcpReady
+    ? appendThirdPartyImageAnalysisToolArgs(claudeArgs)
+    : claudeArgs;
+  return appendThirdPartyWebSearchToolArgs(imageAnalysisArgs, webSearchEnabled);
 }
 
 /**
@@ -185,7 +196,8 @@ export async function executeCopilotProfile(
   config: CopilotConfig,
   claudeArgs: string[],
   claudeConfigDir?: string,
-  claudeCliPath: string = 'claude'
+  claudeCliPath: string = 'claude',
+  webSearchLaunch?: WebSearchLaunchState
 ): Promise<number> {
   const { config: normalizedConfig, warnings } = normalizeCopilotConfigWithWarnings(config);
 
@@ -276,7 +288,7 @@ export async function executeCopilotProfile(
   syncImageAnalysisMcpToConfigDir(claudeConfigDir);
 
   // Merge with current environment (global env first, copilot overrides, then hook env vars)
-  const webSearchEnv = getWebSearchHookEnv();
+  const webSearchEnv = webSearchLaunch?.hookEnv ?? {};
   const imageAnalysisResolution = await resolveCopilotImageAnalysisEnv();
   const imageAnalysisProvisioningFailed =
     !imageAnalysisMcpReady && imageAnalysisResolution.env.CCS_IMAGE_ANALYSIS_ENABLED === '1';
@@ -305,10 +317,11 @@ export async function executeCopilotProfile(
   // Spawn Claude CLI
   const spawnStartedAt = Date.now();
   return new Promise((resolve) => {
-    const imageAnalysisArgs = imageAnalysisMcpReady
-      ? appendThirdPartyImageAnalysisToolArgs(claudeArgs)
-      : claudeArgs;
-    const launchArgs = appendThirdPartyWebSearchToolArgs(imageAnalysisArgs);
+    const launchArgs = buildCopilotClaudeLaunchArgs(
+      claudeArgs,
+      imageAnalysisMcpReady,
+      webSearchLaunch?.enabled ?? true
+    );
     const traceEnv = createWebSearchTraceContext({
       launcher: 'copilot.executor',
       args: launchArgs,

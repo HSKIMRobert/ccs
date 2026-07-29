@@ -13,6 +13,7 @@ import { info, warn } from '../ui';
 import { getCcsDir, getCcsHooksDir } from '../config-manager';
 import { getHookPath } from './hook-config';
 import { getWebSearchConfig } from '../../config/config-loader-facade';
+import type { WebSearchConfigSnapshot } from './launch-state';
 
 // Re-export from hook-config for backward compatibility
 export { getHookPath, getWebSearchHookConfig } from './hook-config';
@@ -76,10 +77,10 @@ export function hasWebSearchHook(): boolean {
  *
  * @returns true if hook installed successfully
  */
-export function installWebSearchHook(): boolean {
+export function installWebSearchHook(
+  wsConfig: WebSearchConfigSnapshot = getWebSearchConfig()
+): boolean {
   try {
-    const wsConfig = getWebSearchConfig();
-
     // Skip if disabled
     if (!wsConfig.enabled) {
       if (process.env.CCS_DEBUG) {

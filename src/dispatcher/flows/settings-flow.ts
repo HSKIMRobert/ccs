@@ -16,10 +16,10 @@ import {
 import {
   ensureWebSearchMcpForLaunch,
   displayWebSearchStatus,
-  getWebSearchHookEnv,
   syncWebSearchMcpToConfigDir,
   appendThirdPartyWebSearchToolArgs,
   createWebSearchTraceContext,
+  resolveWebSearchLaunchState,
 } from '../../utils/websearch-manager';
 import {
   ensureImageAnalysisMcpOrThrow,
@@ -94,18 +94,16 @@ export async function runSettingsFlow(ctx: ProfileDispatchContext): Promise<void
   if (browserAttachRuntime?.warning) {
     process.stderr.write(`${warn(browserAttachRuntime.warning)}\n`);
   }
-  let shouldDisplayWebSearchStatus = true;
+  const webSearchLaunch = resolveWebSearchLaunchState();
   if (resolvedTarget === 'claude') {
-    shouldDisplayWebSearchStatus = ensureWebSearchMcpForLaunch();
+    ensureWebSearchMcpForLaunch(webSearchLaunch.config);
     if (browserRuntimeEnv) {
       ensureBrowserMcpOrThrow();
     }
   }
 
   // Display WebSearch status (single line, equilibrium UX)
-  if (shouldDisplayWebSearchStatus) {
-    displayWebSearchStatus();
-  }
+  displayWebSearchStatus(webSearchLaunch.config);
 
   const continuityInheritance =
     resolvedTarget === 'claude'
@@ -275,7 +273,7 @@ export async function runSettingsFlow(ctx: ProfileDispatchContext): Promise<void
     targetRemainingArgs,
   });
 
-  const webSearchEnv = getWebSearchHookEnv();
+  const webSearchEnv = webSearchLaunch.hookEnv;
 
   // Get global env vars (DISABLE_TELEMETRY, etc.) for third-party profiles
   const globalEnvConfig = getGlobalEnvConfig();
@@ -395,11 +393,11 @@ export async function runSettingsFlow(ctx: ProfileDispatchContext): Promise<void
       ? stripClaudeSubcommandSessionArgs(browserArgs)
       : browserArgs;
     const launchArgs = isSubcommand
-      ? appendThirdPartyWebSearchToolArgs(subcommandArgs)
+      ? appendThirdPartyWebSearchToolArgs(subcommandArgs, webSearchLaunch.enabled)
       : [
           '--settings',
           launchSettings.settingsPath,
-          ...appendThirdPartyWebSearchToolArgs(browserArgs),
+          ...appendThirdPartyWebSearchToolArgs(browserArgs, webSearchLaunch.enabled),
         ];
     const traceEnv = createWebSearchTraceContext({
       launcher: 'ccs.settings-profile.proxy',
@@ -418,8 +416,12 @@ export async function runSettingsFlow(ctx: ProfileDispatchContext): Promise<void
   const isSubcommand = isClaudeSubcommandInvocation(browserArgs);
   const subcommandArgs = isSubcommand ? stripClaudeSubcommandSessionArgs(browserArgs) : browserArgs;
   const launchArgs = isSubcommand
-    ? appendThirdPartyWebSearchToolArgs(subcommandArgs)
-    : ['--settings', expandedSettingsPath, ...appendThirdPartyWebSearchToolArgs(browserArgs)];
+    ? appendThirdPartyWebSearchToolArgs(subcommandArgs, webSearchLaunch.enabled)
+    : [
+        '--settings',
+        expandedSettingsPath,
+        ...appendThirdPartyWebSearchToolArgs(browserArgs, webSearchLaunch.enabled),
+      ];
   const traceEnv = createWebSearchTraceContext({
     launcher: 'ccs.settings-profile',
     args: launchArgs,

@@ -19,7 +19,6 @@ import {
 import { applyExtendedContextConfig } from '../config/extended-context-config';
 import { CLIProxyProvider } from '../types';
 import { CompositeTierConfig } from '../../config/unified-config-types';
-import { getWebSearchHookEnv } from '../../utils/websearch-manager';
 import {
   applyImageAnalysisRuntimeOverrides,
   getImageAnalysisHookEnv,
@@ -78,6 +77,8 @@ export interface ProxyChainConfig {
   claudeConfigDir?: string;
   /** Execution-aware image analysis env prepared by the caller */
   imageAnalysisEnv?: Record<string, string>;
+  /** WebSearch hook env captured from the launch configuration snapshot. */
+  webSearchEnv?: Record<string, string>;
   /** Optional browser runtime env for Claude browser MCP reuse. */
   browserRuntimeEnv?: Record<string, string>;
 }
@@ -246,6 +247,7 @@ export function buildClaudeEnvironment(config: ProxyChainConfig): Record<string,
     compositeDefaultTier,
     claudeConfigDir,
     imageAnalysisEnv: resolvedImageAnalysisEnv,
+    webSearchEnv = {},
     browserRuntimeEnv,
   } = config;
 
@@ -386,7 +388,6 @@ export function buildClaudeEnvironment(config: ProxyChainConfig): Record<string,
   };
 
   // Add hook environment variables
-  const webSearchEnv = getWebSearchHookEnv();
   const imageAnalysisEnv = resolvedImageAnalysisEnv ?? getImageAnalysisHookEnv(provider);
 
   // Merge all environment variables (filter undefined values)

@@ -136,7 +136,7 @@ exit 0
     expect(fs.existsSync(claudeArgsLogPath)).toBe(false);
   });
 
-  it('keeps launch non-fatal when WebSearch is disabled', () => {
+  it('keeps native WebSearch disallowed without CCS steering when WebSearch is disabled', () => {
     if (process.platform === 'win32') return;
 
     fs.writeFileSync(
@@ -154,8 +154,26 @@ exit 0
     const launchedArgs = fs.readFileSync(claudeArgsLogPath, 'utf8');
     expect(launchedArgs).toContain('--disallowedTools');
     expect(launchedArgs).toContain('WebSearch');
-    expect(launchedArgs).toContain('--append-system-prompt');
-    expect(launchedArgs).toContain(STEERING_PROMPT_SNIPPET);
+    expect(launchedArgs).not.toContain(STEERING_PROMPT_SNIPPET);
+  });
+
+  it('keeps native WebSearch disallowed without CCS steering for disabled headless launches', () => {
+    if (process.platform === 'win32') return;
+
+    fs.writeFileSync(
+      path.join(ccsDir, 'config.yaml'),
+      ['version: 12', 'websearch:', '  enabled: false', ''].join('\n'),
+      'utf8'
+    );
+
+    const result = runCcs(['glm', '-p', 'smoke'], baseEnv);
+
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(claudeArgsLogPath)).toBe(true);
+    const launchedArgs = fs.readFileSync(claudeArgsLogPath, 'utf8');
+    expect(launchedArgs).toContain('--disallowedTools');
+    expect(launchedArgs).toContain('WebSearch');
+    expect(launchedArgs).not.toContain(STEERING_PROMPT_SNIPPET);
   });
 
   it('writes a source-side launch trace for settings profiles when tracing is enabled', () => {
@@ -187,7 +205,7 @@ exit 0
 
     expect(launchEvent?.launcher).toBe('ccs.settings-profile');
     expect(launchEvent?.nativeWebSearchDisallowed).toBe(true);
-    expect(launchEvent?.steeringPromptApplied).toBe(true);
+    expect(launchEvent?.steeringPromptApplied).toBe(false);
     expect(launchEvent?.settingsPath).toBe(settingsPath);
   });
 });
