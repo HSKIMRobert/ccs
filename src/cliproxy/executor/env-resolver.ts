@@ -15,6 +15,7 @@ import {
   getRemoteEnvVars,
   getCompositeEnvVars,
   applyThinkingConfig,
+  applyClaudeAutoCompactWindow,
 } from '../config/config-generator';
 import { applyExtendedContextConfig } from '../config/extended-context-config';
 import { CLIProxyProvider } from '../types';
@@ -414,8 +415,17 @@ export function buildClaudeEnvironment(config: ProxyChainConfig): Record<string,
     CCS_PROFILE_TYPE: 'cliproxy', // Signal to WebSearch hook this is a third-party provider
   };
 
+  const effectiveProvider =
+    isComposite && compositeTiers && compositeDefaultTier
+      ? compositeTiers[compositeDefaultTier].provider
+      : provider;
+  const autoCompactEnv = applyClaudeAutoCompactWindow(
+    stripClaudeCodeEnv(mergedEnv),
+    effectiveProvider
+  );
+
   return Object.fromEntries(
-    Object.entries(stripClaudeCodeEnv(mergedEnv)).filter(([, v]) => v !== undefined)
+    Object.entries(autoCompactEnv).filter(([, v]) => v !== undefined)
   ) as Record<string, string>;
 }
 

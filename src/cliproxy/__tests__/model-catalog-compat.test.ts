@@ -75,6 +75,18 @@ describe('model-catalog compatibility lookups', () => {
     expect(catalog?.models[0]?.extendedContext).toBeUndefined();
   });
 
+  it('maps positive integer live context length into contextWindow metadata', () => {
+    const catalog = mergeCatalog('xai', [
+      {
+        id: 'grok-4.3',
+        display_name: 'Grok 4.3 Live',
+        context_length: 1_000_000,
+      },
+    ]);
+
+    expect(catalog?.models[0]?.contextWindow).toBe(1_000_000);
+  });
+
   it('does not re-add stale static-only models when live catalog data is present', () => {
     const catalog = mergeCatalog('gemini', [
       {

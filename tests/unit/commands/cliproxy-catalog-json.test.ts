@@ -42,10 +42,7 @@ describe('cliproxy catalog --json output', () => {
   it('includes metadata fields when present on model entries', () => {
     handleCatalogJson();
 
-    const parsed = JSON.parse(capturedOutput[0]) as Record<
-      string,
-      Array<Record<string, unknown>>
-    >;
+    const parsed = JSON.parse(capturedOutput[0]) as Record<string, Array<Record<string, unknown>>>;
     const allModels = Object.values(parsed).flat();
 
     // At least some models in the static catalog have tier set
@@ -56,15 +53,19 @@ describe('cliproxy catalog --json output', () => {
     for (const model of withTier) {
       expect(['free', 'pro', 'ultra']).toContain(model.tier);
     }
+
+    const withContextWindow = allModels.filter((m) => m.contextWindow !== undefined);
+    expect(withContextWindow.length).toBeGreaterThan(0);
+    for (const model of withContextWindow) {
+      expect(Number.isInteger(model.contextWindow)).toBe(true);
+      expect(model.contextWindow as number).toBeGreaterThan(0);
+    }
   });
 
   it('omits undefined optional fields instead of including nulls', () => {
     handleCatalogJson();
 
-    const parsed = JSON.parse(capturedOutput[0]) as Record<
-      string,
-      Array<Record<string, unknown>>
-    >;
+    const parsed = JSON.parse(capturedOutput[0]) as Record<string, Array<Record<string, unknown>>>;
     const allModels = Object.values(parsed).flat();
 
     for (const model of allModels) {
@@ -78,10 +79,7 @@ describe('cliproxy catalog --json output', () => {
   it('includes explicit false boolean values in output', () => {
     handleCatalogJson();
 
-    const parsed = JSON.parse(capturedOutput[0]) as Record<
-      string,
-      Array<Record<string, unknown>>
-    >;
+    const parsed = JSON.parse(capturedOutput[0]) as Record<string, Array<Record<string, unknown>>>;
     const allModels = Object.values(parsed).flat();
 
     // Static catalog has models with extendedContext: false
@@ -92,10 +90,7 @@ describe('cliproxy catalog --json output', () => {
   it('includes thinking configuration when present on models', () => {
     handleCatalogJson();
 
-    const parsed = JSON.parse(capturedOutput[0]) as Record<
-      string,
-      Array<Record<string, unknown>>
-    >;
+    const parsed = JSON.parse(capturedOutput[0]) as Record<string, Array<Record<string, unknown>>>;
     const allModels = Object.values(parsed).flat();
 
     // Static catalog has thinking models (e.g. Claude Opus 4.6 Thinking)
