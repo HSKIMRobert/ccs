@@ -1,8 +1,8 @@
 {
   "scope": "src/**/*.{ts,tsx,js,jsx,mjs,cjs}",
   "syncFs": {
-    "totalOccurrences": 2382,
-    "filesAffected": 256,
+    "totalOccurrences": 2388,
+    "filesAffected": 257,
     "hotpathOccurrences": 1103,
     "hotpathFilesAffected": 151,
     "topHotpathFiles": [
@@ -573,8 +573,8 @@
     },
     "loggerCoverage": {
       "filesWithCreateLogger": 65,
-      "totalSourceFiles": 754,
-      "coverageRatio": 0.0862,
+      "totalSourceFiles": 756,
+      "coverageRatio": 0.086,
       "subdomainsWithZeroCreateLogger": [
         "api",
         "bin",
@@ -738,6 +738,10 @@
           "loc": 1127
         },
         {
+          "file": "src/cliproxy/config/generator.ts",
+          "loc": 1109
+        },
+        {
           "file": "src/cliproxy/auth/oauth-process.ts",
           "loc": 1048
         },
@@ -748,10 +752,6 @@
         {
           "file": "src/web-server/routes/settings-routes.ts",
           "loc": 1042
-        },
-        {
-          "file": "src/cliproxy/config/generator.ts",
-          "loc": 1034
         },
         {
           "file": "src/cliproxy/proxy/tool-sanitization-proxy.ts",

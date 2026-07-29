@@ -19,5 +19,6 @@
  * Version 11 = Discord Channels runtime auto-enable preferences
  * Version 12 = Official Channels multi-provider support (Telegram, Discord, iMessage)
  * Version 13 = Browser automation defaults to safe manual/off exposure
+ * Version 14 = User-defined CLIProxy OAuth aliases and scoped payload rules
  */
-export const UNIFIED_CONFIG_VERSION = 13;
+export const UNIFIED_CONFIG_VERSION = 14;

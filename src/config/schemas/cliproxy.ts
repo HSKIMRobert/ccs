@@ -135,6 +135,50 @@ export interface CLIProxyRetryConfig {
   max_retry_interval?: number;
 }
 
+/** One OAuth model alias exposed by CLIProxy to compatible clients. */
+export interface CLIProxyOAuthModelAliasEntry {
+  /** Upstream model ID used after alias resolution. */
+  name: string;
+  /** Client-visible model ID accepted by CLIProxy. */
+  alias: string;
+  /** Keep both the upstream name and alias visible when supported upstream. */
+  fork?: boolean;
+}
+
+/** Provider/protocol keyed OAuth model aliases (for example `codex`). */
+export type CLIProxyOAuthModelAliasConfig = Record<string, CLIProxyOAuthModelAliasEntry[]>;
+
+/** Model selector for a CLIProxy payload rule. */
+export interface CLIProxyPayloadModelSelector {
+  /** Client-visible model ID to match before OAuth alias resolution. */
+  name: string;
+  /** Optional protocol boundary, such as `codex`. */
+  protocol?: string;
+  /** Additional CLIProxy selector constraints retained across regeneration. */
+  [constraint: string]: unknown;
+}
+
+/** A scoped CLIProxy payload override rule. */
+export interface CLIProxyPayloadOverrideRule {
+  /** All client model/protocol selectors covered by this rule. */
+  models: CLIProxyPayloadModelSelector[];
+  /** Upstream request parameters added when a selector matches. */
+  params: Record<string, unknown>;
+  /** Additional CLIProxy match constraints retained across regeneration. */
+  [constraint: string]: unknown;
+}
+
+/**
+ * User-owned CLIProxy payload configuration.
+ *
+ * Unknown supported payload subsections are retained so CCS regeneration does
+ * not erase options introduced by newer CLIProxy releases.
+ */
+export interface CLIProxyPayloadConfig {
+  override?: CLIProxyPayloadOverrideRule[];
+  [section: string]: unknown;
+}
+
 /** Lower bound (inclusive) accepted for CLIProxy retry config fields. */
 export const CLIPROXY_RETRY_MIN_VALUE = 0;
 
@@ -217,4 +261,8 @@ export interface CLIProxyConfig {
   pool_routing?: CLIProxyPoolRoutingConfig;
   /** Request-retry behavior for transient upstream errors (opt-in, default: disabled) */
   retry?: CLIProxyRetryConfig;
+  /** User-defined OAuth model aliases emitted into managed CLIProxy config. */
+  oauth_model_alias?: CLIProxyOAuthModelAliasConfig;
+  /** Scoped payload rules emitted into managed CLIProxy config. */
+  payload?: CLIProxyPayloadConfig;
 }
