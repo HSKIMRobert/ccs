@@ -285,10 +285,26 @@ describe('model-pricing', () => {
       expect(sonnet5.cacheReadPerMillion).toBe(0.3);
     });
 
+    it('should return Opus-tier pricing for Claude Opus 5', () => {
+      // Opus 5 mirrors Opus 4.8 rates; date-stamped ids resolve via stripDateSuffix.
+      const opus5 = getModelPricing('claude-opus-5');
+      expect(opus5.inputPerMillion).toBe(5.0);
+      expect(opus5.outputPerMillion).toBe(25.0);
+      expect(opus5.cacheCreationPerMillion).toBe(6.25);
+      expect(opus5.cacheReadPerMillion).toBe(0.5);
+      expect(getModelPricing('claude-opus-5-20270101').inputPerMillion).toBe(5.0);
+    });
+
+    it('should apply fast-tier pricing for Claude Opus 5', () => {
+      const opus5fast = getModelPricing('claude-opus-5', { serviceTier: 'fast' });
+      expect(opus5fast.inputPerMillion).toBe(10.0);
+      expect(opus5fast.outputPerMillion).toBe(50.0);
+    });
+
     it('should not map unknown future model families onto known family pricing', () => {
       const fallback = getModelPricing('unknown-model-xyz');
 
-      expect(getModelPricing('claude-opus-5-20270101')).toEqual(fallback);
+      expect(getModelPricing('claude-opus-6-20270101')).toEqual(fallback);
       expect(getModelPricing('gemini-3.2-pro')).toEqual(fallback);
     });
   });
