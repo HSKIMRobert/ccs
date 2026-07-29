@@ -622,7 +622,7 @@ describe('Claude Quota Fetcher', () => {
       expect(result.coreUsage?.fiveHour?.remainingPercent).toBe(60);
     });
 
-    it('does NOT inner-retry on 429; returns retryable single-attempt result honoring Retry-After', async () => {
+    it('classifies 429 as usage-probe unavailability without implying inference is limited', async () => {
       // Safety intent: 429 must NOT trigger an immediate, delay-free inner retry.
       // The outer 10-min cache + circuit breaker honor Retry-After and bound total
       // volume, so a single attempt is made and the retryable signal is surfaced.
@@ -636,18 +636,66 @@ describe('Claude Quota Fetcher', () => {
       global.fetch = mock(() => {
         attempt += 1;
         return Promise.resolve(
-          new Response('', { status: 429, headers: { 'Retry-After': '120' } })
+          new Response(JSON.stringify({ message: 'Rate limited. Please try again later.' }), {
+            status: 429,
+            headers: { 'Retry-After': '0', 'Content-Type': 'application/json' },
+          })
         );
       }) as typeof fetch;
 
       const result = await fetchClaudeQuota('claude-429@example.com');
 
       expect(result.success).toBe(false);
-      // Single attempt — no inner retry burned on the 429.
       expect(attempt).toBe(1);
+      expect(result.error).toBe('Claude usage status temporarily unavailable');
+      expect(result.error).not.toContain('Rate limited');
+      expect(result.errorCode).toBe('usage_probe_unavailable');
+      expect(result.actionHint).toContain('Inference may still be available');
       expect(result.httpStatus).toBe(429);
       expect(result.retryable).toBe(true);
-      expect(result.errorDetail).toBe('retry-after:120');
+      expect(result.errorDetail).toBe('retry-after:0');
+      expect(result.needsReauth).toBe(false);
+    });
+
+    it('keeps 403 OAuth usage responses on the authorization-failure path', async () => {
+      createClaudeAccount('claude-usage-403@example.com', {
+        access_token: 'oauth-token',
+        expired: '2099-01-01T00:00:00.000Z',
+        type: 'claude',
+      });
+
+      global.fetch = mock(() => Promise.resolve(new Response('', { status: 403 }))) as typeof fetch;
+
+      const result = await fetchClaudeQuota('claude-usage-403@example.com');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Not authorized for Claude OAuth usage');
+      expect(result.errorCode).toBeUndefined();
+      expect(result.httpStatus).toBeUndefined();
+      expect(result.retryable).toBeUndefined();
+    });
+
+    it('keeps terminal 5xx responses on the generic retryable server-error path', async () => {
+      createClaudeAccount('claude-usage-503@example.com', {
+        access_token: 'oauth-token',
+        expired: '2099-01-01T00:00:00.000Z',
+        type: 'claude',
+      });
+
+      let attempt = 0;
+      global.fetch = mock(() => {
+        attempt += 1;
+        return Promise.resolve(new Response('Service unavailable', { status: 503 }));
+      }) as typeof fetch;
+
+      const result = await fetchClaudeQuota('claude-usage-503@example.com');
+
+      expect(attempt).toBe(2);
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Service unavailable');
+      expect(result.errorCode).toBeUndefined();
+      expect(result.httpStatus).toBe(503);
+      expect(result.retryable).toBe(true);
     });
 
     it('clears the request timeout before retrying a retryable HTTP error', async () => {
