@@ -14,9 +14,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fail, info, warn, color, ok } from '../../utils/ui';
 import { createLogger } from '../../services/logging';
-import { ensureCLIProxyBinary, getStoredConfiguredBackend } from '../binary-manager';
+import { ensureCLIProxyBinary, getConfiguredBackend } from '../binary-manager';
 import { generateConfig } from '../config/config-generator';
-import { AuthError, ConfigError } from '../../errors/error-types';
+import { AuthError, BinaryError, ConfigError } from '../../errors/error-types';
 import { CLIProxyBackend, CLIProxyProvider } from '../types';
 import {
   AccountInfo,
@@ -37,8 +37,6 @@ import {
   DEFAULT_KIRO_AUTH_METHOD,
   DEFAULT_KIRO_IDC_FLOW,
   getKiroCallbackPort,
-  getKiroCLIAuthArgs,
-  isKiroCLIAuthMethod,
   isKiroDeviceCodeMethod,
   getOAuthConfig,
   ProviderOAuthConfig,
@@ -47,6 +45,7 @@ import {
   getManagementOAuthCallbackPath,
   normalizeKiroAuthMethod,
   normalizeKiroIDCFlow,
+  isKiroCLIAuthMethod,
 } from './auth-types';
 import { isHeadlessEnvironment, killProcessOnPort, showStep } from './environment-detector';
 import {
@@ -60,6 +59,12 @@ import {
 import { executeOAuthProcess } from './oauth-process';
 import { importKiroToken } from './kiro-import';
 import { parseGitLabPatAuthResponse } from './gitlab-pat-response';
+import {
+  getOAuthFlagCandidatesForProvider,
+  probeCliProxyAdvertisedFlags,
+  selectAdvertisedAuthFlag,
+} from './oauth-cli-capabilities';
+import { buildOAuthArgs } from './oauth-cli-args';
 import {
   buildOAuthStartFailureGuidance,
   formatOAuthStartFailureForCli,
@@ -144,14 +149,27 @@ function buildPlusOAuthCredentialMessage(
   displayName: string,
   idEnv: string,
   secretEnv: string,
-  missing?: string[]
+  missing?: string[],
+  options?: { originalFallbackSupported?: boolean }
 ): string {
   const missingText = missing?.length ? ` Missing: ${missing.join(', ')}.` : '';
+  const fallbackText =
+    options?.originalFallbackSupported === false
+      ? ' Current `cliproxy.backend: original` releases do not advertise Gemini login, so switching back to original will not restore Gemini OAuth.'
+      : ` or switch \`cliproxy.backend\` to \`original\` for ${displayName}.`;
   return (
     `${displayName} OAuth from CLIProxy Plus is missing Google OAuth client credentials.` +
     missingText +
     ` Set ${idEnv} and ${secretEnv} before starting CLIProxy Plus,` +
-    ` or switch \`cliproxy.backend\` to \`original\` for ${displayName}.`
+    fallbackText
+  );
+}
+
+function getGeminiOriginalBackendOAuthMessage(): string {
+  return (
+    'Installed CLIProxy binary does not advertise Google Gemini login support (--login). ' +
+    'The active `cliproxy.backend: original` runtime cannot start Gemini OAuth from CCS. ' +
+    `To use Gemini OAuth, switch \`cliproxy.backend\` to \`plus\`, set ${GEMINI_PLUS_CLIENT_ID_ENV} and ${GEMINI_PLUS_CLIENT_SECRET_ENV} before starting CLIProxy Plus, reinstall the maintained Plus fork, and retry auth.`
   );
 }
 
@@ -177,7 +195,9 @@ export function getPlusOAuthCredentialError(
 
   const missing = [entry.idEnv, entry.secretEnv].filter((name) => !env[name]?.trim());
   return missing.length > 0
-    ? buildPlusOAuthCredentialMessage(entry.displayName, entry.idEnv, entry.secretEnv, missing)
+    ? buildPlusOAuthCredentialMessage(entry.displayName, entry.idEnv, entry.secretEnv, missing, {
+        originalFallbackSupported: provider !== 'gemini',
+      })
     : null;
 }
 
@@ -205,7 +225,15 @@ export function getPlusAuthUrlCredentialError(
     const clientId = parsed.searchParams.get('client_id')?.trim();
     return clientId
       ? null
-      : buildPlusOAuthCredentialMessage(entry.displayName, entry.idEnv, entry.secretEnv);
+      : buildPlusOAuthCredentialMessage(
+          entry.displayName,
+          entry.idEnv,
+          entry.secretEnv,
+          undefined,
+          {
+            originalFallbackSupported: provider !== 'gemini',
+          }
+        );
   } catch {
     return null;
   }
@@ -579,12 +607,21 @@ async function runPreflightChecks(
  */
 async function prepareBinary(
   provider: CLIProxyProvider,
-  verbose: boolean
-): Promise<{ binaryPath: string; tokenDir: string; configPath: string } | null> {
+  verbose: boolean,
+  backend: CLIProxyBackend
+): Promise<{
+  binaryPath: string;
+  tokenDir: string;
+  configPath: string;
+  backend: CLIProxyBackend;
+} | null> {
   showStep(1, 4, 'progress', 'Preparing CLIProxy binary...');
 
   try {
-    const binaryPath = await ensureCLIProxyBinary(verbose, { skipAutoUpdate: true });
+    const binaryPath = await ensureCLIProxyBinary(verbose, {
+      backend,
+      skipAutoUpdate: true,
+    });
     process.stdout.write('\x1b[1A\x1b[2K');
     showStep(1, 4, 'ok', 'CLIProxy binary ready');
 
@@ -596,7 +633,7 @@ async function prepareBinary(
       console.error(`[auth] Config generated: ${configPath}`);
     }
 
-    return { binaryPath, tokenDir, configPath };
+    return { binaryPath, tokenDir, configPath, backend };
   } catch (error) {
     process.stdout.write('\x1b[1A\x1b[2K');
     showStep(1, 4, 'fail', 'Failed to prepare CLIProxy binary');
@@ -605,49 +642,31 @@ async function prepareBinary(
   }
 }
 
-export function buildOAuthArgs(
+async function prepareOAuthRuntime(
   provider: CLIProxyProvider,
-  configPath: string,
-  headless: boolean,
-  noIncognito: boolean,
-  options: {
-    kiroMethod?: OAuthOptions['kiroMethod'];
-    kiroIDCStartUrl?: string;
-    kiroIDCRegion?: string;
-    kiroIDCFlow?: OAuthOptions['kiroIDCFlow'];
-  } = {}
-): string[] {
-  const unsupportedReason = getUnsupportedAuthStartReason(provider);
-  if (unsupportedReason) {
-    throw new AuthError(unsupportedReason, provider);
+  verbose: boolean,
+  backend: CLIProxyBackend
+): Promise<{
+  advertisedFlags: ReadonlySet<string>;
+  backend: CLIProxyBackend;
+  binaryPath: string;
+  configPath: string;
+  tokenDir: string;
+}> {
+  const prepared = await prepareBinary(provider, verbose, backend);
+  if (!prepared) {
+    throw new BinaryError('CLIProxy binary preparation returned no runtime');
   }
 
-  const args = ['--config', configPath];
+  return {
+    ...prepared,
+    advertisedFlags: probeCliProxyAdvertisedFlags(prepared.binaryPath),
+  };
+}
 
-  if (provider === 'kiro') {
-    const method = normalizeKiroAuthMethod(options.kiroMethod);
-    if (!isKiroCLIAuthMethod(method)) {
-      throw new AuthError(`Kiro auth method '${method}' is not supported by CLI flow.`, 'kiro');
-    }
-    args.push(
-      ...getKiroCLIAuthArgs(method, {
-        idcStartUrl: options.kiroIDCStartUrl,
-        idcRegion: options.kiroIDCRegion,
-        idcFlow: options.kiroIDCFlow,
-      })
-    );
-  } else {
-    args.push(getOAuthConfig(provider).authFlag);
-  }
-
-  if (headless) {
-    args.push('--no-browser');
-  }
-  if (provider === 'kiro' && noIncognito) {
-    args.push('--no-incognito');
-  }
-
-  return args;
+function formatOAuthRuntimePreparationError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `Unable to prepare CLIProxy OAuth runtime: ${message}`;
 }
 
 export function usesKiroLocalCallbackReplay(
@@ -1223,12 +1242,10 @@ export async function triggerOAuth(
     usesKiroLocalCallbackReplay(resolvedKiroMethod, resolvedKiroIDCFlow);
   const useSelectedKiroDirectCliFlow =
     provider === 'kiro' && (isDeviceCodeFlow || useSelectedKiroLocalPasteCallback);
+  const activeBackend = getConfiguredBackend();
 
   if (!(selectedPasteCallback && !useSelectedKiroDirectCliFlow)) {
-    const credentialError = getGeminiPlusOAuthCredentialError(
-      provider,
-      getStoredConfiguredBackend()
-    );
+    const credentialError = getGeminiPlusOAuthCredentialError(provider, activeBackend);
     if (credentialError) {
       console.log(fail(credentialError));
       return null;
@@ -1266,7 +1283,26 @@ export async function triggerOAuth(
   }
 
   if (selectedPasteCallback && !useSelectedKiroDirectCliFlow) {
-    const tokenDir = getProviderTokenDir(provider);
+    const target = getProxyTarget();
+    let tokenDir = getProviderTokenDir(provider);
+    if (provider === 'gemini' && activeBackend === 'original' && !target.isRemote) {
+      try {
+        const runtime = await prepareOAuthRuntime(provider, verbose, activeBackend);
+        tokenDir = runtime.tokenDir;
+        const selectedFlag = selectAdvertisedAuthFlag(
+          getOAuthFlagCandidatesForProvider(provider),
+          runtime.advertisedFlags
+        );
+        if (!selectedFlag) {
+          console.log(fail(getGeminiOriginalBackendOAuthMessage()));
+          return null;
+        }
+      } catch (error) {
+        console.log(fail(formatOAuthRuntimePreparationError(error)));
+        return null;
+      }
+    }
+
     return handlePasteCallbackMode(
       provider,
       oauthConfig,
@@ -1289,11 +1325,16 @@ export async function triggerOAuth(
 
   console.log('');
 
-  // Prepare binary
-  const prepared = await prepareBinary(provider, verbose);
-  if (!prepared) return null;
-
-  const { binaryPath, tokenDir, configPath } = prepared;
+  let runtime;
+  let advertisedFlags: ReadonlySet<string>;
+  try {
+    runtime = await prepareOAuthRuntime(provider, verbose, activeBackend);
+    advertisedFlags = runtime.advertisedFlags;
+  } catch (error) {
+    console.log(fail(formatOAuthRuntimePreparationError(error)));
+    return null;
+  }
+  const { binaryPath, tokenDir, configPath } = runtime;
 
   // Free callback port if needed (only for authorization code flows)
   const localCallbackPort = callbackPort;
@@ -1308,6 +1349,8 @@ export async function triggerOAuth(
   let args: string[];
   try {
     args = buildOAuthArgs(provider, configPath, processHeadless, noIncognito, {
+      advertisedFlags,
+      backend: activeBackend,
       kiroMethod: provider === 'kiro' ? resolvedKiroMethod : undefined,
       kiroIDCStartUrl: options.kiroIDCStartUrl,
       kiroIDCRegion: options.kiroIDCRegion,
