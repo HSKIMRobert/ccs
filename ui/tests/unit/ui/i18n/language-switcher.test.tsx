@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { useTranslation } from 'react-i18next';
 import { render, screen, userEvent, waitFor } from '@tests/setup/test-utils';
 import i18n from '@/lib/i18n';
 import { ContinuityOverview } from '@/components/account/continuity-overview';
@@ -29,6 +30,17 @@ function flattenKeys(node: unknown, prefix = '', out = new Set<string>()): Set<s
 
 function collectPlaceholders(text: string): string[] {
   return Array.from(text.matchAll(/\{\{[^{}]+\}\}/g), (match) => match[0]).sort();
+}
+
+function AuthCopyProbe() {
+  const { t } = useTranslation();
+
+  return (
+    <>
+      <h1>{t('auth.dashboardTitle')}</h1>
+      <p>{t('auth.safetyNoteSession')}</p>
+    </>
+  );
 }
 
 describe('Dashboard i18n', () => {
@@ -94,6 +106,7 @@ describe('Dashboard i18n', () => {
   }, 10000);
 
   it.each([
+    { locale: 'pt-BR', label: 'Brazilian Portuguese', browserLocale: 'pt-BR' },
     { locale: 'vi', label: 'Vietnamese', browserLocale: 'vi-VN' },
     { locale: 'ja', label: 'Japanese', browserLocale: 'ja-JP' },
     { locale: 'ko', label: 'Korean', browserLocale: 'ko-KR' },
@@ -112,6 +125,28 @@ describe('Dashboard i18n', () => {
       expect(normalizeLocale(browserLocale)).toBe(locale);
     }
   );
+
+  it.each([
+    ['pt-BR', 'pt-BR'],
+    ['pt-PT', 'pt-BR'],
+  ])('normalizes Portuguese locale %s to %s', (browserLocale, expectedLocale) => {
+    expect(normalizeLocale(browserLocale)).toBe(expectedLocale);
+  });
+
+  it('renders semantic Brazilian Portuguese auth copy when pt-BR is selected', async () => {
+    await i18n.changeLanguage('pt-BR');
+
+    render(<AuthCopyProbe />);
+
+    expect(
+      screen.getByRole('heading', { name: 'Claude Codex Switch Dashboard' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Logins bem-sucedidos criam um cookie HttpOnly restrito a este host do painel.'
+      )
+    ).toBeInTheDocument();
+  });
 
   it('restores locale from persisted storage', () => {
     persistLocale('ja');

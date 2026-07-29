@@ -10,6 +10,7 @@ Dashboard i18n currently covers UI text rendered by React components.
 
 - Supported locales today:
   - `en` (English)
+  - `pt-BR` (Brazilian Portuguese)
   - `zh-CN` (Simplified Chinese)
   - `vi` (Vietnamese)
   - `ja` (Japanese)
@@ -36,6 +37,7 @@ Out of scope:
 - File: `ui/src/lib/i18n.ts`
 - Contains `resources` object with locale blocks:
   - `en.translation`
+  - `pt-BR.translation`
   - `zh-CN.translation`
   - `vi.translation`
   - `ja.translation`
