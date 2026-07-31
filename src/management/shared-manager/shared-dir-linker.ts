@@ -19,6 +19,7 @@ import * as path from 'path';
 
 import { info, warn } from '../../utils/ui';
 import {
+  adoptDivergedFileContent,
   copyDirectoryFallback,
   getLstatSync,
   isPathWithinDirectory,
@@ -86,40 +87,6 @@ export function detectCircularSymlink(target: string, sharedDir: string): boolea
   }
 
   return false;
-}
-
-/**
- * Claude Code saves settings.json with an atomic write (temp file + rename),
- * which replaces a managed symlink with a regular file holding the user's
- * latest changes (e.g. enabledPlugins toggles from /plugins) — see #57.
- * When reconciliation finds such a diverged regular file, adopt its content
- * into the canonical ~/.claude file before re-creating the symlink, instead
- * of discarding the user's changes. The previous canonical content is kept
- * in a `.bak-ccs-adopt` backup alongside it.
- */
-function adoptDivergedFileContent(divergedPath: string, canonicalPath: string): void {
-  try {
-    const stats = fs.lstatSync(divergedPath);
-    if (!stats.isFile()) {
-      return;
-    }
-
-    const diverged = fs.readFileSync(divergedPath);
-    const current = fs.existsSync(canonicalPath) ? fs.readFileSync(canonicalPath) : null;
-    if (current && diverged.equals(current)) {
-      return;
-    }
-
-    if (current) {
-      fs.copyFileSync(canonicalPath, `${canonicalPath}.bak-ccs-adopt`);
-    }
-    fs.writeFileSync(canonicalPath, diverged);
-    console.log(
-      info(`Adopted diverged ${path.basename(divergedPath)} content into ${canonicalPath}`)
-    );
-  } catch (_err) {
-    // Best effort: fall through to standard re-link behavior.
-  }
 }
 
 /**

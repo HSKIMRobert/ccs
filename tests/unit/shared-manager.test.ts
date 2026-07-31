@@ -347,6 +347,29 @@ describe('SharedManager', () => {
       expect(readJson(claudeSettingsPath)).toEqual({ theme: 'dark' });
     });
 
+    it('adopts a diverged instance plugin registry during instance linking', () => {
+      const manager = new SharedManager();
+      const instancePath = instanceDir('work');
+      const claudeRegistryPath = path.join(claudeDir(), 'plugins', 'installed_plugins.json');
+      const instanceRegistryPath = path.join(instancePath, 'plugins', 'installed_plugins.json');
+
+      fs.mkdirSync(claudeDir(), { recursive: true });
+      fs.mkdirSync(path.join(instancePath, 'plugins'), { recursive: true });
+      writeJson(claudeRegistryPath, { version: 2, plugins: {} });
+      // Simulate Claude Code's atomic save replacing the managed symlink with
+      // a regular file that records a plugin installed inside a session.
+      writeJson(instanceRegistryPath, {
+        version: 2,
+        plugins: { 'demo@demo-market': [{ scope: 'user', version: '1.0.0' }] },
+      });
+
+      manager.linkSharedDirectories(instancePath);
+
+      expect(fs.lstatSync(instanceRegistryPath).isSymbolicLink()).toBe(true);
+      const adopted = readJson(claudeRegistryPath) as { plugins: Record<string, unknown> };
+      expect(Object.keys(adopted.plugins)).toContain('demo@demo-market');
+    });
+
     it('does not create a backup when the diverged copy matches the canonical file', () => {
       const manager = new SharedManager();
       const claudeSettingsPath = path.join(claudeDir(), 'settings.json');

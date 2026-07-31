@@ -14,7 +14,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { warn } from '../../utils/ui';
-import { copyDirectoryFallback, removeExistingPath, symlinkPointsTo } from './fs-helpers';
+import {
+  adoptDivergedFileContent,
+  copyDirectoryFallback,
+  removeExistingPath,
+  symlinkPointsTo,
+} from './fs-helpers';
 import type { PluginMetadataRoots } from './plugin-metadata-normalizer';
 import { reconcileLocalMarketplaceRegistry } from './plugin-metadata-normalizer';
 import {
@@ -86,6 +91,10 @@ export function linkInstancePlugins(roots: PluginLayoutRoots, instancePath: stri
   for (const item of getSharedPluginLinkItems(roots.sharedDir)) {
     const targetEntryPath = path.join(targetPath, item.name);
     const linkEntryPath = path.join(linkPath, item.name);
+
+    if (item.type === 'file') {
+      adoptDivergedFileContent(linkEntryPath, path.join(roots.claudeDir, 'plugins', item.name));
+    }
 
     removeExistingPath(linkEntryPath, item.type);
 
