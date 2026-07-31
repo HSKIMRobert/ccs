@@ -306,6 +306,65 @@ describe('SharedManager', () => {
     });
   });
 
+  describe('diverged settings adoption', () => {
+    it('adopts a diverged shared settings.json into ~/.claude before re-linking', () => {
+      const manager = new SharedManager();
+      const claudeSettingsPath = path.join(claudeDir(), 'settings.json');
+      const sharedSettingsPath = path.join(ccsDir(), 'shared', 'settings.json');
+
+      fs.mkdirSync(claudeDir(), { recursive: true });
+      fs.mkdirSync(path.join(ccsDir(), 'shared'), { recursive: true });
+      writeJson(claudeSettingsPath, { enabledPlugins: { 'demo@market': false } });
+      // Simulate Claude Code's atomic save (temp file + rename) replacing the
+      // managed symlink with a regular file carrying the user's latest change.
+      writeJson(sharedSettingsPath, { enabledPlugins: { 'demo@market': true } });
+
+      manager.ensureSharedDirectories();
+
+      expect(fs.lstatSync(sharedSettingsPath).isSymbolicLink()).toBe(true);
+      expect(readJson(claudeSettingsPath)).toEqual({
+        enabledPlugins: { 'demo@market': true },
+      });
+      expect(readJson(`${claudeSettingsPath}.bak-ccs-adopt`)).toEqual({
+        enabledPlugins: { 'demo@market': false },
+      });
+    });
+
+    it('adopts a diverged instance settings.json during instance linking', () => {
+      const manager = new SharedManager();
+      const instancePath = instanceDir('work');
+      const claudeSettingsPath = path.join(claudeDir(), 'settings.json');
+      const instanceSettingsPath = path.join(instancePath, 'settings.json');
+
+      fs.mkdirSync(claudeDir(), { recursive: true });
+      fs.mkdirSync(instancePath, { recursive: true });
+      writeJson(claudeSettingsPath, { theme: 'light' });
+      writeJson(instanceSettingsPath, { theme: 'dark' });
+
+      manager.linkSharedDirectories(instancePath);
+
+      expect(fs.lstatSync(instanceSettingsPath).isSymbolicLink()).toBe(true);
+      expect(readJson(claudeSettingsPath)).toEqual({ theme: 'dark' });
+    });
+
+    it('does not create a backup when the diverged copy matches the canonical file', () => {
+      const manager = new SharedManager();
+      const claudeSettingsPath = path.join(claudeDir(), 'settings.json');
+      const sharedSettingsPath = path.join(ccsDir(), 'shared', 'settings.json');
+
+      fs.mkdirSync(claudeDir(), { recursive: true });
+      fs.mkdirSync(path.join(ccsDir(), 'shared'), { recursive: true });
+      writeJson(claudeSettingsPath, { theme: 'dark' });
+      fs.copyFileSync(claudeSettingsPath, sharedSettingsPath);
+
+      manager.ensureSharedDirectories();
+
+      expect(fs.lstatSync(sharedSettingsPath).isSymbolicLink()).toBe(true);
+      expect(readJson(claudeSettingsPath)).toEqual({ theme: 'dark' });
+      expect(fs.existsSync(`${claudeSettingsPath}.bak-ccs-adopt`)).toBe(false);
+    });
+  });
+
   describe('marketplace registry ownership', () => {
     it('skips unstatable shared plugin entries during instance linking', () => {
       const manager = new SharedManager();
