@@ -99,11 +99,12 @@ jobs:
       contents: read
     env:
       OPENAI_KEY: ${{ secrets.AI_REVIEW_API_KEY }}
-      "OPENAI.API_BASE": ${{ vars.AI_REVIEW_BASE_URL }}
-      "config.model": ${{ vars.AI_REVIEW_MODEL }}
-      "github_action_config.auto_review": "true"
-      "github_action_config.auto_describe": "false"
-      "github_action_config.auto_improve": "false"
+      'OPENAI.API_BASE': ${{ vars.AI_REVIEW_BASE_URL }}
+      'config.model': ${{ vars.AI_REVIEW_MODEL }}
+      'config.reasoning_effort': ${{ vars.AI_REVIEW_REASONING_EFFORT }}
+      'github_action_config.auto_review': 'true'
+      'github_action_config.auto_describe': 'false'
+      'github_action_config.auto_improve': 'false'
 
     steps:
       - name: Generate App Token
