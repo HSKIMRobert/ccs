@@ -34,6 +34,7 @@ describe('PR-Agent review lane migration', () => {
     expect(workflow).toContain('OPENAI_KEY');
     expect(workflow).toContain('vars.AI_REVIEW_BASE_URL');
     expect(workflow).toContain('vars.AI_REVIEW_MODEL');
+    expect(workflow).toContain('vars.AI_REVIEW_REASONING_EFFORT');
     expect(workflow).toContain('secrets.AI_REVIEW_API_KEY');
     expect(workflow).toContain('github_action_config.auto_review');
     expect(workflow).toContain("github.event.comment.body == '/review'");
