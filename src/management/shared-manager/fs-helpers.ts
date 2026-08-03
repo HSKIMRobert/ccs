@@ -12,7 +12,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { info } from '../../utils/ui';
 import type { SharedItem } from './types';
 
 /**
@@ -24,31 +23,6 @@ import type { SharedItem } from './types';
  * of discarding the user's changes. The previous canonical content is kept
  * in a `.bak-ccs-adopt` backup alongside it.
  */
-export function adoptDivergedFileContent(divergedPath: string, canonicalPath: string): void {
-  try {
-    const stats = fs.lstatSync(divergedPath);
-    if (!stats.isFile()) {
-      return;
-    }
-
-    const diverged = fs.readFileSync(divergedPath);
-    const current = fs.existsSync(canonicalPath) ? fs.readFileSync(canonicalPath) : null;
-    if (current && diverged.equals(current)) {
-      return;
-    }
-
-    if (current) {
-      fs.copyFileSync(canonicalPath, `${canonicalPath}.bak-ccs-adopt`);
-    }
-    fs.writeFileSync(canonicalPath, diverged);
-    console.log(
-      info(`Adopted diverged ${path.basename(divergedPath)} content into ${canonicalPath}`)
-    );
-  } catch (_err) {
-    // Best effort: fall through to standard re-link behavior.
-  }
-}
-
 /**
  * Return canonical realpath for a path. Falls back to the lexical resolve
  * when realpath fails (e.g. path does not exist).
