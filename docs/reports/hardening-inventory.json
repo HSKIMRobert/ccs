@@ -1,11 +1,30 @@
 {
   "scope": "src/**/*.{ts,tsx,js,jsx,mjs,cjs}",
   "syncFs": {
-    "totalOccurrences": 2388,
-    "filesAffected": 257,
-    "hotpathOccurrences": 1103,
-    "hotpathFilesAffected": 151,
+    "totalOccurrences": 2427,
+    "filesAffected": 258,
+    "hotpathOccurrences": 1142,
+    "hotpathFilesAffected": 152,
     "topHotpathFiles": [
+      {
+        "file": "src/management/shared-manager/diverged-file-adopter.ts",
+        "count": 39,
+        "calls": [
+          "closeSync",
+          "fsyncSync",
+          "linkSync",
+          "lstatSync",
+          "openSync",
+          "readdirSync",
+          "readFileSync",
+          "readlinkSync",
+          "renameSync",
+          "statSync",
+          "unlinkSync",
+          "writeFileSync"
+        ],
+        "markers": []
+      },
       {
         "file": "src/utils/browser/mcp-installer.ts",
         "count": 32,
@@ -139,24 +158,6 @@
           "statSync"
         ],
         "markers": []
-      },
-      {
-        "file": "src/utils/claude-dir-installer.ts",
-        "count": 21,
-        "calls": [
-          "copyFileSync",
-          "cpSync",
-          "existsSync",
-          "lstatSync",
-          "mkdirSync",
-          "readdirSync",
-          "renameSync",
-          "rmSync",
-          "statSync",
-          "unlinkSync",
-          "writeFileSync"
-        ],
-        "markers": []
       }
     ],
     "topFilesOverall": [
@@ -228,6 +229,25 @@
         "markers": []
       },
       {
+        "file": "src/management/shared-manager/diverged-file-adopter.ts",
+        "count": 39,
+        "calls": [
+          "closeSync",
+          "fsyncSync",
+          "linkSync",
+          "lstatSync",
+          "openSync",
+          "readdirSync",
+          "readFileSync",
+          "readlinkSync",
+          "renameSync",
+          "statSync",
+          "unlinkSync",
+          "writeFileSync"
+        ],
+        "markers": []
+      },
+      {
         "file": "src/cliproxy/executor/__tests__/variant-port-integration.test.js",
         "count": 36,
         "calls": [
@@ -278,20 +298,6 @@
           "readFileSync",
           "renameSync",
           "statSync",
-          "unlinkSync",
-          "writeFileSync"
-        ],
-        "markers": []
-      },
-      {
-        "file": "src/cliproxy/__tests__/session-tracker-port.test.js",
-        "count": 31,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "readdirSync",
-          "readFileSync",
-          "rmSync",
           "unlinkSync",
           "writeFileSync"
         ],
@@ -573,8 +579,8 @@
     },
     "loggerCoverage": {
       "filesWithCreateLogger": 65,
-      "totalSourceFiles": 758,
-      "coverageRatio": 0.0858,
+      "totalSourceFiles": 759,
+      "coverageRatio": 0.0856,
       "subdomainsWithZeroCreateLogger": [
         "api",
         "bin",
@@ -609,12 +615,12 @@
           "withLogger": 1
         },
         {
-          "subdomain": "cliproxy/auth",
-          "count": 32,
+          "subdomain": "management",
+          "count": 33,
           "withLogger": 1
         },
         {
-          "subdomain": "management",
+          "subdomain": "cliproxy/auth",
           "count": 32,
           "withLogger": 1
         },

@@ -14,7 +14,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { warn } from '../../utils/ui';
-import { copyDirectoryFallback, removeExistingPath, symlinkPointsTo } from './fs-helpers';
+import {
+  adoptDivergedFileContent,
+  assertAdoptionPathAbsent,
+  recoverOrphanedCanonicalClaim,
+} from './diverged-file-adopter';
+import {
+  copyDirectoryFallback,
+  getLstatSync,
+  removeExistingPath,
+  symlinkPointsTo,
+} from './fs-helpers';
 import type { PluginMetadataRoots } from './plugin-metadata-normalizer';
 import { reconcileLocalMarketplaceRegistry } from './plugin-metadata-normalizer';
 import {
@@ -40,6 +50,9 @@ export function ensureSharedPluginLayoutDefaults(claudeDir: string): void {
 
   for (const entry of SHARED_PLUGIN_ENTRIES) {
     const entryPath = path.join(pluginsDir, entry.name);
+    if (entry.type === 'file') {
+      recoverOrphanedCanonicalClaim(entryPath);
+    }
     if (fs.existsSync(entryPath)) {
       continue;
     }
@@ -86,18 +99,40 @@ export function linkInstancePlugins(roots: PluginLayoutRoots, instancePath: stri
   for (const item of getSharedPluginLinkItems(roots.sharedDir)) {
     const targetEntryPath = path.join(targetPath, item.name);
     const linkEntryPath = path.join(linkPath, item.name);
+    let adoption: ReturnType<typeof adoptDivergedFileContent> = 'not-claimed';
 
-    removeExistingPath(linkEntryPath, item.type);
+    if (item.type === 'file') {
+      adoption = adoptDivergedFileContent(
+        linkEntryPath,
+        path.join(roots.claudeDir, 'plugins', item.name)
+      );
+      if (adoption === 'not-claimed') {
+        removeExistingPath(linkEntryPath, item.type);
+      }
+    } else {
+      removeExistingPath(linkEntryPath, item.type);
+    }
+    assertAdoptionPathAbsent(linkEntryPath, adoption);
+
+    if (getLstatSync(linkEntryPath)) {
+      console.log(warn(`Skipping plugins/${item.name}: path reappeared during reconciliation`));
+      continue;
+    }
 
     try {
       const symlinkType = item.type === 'directory' ? 'dir' : 'file';
       fs.symlinkSync(targetEntryPath, linkEntryPath, symlinkType);
     } catch (_err) {
+      assertAdoptionPathAbsent(linkEntryPath, adoption);
+      if (getLstatSync(linkEntryPath)) {
+        console.log(warn(`Skipping plugins/${item.name}: path reappeared during reconciliation`));
+        continue;
+      }
       if (process.platform === 'win32') {
         if (item.type === 'directory') {
           copyDirectoryFallback(targetEntryPath, linkEntryPath);
         } else {
-          fs.copyFileSync(targetEntryPath, linkEntryPath);
+          fs.copyFileSync(targetEntryPath, linkEntryPath, fs.constants.COPYFILE_EXCL);
         }
         console.log(
           warn(`Symlink failed for plugins/${item.name}, copied instead (enable Developer Mode)`)
@@ -121,7 +156,16 @@ export function getSharedPluginLinkItems(sharedDir: string): SharedItem[] {
   );
 
   for (const entry of fs.readdirSync(sharedPluginsPath, { withFileTypes: true })) {
-    if (items.has(entry.name) || INSTANCE_LOCAL_PLUGIN_METADATA_FILES.has(entry.name)) {
+    if (
+      items.has(entry.name) ||
+      INSTANCE_LOCAL_PLUGIN_METADATA_FILES.has(entry.name) ||
+      entry.name.includes('.bak-ccs-adopt') ||
+      entry.name.includes('.ccs-adopt-') ||
+      entry.name.includes('.ccs-adopted-recovery') ||
+      entry.name.includes('.ccs-canonical-claim-') ||
+      entry.name.includes('.ccs-canonical-recovery') ||
+      entry.name.includes('.ccs-write-')
+    ) {
       continue;
     }
 

@@ -19,6 +19,11 @@ import * as path from 'path';
 
 import { info, warn } from '../../utils/ui';
 import {
+  adoptDivergedFileContent,
+  assertAdoptionPathAbsent,
+  recoverOrphanedCanonicalClaim,
+} from './diverged-file-adopter';
+import {
   copyDirectoryFallback,
   getLstatSync,
   isPathWithinDirectory,
@@ -111,6 +116,10 @@ export function ensureSharedDirectories(roots: LinkerRoots): void {
     const claudePath = path.join(claudeDir, item.name);
     const sharedPath = path.join(sharedDir, item.name);
 
+    if (item.type === 'file') {
+      recoverOrphanedCanonicalClaim(claudePath);
+    }
+
     if (!getLstatSync(claudePath)) {
       if (item.type === 'directory') {
         fs.mkdirSync(claudePath, { recursive: true, mode: 0o700 });
@@ -124,7 +133,9 @@ export function ensureSharedDirectories(roots: LinkerRoots): void {
       continue;
     }
 
+    let sharedAdoption: ReturnType<typeof adoptDivergedFileContent> = 'not-claimed';
     if (getLstatSync(sharedPath)) {
+      let removeExisting = true;
       try {
         const stats = fs.lstatSync(sharedPath);
         if (stats.isSymbolicLink()) {
@@ -138,22 +149,38 @@ export function ensureSharedDirectories(roots: LinkerRoots): void {
         // Continue to recreate
       }
 
-      if (item.type === 'directory') {
+      if (item.type === 'file') {
+        sharedAdoption = adoptDivergedFileContent(sharedPath, claudePath);
+        removeExisting = sharedAdoption === 'not-claimed';
+      }
+
+      if (item.type === 'directory' && removeExisting) {
         fs.rmSync(sharedPath, { recursive: true, force: true });
-      } else {
+      } else if (removeExisting) {
         fs.unlinkSync(sharedPath);
       }
+      assertAdoptionPathAbsent(sharedPath, sharedAdoption);
+    }
+
+    if (getLstatSync(sharedPath)) {
+      console.log(warn(`Skipping ${item.name}: path reappeared during reconciliation`));
+      continue;
     }
 
     try {
       const symlinkType = item.type === 'directory' ? 'dir' : 'file';
       fs.symlinkSync(claudePath, sharedPath, symlinkType);
     } catch (_err) {
+      assertAdoptionPathAbsent(sharedPath, sharedAdoption);
+      if (getLstatSync(sharedPath)) {
+        console.log(warn(`Skipping ${item.name}: path reappeared during reconciliation`));
+        continue;
+      }
       if (process.platform === 'win32') {
         if (item.type === 'directory') {
           copyDirectoryFallback(claudePath, sharedPath);
         } else if (item.type === 'file') {
-          fs.copyFileSync(claudePath, sharedPath);
+          fs.copyFileSync(claudePath, sharedPath, fs.constants.COPYFILE_EXCL);
         }
         console.log(
           warn(`Symlink failed for ${item.name}, copied instead (enable Developer Mode)`)
@@ -181,18 +208,37 @@ export function linkSharedDirectories(roots: LinkerRoots, instancePath: string):
 
     const linkPath = path.join(instancePath, item.name);
     const targetPath = path.join(sharedDir, item.name);
+    let adoption: ReturnType<typeof adoptDivergedFileContent> = 'not-claimed';
 
-    removeExistingPath(linkPath, item.type);
+    if (item.type === 'file') {
+      adoption = adoptDivergedFileContent(linkPath, path.join(roots.claudeDir, item.name));
+      if (adoption === 'not-claimed') {
+        removeExistingPath(linkPath, item.type);
+      }
+    } else {
+      removeExistingPath(linkPath, item.type);
+    }
+    assertAdoptionPathAbsent(linkPath, adoption);
+
+    if (getLstatSync(linkPath)) {
+      console.log(warn(`Skipping ${item.name}: path reappeared during reconciliation`));
+      continue;
+    }
 
     try {
       const symlinkType = item.type === 'directory' ? 'dir' : 'file';
       fs.symlinkSync(targetPath, linkPath, symlinkType);
     } catch (_err) {
+      assertAdoptionPathAbsent(linkPath, adoption);
+      if (getLstatSync(linkPath)) {
+        console.log(warn(`Skipping ${item.name}: path reappeared during reconciliation`));
+        continue;
+      }
       if (process.platform === 'win32') {
         if (item.type === 'directory') {
           copyDirectoryFallback(targetPath, linkPath);
         } else if (item.type === 'file') {
-          fs.copyFileSync(targetPath, linkPath);
+          fs.copyFileSync(targetPath, linkPath, fs.constants.COPYFILE_EXCL);
         }
         console.log(
           warn(`Symlink failed for ${item.name}, copied instead (enable Developer Mode)`)

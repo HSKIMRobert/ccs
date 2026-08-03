@@ -11,8 +11,18 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+
 import type { SharedItem } from './types';
 
+/**
+ * Claude Code saves managed files (settings.json, plugins/installed_plugins.json)
+ * with an atomic write (temp file + rename), which replaces a managed symlink
+ * with a regular file holding the user's latest changes — see #57 and #1681.
+ * When reconciliation finds such a diverged regular file, adopt its content
+ * into the canonical ~/.claude file before re-creating the symlink, instead
+ * of discarding the user's changes. The previous canonical content is kept
+ * in a `.bak-ccs-adopt` backup alongside it.
+ */
 /**
  * Return canonical realpath for a path. Falls back to the lexical resolve
  * when realpath fails (e.g. path does not exist).
