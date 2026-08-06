@@ -321,4 +321,32 @@ describe('ProxyRequestTransformer regressions', () => {
 
     expect(result.tool_choice).toBe('auto');
   });
+
+  it('merges the top-level system field with a mid-array system message into one leading system message', () => {
+    // Claude Code sends the main system prompt via the top-level `system`
+    // field AND a skill/plugin listing as a `role: "system"` message inside
+    // `messages` (see #1459). Prepending the top-level field unconditionally
+    // used to leave two non-adjacent `system` messages in the payload, which
+    // strict OpenAI-compatible backends (LiteLLM among them) reject with:
+    // `400 A 'system' message can only appear at index 0 of the messages array.`
+    const result = new ProxyRequestTransformer().transform({
+      system: [{ type: 'text', text: 'You are Claude Code, a CLI tool.' }],
+      messages: [
+        {
+          role: 'system',
+          content: 'The following skills are available for use with the Skill tool:\n- foo',
+        },
+        { role: 'user', content: 'ping' },
+      ],
+    });
+
+    const systemMessages = result.messages.filter((message) => message.role === 'system');
+    expect(systemMessages).toHaveLength(1);
+    expect(result.messages[0]).toEqual({
+      role: 'system',
+      content:
+        'You are Claude Code, a CLI tool.\n\nThe following skills are available for use with the Skill tool:\n- foo',
+    });
+    expect(result.messages[1]).toEqual({ role: 'user', content: 'ping' });
+  });
 });
