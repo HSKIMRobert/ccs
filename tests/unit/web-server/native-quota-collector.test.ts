@@ -1827,3 +1827,128 @@ describe('multi-profile: rotating live slot for non-default profiles', () => {
     expect(rows.find((r) => r.profile === 'personal')?.needsReauth).toBe(true);
   });
 });
+
+// ============================================================================
+// Quota reset invalidates cached rows
+//
+// A cached row whose next_reset has passed no longer describes the current
+// window — the quota snapped back at the reset boundary. Serving it for the
+// rest of the 10-min TTL makes the bar visibly wrong right after a reset, so
+// a passed reset marks the row stale (guarded: only when the row was fetched
+// BEFORE the reset, so a post-reset payload that still reports a past reset
+// cannot cause a refetch loop).
+// ============================================================================
+
+describe('multi-profile: quota reset invalidates cached rows', () => {
+  function quotaResettingAt(resetIso: string): ClaudeQuotaResult {
+    const base = successQuota();
+    return {
+      ...base,
+      coreUsage: {
+        fiveHour: { ...base.coreUsage!.fiveHour!, resetAt: resetIso },
+        weekly: base.coreUsage!.weekly,
+      },
+    };
+  }
+
+  it('re-fetches the default Claude profile once its next_reset passes, before TTL expiry', async () => {
+    const clock = { now: Date.parse('2026-06-09T10:00:00.000Z') };
+    const resetIso = '2026-06-09T10:01:00.000Z'; // 60s ahead
+    const deps = makeMultiProfileDeps({
+      clock,
+      claudeProfiles: ['work'],
+      codexProfiles: [],
+      claudeDefault: 'work',
+      credsForProfile: () => maxCreds(),
+      claudeFetch: async () => quotaResettingAt(resetIso),
+    });
+
+    await getNativeAccountRows(deps);
+    expect(deps.claudeFetchCount()).toBe(1);
+
+    // 90s later: past the reset but far inside the 10-min TTL.
+    clock.now += 90_000;
+    await getNativeAccountRows(deps);
+    expect(deps.claudeFetchCount()).toBe(2);
+  });
+
+  it('does not refetch-loop when a post-reset payload still reports a past reset', async () => {
+    const clock = { now: Date.parse('2026-06-09T10:00:00.000Z') };
+    const resetIso = '2026-06-09T10:01:00.000Z';
+    const deps = makeMultiProfileDeps({
+      clock,
+      claudeProfiles: ['work'],
+      codexProfiles: [],
+      claudeDefault: 'work',
+      credsForProfile: () => maxCreds(),
+      claudeFetch: async () => quotaResettingAt(resetIso),
+    });
+
+    await getNativeAccountRows(deps);
+    clock.now += 90_000;
+    await getNativeAccountRows(deps); // refetch fires; payload STILL says 10:01
+    expect(deps.claudeFetchCount()).toBe(2);
+
+    // Another pass within TTL: the row was fetched after the reset passed, so
+    // the stale-by-reset rule must not apply again.
+    clock.now += 30_000;
+    await getNativeAccountRows(deps);
+    expect(deps.claudeFetchCount()).toBe(2);
+  });
+
+  it('rotating slot treats a non-default profile with a passed reset as stale', async () => {
+    const clock = { now: Date.parse('2026-06-09T10:00:00.000Z') };
+    const resetIso = '2026-06-09T10:01:00.000Z';
+    const farFuture = '2026-06-16T00:00:00.000Z';
+    const deps = makeMultiProfileDeps({
+      clock,
+      claudeProfiles: ['work', 'personal'],
+      codexProfiles: [],
+      claudeDefault: 'work',
+      credsForProfile: () => maxCreds(),
+      claudeFetch: async (_t, accountId) =>
+        quotaResettingAt(accountId === 'ccs:personal' ? resetIso : farFuture),
+    });
+
+    // Pass 1: work (default) + personal (rotating slot, never fetched).
+    await getNativeAccountRows(deps);
+    expect(deps.claudeFetchCount()).toBe(2);
+
+    // 90s later: personal's reset passed; work is fresh. The rotating slot
+    // must pick personal again even though its row is inside the 10-min TTL.
+    clock.now += 90_000;
+    await getNativeAccountRows(deps);
+    expect(deps.claudeFetchCount()).toBe(3);
+  });
+
+  it('Codex rows honour the same reset-staleness rule', async () => {
+    const clock = { now: Date.parse('2026-06-09T10:00:00.000Z') };
+    const codexQuota: CodexQuotaResult = {
+      ...codexSuccessQuota(),
+      coreUsage: {
+        fiveHour: {
+          label: 'Primary',
+          remainingPercent: 60,
+          resetAfterSeconds: 60,
+          resetAt: '2026-06-09T10:01:00.000Z',
+        },
+        weekly: codexSuccessQuota().coreUsage!.weekly,
+      },
+    };
+    const deps = makeMultiProfileDeps({
+      clock,
+      claudeProfiles: [],
+      codexProfiles: ['personal'],
+      codexDefault: 'personal',
+      codexNativeAuth: (p) => ({ accessToken: `tok-${p}`, accountId: `id-${p}` }),
+      codexNetworkFetch: async () => codexQuota,
+    });
+
+    await getNativeAccountRows(deps);
+    expect(deps.codexNetworkCount()).toBe(1);
+
+    clock.now += 90_000;
+    await getNativeAccountRows(deps);
+    expect(deps.codexNetworkCount()).toBe(2);
+  });
+});

@@ -801,10 +801,26 @@ function markPausedAndSyncCache(
 }
 
 /**
+ * True when the cached row was fetched BEFORE its own next_reset boundary and
+ * that boundary has now passed — the row describes the previous quota window,
+ * so its values (and the reset time itself) are visibly wrong in the bar.
+ * The cachedAt guard means a post-reset payload that still reports a past
+ * reset cannot cause a refetch loop: once re-fetched, normal TTL applies.
+ */
+function isCachedRowStaleByReset(state: ProviderState, now: number): boolean {
+  const nextReset = state.cachedRow?.next_reset;
+  if (!nextReset) return false;
+  const resetMs = Date.parse(nextReset);
+  if (!Number.isFinite(resetMs)) return false;
+  return resetMs <= now && state.cachedAt < resetMs;
+}
+
+/**
  * Pick the non-default profile the rotating live slot should refresh this pass:
- * the stalest profile whose cached row is missing or past its TTL, skipping
- * profiles inside a breaker/cooldown window (their collector would refuse the
- * fetch anyway, wasting the slot). Returns null when every profile is fresh.
+ * the stalest profile whose cached row is missing, past its TTL, or past its
+ * own quota reset, skipping profiles inside a breaker/cooldown window (their
+ * collector would refuse the fetch anyway, wasting the slot). Returns null
+ * when every profile is fresh.
  */
 function pickRotatingLiveProfile(
   map: Map<string, ProviderState>,
@@ -820,9 +836,9 @@ function pickRotatingLiveProfile(
     if (state && (now < state.breakerOpenUntil || now < state.cooldownUntil)) continue;
     const cachedRow = state?.cachedRow ?? null;
     const cachedAt = state?.cachedAt ?? 0;
-    if (cachedRow) {
+    if (cachedRow && state) {
       const ttl = cachedRow.quotaStatus === 'unsupported' ? PARKED_TTL_MS : NATIVE_QUOTA_TTL_MS;
-      if (now - cachedAt < ttl) continue;
+      if (now - cachedAt < ttl && !isCachedRowStaleByReset(state, now)) continue;
     }
     if (cachedAt < pickedAt) {
       pickedAt = cachedAt;
@@ -864,9 +880,13 @@ async function collectClaudeRowForProfile(
   // Serve from cache while within TTL — force bypasses the short-circuit. Parked
   // rows (no creds -> quotaStatus 'unsupported') use a short TTL so a fresh login
   // is picked up within seconds instead of staying dimmed for the full quota TTL.
+  // A row whose own next_reset has passed is stale regardless of TTL — the
+  // quota snapped back at the boundary and the cached values are visibly wrong.
   if (!force && state.cachedRow) {
     const ttl = state.cachedRow.quotaStatus === 'unsupported' ? PARKED_TTL_MS : NATIVE_QUOTA_TTL_MS;
-    if (now - state.cachedAt < ttl) return serveCached(state);
+    if (now - state.cachedAt < ttl && !isCachedRowStaleByReset(state, now)) {
+      return serveCached(state);
+    }
   }
 
   // Breaker open or cooldown active -> zero network, serve stale (may be null).
@@ -1012,9 +1032,12 @@ async function collectCodexRowForProfile(
   // Serve from cache while within TTL — force bypasses the short-circuit. Parked
   // rows (no auth -> quotaStatus 'unsupported') use a short TTL so a fresh login
   // is picked up within seconds instead of staying dimmed for the full quota TTL.
+  // A row whose own next_reset has passed is stale regardless of TTL.
   if (!force && state.cachedRow) {
     const ttl = state.cachedRow.quotaStatus === 'unsupported' ? PARKED_TTL_MS : NATIVE_QUOTA_TTL_MS;
-    if (now - state.cachedAt < ttl) return serveCached(state);
+    if (now - state.cachedAt < ttl && !isCachedRowStaleByReset(state, now)) {
+      return serveCached(state);
+    }
   }
 
   // Breaker open or cooldown active -> skip network, go to LOCAL fallback.
