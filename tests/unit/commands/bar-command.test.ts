@@ -3643,3 +3643,174 @@ describe('bar install: --await-quit waits for the running app to quit (GH-1588)'
     expect(probes).toBeGreaterThanOrEqual(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// --port support: `ccs bar [launch] --port N` (user-selectable dashboard port)
+// ---------------------------------------------------------------------------
+
+describe('bar dispatcher: bare flags route to launch', () => {
+  beforeEach(() => {
+    mock.module('../../../src/commands/bar/launch-subcommand', () => ({
+      handleBarLaunch: async (args: string[]) => {
+        calls.push(`launch:${args.join(' ')}`);
+      },
+    }));
+  });
+
+  it('dispatches `ccs bar --port 3999` to launch with the flag preserved', async () => {
+    const handleBarCommand = await loadHandleBarCommand();
+    await handleBarCommand(['--port', '3999']);
+    expect(calls).toEqual(['launch:--port 3999']);
+  });
+
+  it('dispatches `ccs bar launch --port 3999` to launch with the flag preserved', async () => {
+    const handleBarCommand = await loadHandleBarCommand();
+    await handleBarCommand(['launch', '--port', '3999']);
+    expect(calls).toEqual(['launch:--port 3999']);
+  });
+});
+
+describe('launch: --port selects the server port', () => {
+  function makePortDeps(ccsDir: string) {
+    const seen: {
+      spawnPort: number | null;
+      getPortCandidates: number[] | null;
+      stopped: boolean;
+      descriptorPort: number | null;
+    } = { spawnPort: null, getPortCandidates: null, stopped: false, descriptorPort: null };
+
+    const deps = {
+      findRunningServer: async () => null,
+      getPort: async (opts: { port: number[]; host: string }) => {
+        seen.getPortCandidates = opts.port;
+        return opts.port[0];
+      },
+      spawnDetachedServer: (p: number) => {
+        seen.spawnPort = p;
+      },
+      waitForServerLive: async () => {},
+      createLaunchDescriptor: (opts?: { port?: number }) => {
+        seen.descriptorPort = opts?.port ?? null;
+        return {
+          schema: 1 as const,
+          runtime: '/usr/bin/node',
+          args: ['/x/ccs.js', 'bar', 'serve'],
+          home: '/h',
+        };
+      },
+      writeLaunchDescriptor: () => {},
+      stopDetachedServer: () => {
+        seen.stopped = true;
+      },
+      openApp: async () => {},
+      getCcsDir: () => ccsDir,
+      appInstallPath: path.join(tempHome, 'Applications', 'CCS Bar.app'),
+    };
+    return { deps, seen };
+  }
+
+  it('spawns the detached server on the requested port and records it in bar.json', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+
+    await handleBarLaunch(['--port', '3999'], deps);
+
+    expect(seen.spawnPort).toBe(3999);
+    const barJson = JSON.parse(fs.readFileSync(path.join(ccsDir, 'bar.json'), 'utf8')) as {
+      port: number;
+      baseUrl: string;
+    };
+    expect(barJson.port).toBe(3999);
+    expect(barJson.baseUrl).toBe('http://127.0.0.1:3999');
+  });
+
+  it('persists the chosen port into the launch descriptor for app self-start', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+
+    await handleBarLaunch(['--port', '3999'], deps);
+
+    expect(seen.descriptorPort).toBe(3999);
+  });
+
+  it('errors without spawning when the requested port is busy', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+    deps.getPort = async () => 4001; // get-port fell back: 3999 not free
+
+    await handleBarLaunch(['--port', '3999'], deps);
+
+    expect(seen.spawnPort).toBeNull();
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/3999/);
+    expect(allOutput.toLowerCase()).toMatch(/in use|busy|not free|unavailable/);
+  });
+
+  it('errors on an invalid --port value', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+
+    await handleBarLaunch(['--port', 'banana'], deps);
+
+    expect(seen.spawnPort).toBeNull();
+    expect(consoleOutput.join('\n').toLowerCase()).toMatch(/invalid.*port|port.*invalid/);
+  });
+
+  it('reuses a running server already on the requested port', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+    deps.findRunningServer = async () => ({ port: 3999, baseUrl: 'http://127.0.0.1:3999' });
+
+    await handleBarLaunch(['--port', '3999'], deps);
+
+    expect(seen.spawnPort).toBeNull(); // reuse, no new spawn
+    expect(seen.stopped).toBe(false);
+    const barJson = JSON.parse(fs.readFileSync(path.join(ccsDir, 'bar.json'), 'utf8')) as {
+      port: number;
+    };
+    expect(barJson.port).toBe(3999);
+  });
+
+  it('stops a running server on a different port, then starts on the requested one', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+    deps.findRunningServer = async () => ({ port: 3000, baseUrl: 'http://127.0.0.1:3000' });
+
+    await handleBarLaunch(['--port', '3999'], deps);
+
+    expect(seen.stopped).toBe(true);
+    expect(seen.spawnPort).toBe(3999);
+    const barJson = JSON.parse(fs.readFileSync(path.join(ccsDir, 'bar.json'), 'utf8')) as {
+      port: number;
+    };
+    expect(barJson.port).toBe(3999);
+  });
+
+  it('without --port, prefers the port recorded in bar.json (sticky port)', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'bar.json'),
+      JSON.stringify({ baseUrl: 'http://127.0.0.1:3777', port: 3777, authMode: 'loopback' })
+    );
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+
+    await handleBarLaunch([], deps);
+
+    expect(seen.getPortCandidates?.[0]).toBe(3777);
+    expect(seen.spawnPort).toBe(3777);
+  });
+});

@@ -16,7 +16,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getCcsDir } from '../../config/config-loader-facade';
 import { getBarJsonPath, getServerPidPath } from './bar-paths';
-import { defaultFindRunningServer } from './bar-server-probe';
+import { defaultFindRunningServer, resolveBarPort } from './bar-server-probe';
+import { parsePortFlag } from './port-arg';
 import type { DashboardInfo } from './bar-server-probe';
 import type { BarDiscoveryJson } from './launch-subcommand';
 
@@ -94,19 +95,6 @@ function defaultGetCcsDir(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Argument parsing helpers
-// ---------------------------------------------------------------------------
-
-function parsePortArg(args: string[]): number | null {
-  const idx = args.indexOf('--port');
-  if (idx !== -1 && idx + 1 < args.length) {
-    const n = parseInt(args[idx + 1], 10);
-    return Number.isFinite(n) && n > 0 && n < 65536 ? n : null;
-  }
-  return null;
-}
-
-// ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
 
@@ -151,12 +139,18 @@ export async function handleBarServe(args: string[], deps: Partial<ServeDeps> = 
 
   // 2. No live server found — start one.
   // Honor --port N from the launcher (it pre-selected via getPort to avoid races).
-  const requestedPort = parsePortArg(args);
+  // Without it, prefer the port recorded in bar.json so the server keeps coming
+  // back on the port the user last chose (sticky port).
+  const requestedPort = parsePortFlag(args).port;
   let port: number;
   if (requestedPort !== null) {
     port = requestedPort;
   } else {
-    port = await getPortFn({ port: [3000, 3001, 3002, 8000, 8080], host: '127.0.0.1' });
+    const stickyPort = resolveBarPort(ccsDir);
+    const base = [3000, 3001, 3002, 8000, 8080];
+    const candidates =
+      stickyPort !== null ? [stickyPort, ...base.filter((p) => p !== stickyPort)] : base;
+    port = await getPortFn({ port: candidates, host: '127.0.0.1' });
   }
 
   // TypeScript cannot infer that exit(1) is `never` when it is injected as a dep,

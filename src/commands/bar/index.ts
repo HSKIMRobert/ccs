@@ -56,9 +56,10 @@ export async function handleBarCommand(args: string[]): Promise<void> {
     },
   };
 
-  // Bare `ccs bar` → launch
-  if (!subcommand || subcommand === 'launch') {
-    await commandHandlers.launch(subcommand ? args.slice(1) : []);
+  // Bare `ccs bar` → launch. Bare flags (e.g. `ccs bar --port 3999`) also go to
+  // launch with the full arg list preserved (--help/--version were handled above).
+  if (!subcommand || subcommand === 'launch' || subcommand.startsWith('-')) {
+    await commandHandlers.launch(subcommand === 'launch' ? args.slice(1) : args);
     return;
   }
 
