@@ -6,9 +6,9 @@ Scope: `src/**/*.{ts,tsx,js,jsx,mjs,cjs}`
 
 | Metric | Value |
 |---|---:|
-| Sync fs occurrences (all) | 2427 |
+| Sync fs occurrences (all) | 2426 |
 | Sync fs files affected (all) | 258 |
-| Sync fs occurrences (runtime hotpaths) | 1142 |
+| Sync fs occurrences (runtime hotpaths) | 1141 |
 | Sync fs files affected (runtime hotpaths) | 152 |
 | Legacy shim markers | 458 |
 | Legacy shim files affected | 173 |
@@ -89,7 +89,7 @@ Scope: `src/**/*.{ts,tsx,js,jsx,mjs,cjs}`
 
 | File | LOC |
 |---|---:|
-| `src/web-server/usage/native-quota-collector.ts` | 1662 |
+| `src/web-server/usage/native-quota-collector.ts` | 1730 |
 | `src/web-server/routes/cliproxy-auth-routes.ts` | 1531 |
 | `src/cliproxy/auth/oauth-handler.ts` | 1510 |
 | `src/cursor/cursor-executor.ts` | 1234 |

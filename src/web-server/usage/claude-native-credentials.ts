@@ -16,6 +16,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import * as crypto from 'node:crypto';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
@@ -87,20 +88,77 @@ export function readClaudeCredentials(
   }
 
   if (platform === 'darwin') {
-    try {
-      const out = execImpl(`security find-generic-password -s "${KEYCHAIN_SERVICE}" -w`, {
-        timeout: KEYCHAIN_TIMEOUT_MS,
-        encoding: 'utf8',
-        stdio: ['pipe', 'pipe', 'ignore'],
-      });
-      const raw = (typeof out === 'string' ? out : out.toString('utf8')).trim();
-      if (raw) {
-        const parsed = parseCredentials(raw);
-        if (parsed) return parsed;
-      }
-    } catch {
-      // no Keychain entry / access denied -> null
+    const parsed = readCredentialsFromKeychainService(KEYCHAIN_SERVICE, execImpl);
+    if (parsed) return parsed;
+  }
+
+  return null;
+}
+
+/** Read + parse one Keychain generic-password item. Returns null on any failure. */
+function readCredentialsFromKeychainService(
+  service: string,
+  execImpl: NonNullable<CredentialReaderDeps['execSyncImpl']>
+): ClaudeNativeCredentials | null {
+  try {
+    const out = execImpl(`security find-generic-password -s "${service}" -w`, {
+      timeout: KEYCHAIN_TIMEOUT_MS,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    const raw = (typeof out === 'string' ? out : out.toString('utf8')).trim();
+    if (raw) {
+      const parsed = parseCredentials(raw);
+      if (parsed) return parsed;
     }
+  } catch {
+    // no Keychain entry / access denied -> null
+  }
+  return null;
+}
+
+/**
+ * Keychain service name Claude Code uses for a non-default CLAUDE_CONFIG_DIR:
+ * "Claude Code-credentials-<first 8 hex chars of sha256(configDir)>".
+ */
+export function claudeKeychainServiceForConfigDir(configDir: string): string {
+  const hash = crypto.createHash('sha256').update(configDir).digest('hex').slice(0, 8);
+  return `${KEYCHAIN_SERVICE}-${hash}`;
+}
+
+/**
+ * Read the Claude Code credentials for a specific CLAUDE_CONFIG_DIR (e.g. an
+ * isolated `ccs auth` instance directory).
+ *
+ * File-first (<configDir>/.credentials.json, no prompt), then the macOS
+ * Keychain item derived from the config dir path. On macOS Claude Code stores
+ * OAuth tokens in the Keychain by default, so without the Keychain fallback
+ * every isolated profile looks permanently logged-out to the bar.
+ */
+export function readClaudeCredentialsForConfigDir(
+  configDir: string,
+  deps: CredentialReaderDeps = {}
+): ClaudeNativeCredentials | null {
+  const platform = deps.platform ?? os.platform();
+  const existsImpl = deps.existsSyncImpl ?? existsSync;
+  const readImpl = deps.readFileSyncImpl ?? ((p: string) => readFileSync(p, 'utf8'));
+  const execImpl = deps.execSyncImpl ?? execSync;
+
+  const credentialsPath = path.join(configDir, '.credentials.json');
+  if (existsImpl(credentialsPath)) {
+    try {
+      const parsed = parseCredentials(readImpl(credentialsPath));
+      if (parsed) return parsed;
+    } catch {
+      // fall through to Keychain
+    }
+  }
+
+  if (platform === 'darwin') {
+    return readCredentialsFromKeychainService(
+      claudeKeychainServiceForConfigDir(configDir),
+      execImpl
+    );
   }
 
   return null;

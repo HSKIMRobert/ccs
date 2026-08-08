@@ -8,6 +8,8 @@
 import { describe, expect, it } from 'bun:test';
 import {
   readClaudeCredentials,
+  readClaudeCredentialsForConfigDir,
+  claudeKeychainServiceForConfigDir,
   getAccessToken,
   getSubscriptionTier,
   hasSupportedSubscription,
@@ -122,5 +124,94 @@ describe('token + tier extraction', () => {
     expect(getSubscriptionTier(makeCreds({ subscriptionType: 'max' }))).toBe('max');
     expect(getSubscriptionTier(makeCreds({ subscriptionType: '' }))).toBeNull();
     expect(getSubscriptionTier(null)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-config-dir credential reading (isolated `ccs auth` profiles on macOS)
+//
+// Claude Code stores OAuth credentials for a non-default CLAUDE_CONFIG_DIR in
+// a per-directory Keychain item: service "Claude Code-credentials-<hash>",
+// where <hash> is the first 8 hex chars of sha256(configDir). These tests pin
+// that derivation and the file-first / Keychain-fallback read order.
+// ---------------------------------------------------------------------------
+
+describe('claudeKeychainServiceForConfigDir', () => {
+  it('derives the service name from sha256 of the config dir path (first 8 hex chars)', () => {
+    // sha256("/home/test/.ccs/instances/work") = ffeb4b45...
+    expect(claudeKeychainServiceForConfigDir('/home/test/.ccs/instances/work')).toBe(
+      'Claude Code-credentials-ffeb4b45'
+    );
+  });
+});
+
+describe('readClaudeCredentialsForConfigDir', () => {
+  const configDir = '/home/test/.ccs/instances/work';
+  const credFile = `${configDir}/.credentials.json`;
+
+  it('reads <configDir>/.credentials.json when present (file-first, no Keychain)', () => {
+    let keychainCalled = false;
+    const creds = readClaudeCredentialsForConfigDir(configDir, {
+      platform: 'darwin',
+      existsSyncImpl: (p: string) => p === credFile,
+      readFileSyncImpl: (p: string) => {
+        expect(p).toBe(credFile);
+        return JSON.stringify(makeCreds());
+      },
+      execSyncImpl: () => {
+        keychainCalled = true;
+        return '';
+      },
+    });
+    expect(creds?.claudeAiOauth?.accessToken).toBe('tok-abc');
+    expect(keychainCalled).toBe(false);
+  });
+
+  it('falls back to the per-config-dir Keychain service when the file is absent', () => {
+    let keychainCmd = '';
+    const creds = readClaudeCredentialsForConfigDir(configDir, {
+      platform: 'darwin',
+      existsSyncImpl: () => false,
+      readFileSyncImpl: () => {
+        throw new Error('should not read file');
+      },
+      execSyncImpl: (cmd: string) => {
+        keychainCmd = cmd;
+        return JSON.stringify(makeCreds({ subscriptionType: 'team' }));
+      },
+    });
+    expect(creds?.claudeAiOauth?.subscriptionType).toBe('team');
+    expect(keychainCmd).toContain('Claude Code-credentials-ffeb4b45');
+  });
+
+  it('returns null when both file and Keychain are absent', () => {
+    const creds = readClaudeCredentialsForConfigDir(configDir, {
+      platform: 'darwin',
+      existsSyncImpl: () => false,
+      readFileSyncImpl: () => {
+        throw new Error('no file');
+      },
+      execSyncImpl: () => {
+        throw new Error('no keychain entry');
+      },
+    });
+    expect(creds).toBeNull();
+  });
+
+  it('does not consult the Keychain on non-darwin platforms', () => {
+    let keychainCalled = false;
+    const creds = readClaudeCredentialsForConfigDir(configDir, {
+      platform: 'linux',
+      existsSyncImpl: () => false,
+      readFileSyncImpl: () => {
+        throw new Error('no file');
+      },
+      execSyncImpl: () => {
+        keychainCalled = true;
+        return '';
+      },
+    });
+    expect(creds).toBeNull();
+    expect(keychainCalled).toBe(false);
   });
 });
