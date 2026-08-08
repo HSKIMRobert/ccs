@@ -26,8 +26,11 @@ export interface DashboardInfo {
 }
 
 /**
- * Read the port recorded in an existing bar.json.
- * Returns null when the file is absent or malformed.
+ * Read the port recorded in an existing bar.json, falling back to the --port
+ * in launch.json's args. `ccs bar stop` deletes bar.json but leaves
+ * launch.json, so the fallback is what keeps the sticky port (and the probe's
+ * ability to find a server on a non-default port) across a stop/start cycle.
+ * Returns null when neither file records a port.
  */
 
 export function resolveBarPort(ccsDir: string): number | null {
@@ -35,10 +38,25 @@ export function resolveBarPort(ccsDir: string): number | null {
   try {
     const raw = fs.readFileSync(barJsonPath, 'utf8');
     const parsed = JSON.parse(raw) as Partial<{ port: number }>;
-    return typeof parsed.port === 'number' ? parsed.port : null;
+    if (typeof parsed.port === 'number') return parsed.port;
   } catch {
-    return null;
+    /* fall through to launch.json */
   }
+
+  const launchJsonPath = path.join(ccsDir, 'bar', 'launch.json');
+  try {
+    const raw = fs.readFileSync(launchJsonPath, 'utf8');
+    const parsed = JSON.parse(raw) as Partial<{ args: unknown[] }>;
+    const args = Array.isArray(parsed.args) ? parsed.args : [];
+    const idx = args.indexOf('--port');
+    if (idx !== -1 && idx + 1 < args.length) {
+      const n = parseInt(String(args[idx + 1]), 10);
+      if (Number.isFinite(n) && n > 0 && n < 65536) return n;
+    }
+  } catch {
+    /* absent or malformed -> null */
+  }
+  return null;
 }
 
 /**

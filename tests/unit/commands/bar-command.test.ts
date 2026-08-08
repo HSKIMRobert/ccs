@@ -3814,3 +3814,63 @@ describe('launch: --port selects the server port', () => {
     expect(seen.spawnPort).toBe(3777);
   });
 });
+
+describe('resolveBarPort: launch.json fallback survives `ccs bar stop`', () => {
+  // `ccs bar stop` deletes bar.json, so bar.json alone cannot carry the sticky
+  // port across a stop/start cycle. launch.json (refreshed by launch, NOT
+  // deleted by stop) records the port in its args and acts as the fallback.
+  it('falls back to the --port recorded in launch.json when bar.json is absent', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(path.join(ccsDir, 'bar'), { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'bar', 'launch.json'),
+      JSON.stringify({
+        schema: 1,
+        runtime: '/usr/bin/node',
+        args: ['/x/ccs.js', 'bar', 'serve', '--port', '3456'],
+        home: tempHome,
+      })
+    );
+
+    const { resolveBarPort } = await loadLaunchSubcommand();
+    expect(resolveBarPort(ccsDir)).toBe(3456);
+  });
+
+  it('bar.json port wins over launch.json when both exist', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(path.join(ccsDir, 'bar'), { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'bar.json'),
+      JSON.stringify({ baseUrl: 'http://127.0.0.1:4000', port: 4000, authMode: 'loopback' })
+    );
+    fs.writeFileSync(
+      path.join(ccsDir, 'bar', 'launch.json'),
+      JSON.stringify({
+        schema: 1,
+        runtime: '/usr/bin/node',
+        args: ['/x/ccs.js', 'bar', 'serve', '--port', '3456'],
+        home: tempHome,
+      })
+    );
+
+    const { resolveBarPort } = await loadLaunchSubcommand();
+    expect(resolveBarPort(ccsDir)).toBe(4000);
+  });
+
+  it('returns null when launch.json has no --port and bar.json is absent', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(path.join(ccsDir, 'bar'), { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'bar', 'launch.json'),
+      JSON.stringify({
+        schema: 1,
+        runtime: '/usr/bin/node',
+        args: ['/x/ccs.js', 'bar', 'serve'],
+        home: tempHome,
+      })
+    );
+
+    const { resolveBarPort } = await loadLaunchSubcommand();
+    expect(resolveBarPort(ccsDir)).toBeNull();
+  });
+});
