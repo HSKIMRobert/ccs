@@ -1,3 +1,79 @@
+## [8.9.0](https://github.com/kaitranntt/ccs/compare/v8.8.1...v8.9.0) (2026-08-09)
+
+### Features
+
+* **auth:** share canonical Claude memory ([6841025](https://github.com/kaitranntt/ccs/commit/6841025bb413c5ca1c8ce8e903b55dbd5f269036)), closes [#1688](https://github.com/kaitranntt/ccs/issues/1688)
+* **bar:** support --port for ccs bar with sticky port persistence ([34608ce](https://github.com/kaitranntt/ccs/commit/34608ce291fa7d763c8a949b88cd79c8074385df))
+* **cliproxy:** expose model context windows ([b073261](https://github.com/kaitranntt/ccs/commit/b0732613a318e92dff2a827e9f7e67bb04184378))
+* **cliproxy:** expose request retry config ([d5ea4ee](https://github.com/kaitranntt/ccs/commit/d5ea4eeea353687795856ee567f5adbc23cc8f32))
+* **cliproxy:** persist scoped routing rules ([9fb2016](https://github.com/kaitranntt/ccs/commit/9fb2016f9012466afc92049b0b068dbafc487b57))
+* **i18n:** add Brazilian Portuguese (pt-BR) locale ([bb2596e](https://github.com/kaitranntt/ccs/commit/bb2596e296caa20a69c897ba472b7ada9eac2eda))
+* rebrand CCS as Claude Codex Switch ([#1658](https://github.com/kaitranntt/ccs/issues/1658)) ([3608bf7](https://github.com/kaitranntt/ccs/commit/3608bf71a1515dd65f0cdf29e2c6b5fc1030d723)), closes [#1657](https://github.com/kaitranntt/ccs/issues/1657)
+* support claude opus 5 ([ee90dd2](https://github.com/kaitranntt/ccs/commit/ee90dd26403e4366af7a4cdbf179e28f45887dc0))
+* **ui:** add codex fast service-tier toggle ([108ff84](https://github.com/kaitranntt/ccs/commit/108ff843f142e0a88d000db2aaa731dbc89f450f))
+* **ui:** add fable tier row in model mapping ([b27a007](https://github.com/kaitranntt/ccs/commit/b27a007229388a98bd6254af76b33b1d1ad2135e))
+* **ui:** add per-tier codex effort dropdown in model mapping ([e57bded](https://github.com/kaitranntt/ccs/commit/e57bded451de16fb31f639df8e92ebd554288946))
+* **ui:** extend reasoning control to xai grok models ([30b54a0](https://github.com/kaitranntt/ccs/commit/30b54a09666642d65f80c01b60da9d19324cafdd))
+
+### Bug Fixes
+
+* apply cliproxy retry settings safely ([480b795](https://github.com/kaitranntt/ccs/commit/480b79551b5f4e849c9f3341d6a8302141ce4bab))
+* **auth:** guard shared linking against instance replacement ([54efb82](https://github.com/kaitranntt/ccs/commit/54efb820553c4760cf081f363269ac1a16c85a3a))
+* **auth:** preserve explicit resume session continuity ([6721d47](https://github.com/kaitranntt/ccs/commit/6721d47502645325d58fc97a4d11bb53750d0c75)), closes [#1685](https://github.com/kaitranntt/ccs/issues/1685)
+* **bar:** bound native credential and quota waits ([da2de60](https://github.com/kaitranntt/ccs/commit/da2de600159cffb9db27d6e7bbeef03daae2b3f0))
+* **bar:** harden lifecycle process handling ([1a80717](https://github.com/kaitranntt/ccs/commit/1a80717f998079f449749db04aeed4b6eccc3349))
+* **bar:** keep sticky port across `ccs bar stop` via launch.json fallback ([d27b53f](https://github.com/kaitranntt/ccs/commit/d27b53f235fa16c6d5404b96fc183db4bfc9c1e3))
+* **bar:** stop false re-auth on non-default native subscription profiles ([a5a5b74](https://github.com/kaitranntt/ccs/commit/a5a5b742e4255051b160001985c4c545e85b0cf8))
+* **bar:** treat cached quota rows as stale once their reset passes ([833473c](https://github.com/kaitranntt/ccs/commit/833473c5f61f2df4e6408783a38f18d903384917))
+* **cliproxy:** classify Claude quota probe 429s ([bdcfc20](https://github.com/kaitranntt/ccs/commit/bdcfc20c0f78a19d5f7ed306f3094ac6f978482c))
+* **cliproxy:** correct Claude Opus 5 metadata ([af4e4fb](https://github.com/kaitranntt/ccs/commit/af4e4fb3531b5474cb2aa719cc2aaae6f112cfb0))
+* **cliproxy:** probe Gemini OAuth support ([19c6c3f](https://github.com/kaitranntt/ccs/commit/19c6c3f4577932a3b9c1eb4f8818d6fbec838bca))
+* **cliproxy:** retry contended state locks ([66794e0](https://github.com/kaitranntt/ccs/commit/66794e07323780ca1376e29a8fb2833d82c747d1))
+* **i18n:** complete Brazilian Portuguese locale ([0a80ddd](https://github.com/kaitranntt/ccs/commit/0a80dddb9cf24ea37dd733fa67a58649cb31ebef))
+* **metrics:** enforce exact runtime inventory ([306a827](https://github.com/kaitranntt/ccs/commit/306a8276b3f081560d447ee68243bd35b9051cac))
+* propagate fable model mapping across runtime paths ([f7241d0](https://github.com/kaitranntt/ccs/commit/f7241d0874088bfbfd498745c28b8d0ea236029b))
+* **proxy:** hoist duplicate system messages before coalescing ([b720231](https://github.com/kaitranntt/ccs/commit/b720231077267e0fcf281ef77b6c188340f6a3b6)), closes [#1459](https://github.com/kaitranntt/ccs/issues/1459)
+* **proxy:** stabilize upstream fetch transport ([d8210cf](https://github.com/kaitranntt/ccs/commit/d8210cf0113cf6aa782f856db683e9123cb27711)), closes [#1686](https://github.com/kaitranntt/ccs/issues/1686)
+* **shared-manager:** adopt diverged plugin registry files in linkInstancePlugins ([fa6b27f](https://github.com/kaitranntt/ccs/commit/fa6b27f159fd8dd8782f98ae415b572c5cde4eee))
+* **shared-manager:** adopt diverged settings.json content before re-linking ([481f013](https://github.com/kaitranntt/ccs/commit/481f013ec2581b943131fde1f11e34a098013b38)), closes [#57](https://github.com/kaitranntt/ccs/issues/57) [#1681](https://github.com/kaitranntt/ccs/issues/1681)
+* **shared-manager:** preserve diverged files safely ([7ae617f](https://github.com/kaitranntt/ccs/commit/7ae617f0ee2b377b5d9b74186431fb29ed019368))
+* **ui:** preserve codex tuning metadata in live catalog merge ([8d1a093](https://github.com/kaitranntt/ccs/commit/8d1a093cf94341e010903f2918c0dc18da19f94a))
+* **ui:** preserve untrusted origins in dev proxy ([c23b6be](https://github.com/kaitranntt/ccs/commit/c23b6bee19af147ef015e67c373d47af2d952c89))
+* **websearch:** honor disabled steering per launch ([abc3002](https://github.com/kaitranntt/ccs/commit/abc3002e89cb6f7fd7659b41084b6c835008c6cd))
+
+### Documentation
+
+* **ai:** define documentation truth hierarchy ([3bb2d56](https://github.com/kaitranntt/ccs/commit/3bb2d56778a3e775e8d4f2fd236c5984c79e916d))
+* **architecture:** reconcile provider and target contracts ([ebe1746](https://github.com/kaitranntt/ccs/commit/ebe174645938c8f86f92eafaaaa57a0db94482a6))
+* **architecture:** replace volatile maintainer snapshots ([721ca5f](https://github.com/kaitranntt/ccs/commit/721ca5fc339391530de2498646db91c0dee6b24f))
+* clarify disabled WebSearch launch behavior ([f89f136](https://github.com/kaitranntt/ccs/commit/f89f136a1bda46dc58f7c7d9d9a4efccaea9c611))
+* **config:** preserve active developer contracts ([fd0d436](https://github.com/kaitranntt/ccs/commit/fd0d4362b388e29dc394e5092bfd3af74d859977))
+* **contributing:** align test and UI guidance ([1e11335](https://github.com/kaitranntt/ccs/commit/1e1133534835ea705624feab3f3384ce5bea322a))
+* document Brazilian Portuguese locale ([348d230](https://github.com/kaitranntt/ccs/commit/348d2302985b91eb4beedd397c517eb5ccaefcf6))
+* **hygiene:** remove superseded local guides ([75e715e](https://github.com/kaitranntt/ccs/commit/75e715eebdf5d759234057c0e7212aee022a11c6))
+* **macos:** consolidate CCS Bar maintainer guidance ([4485fd6](https://github.com/kaitranntt/ccs/commit/4485fd64062d14e4dabb4815ca4173322b7d4f55))
+* **operations:** refresh runtime contracts ([51e8062](https://github.com/kaitranntt/ccs/commit/51e806299564da03ac8ce98cad35cc962ec01078))
+* **product:** refresh product and release contracts ([b918783](https://github.com/kaitranntt/ccs/commit/b918783293381a13f0ba90c17c57743a748fa733))
+* **readme:** clarify supported proxy runtimes ([3e38208](https://github.com/kaitranntt/ccs/commit/3e38208b37b6a7e01ff561539367c524d1df4db8)), closes [#1686](https://github.com/kaitranntt/ccs/issues/1686)
+* **readme:** route user guides to canonical docs ([deb1ed0](https://github.com/kaitranntt/ccs/commit/deb1ed0e67d6ca71953f0a78f72b9916c8bc8ed5))
+* **roadmap:** replace historical trackers with live guidance ([426dc54](https://github.com/kaitranntt/ccs/commit/426dc541a935d60747ce0bfa8e598ff3fa86f94d))
+
+### Tests
+
+* **cliproxy:** cover auto compact windows ([c107a67](https://github.com/kaitranntt/ccs/commit/c107a6752c9d1eb2d510b85fed37ea9bd26fc767))
+* **cliproxy:** cover Claude quota probe 429s ([92fb66c](https://github.com/kaitranntt/ccs/commit/92fb66c47bed4c305c8d77ac47330967509b6ff6))
+* **cliproxy:** cover concurrent state writers ([d700030](https://github.com/kaitranntt/ccs/commit/d7000300188c1aff78bfc44cd643c9e4cb96819e))
+* **cliproxy:** cover Gemini OAuth capabilities ([c4fc5e8](https://github.com/kaitranntt/ccs/commit/c4fc5e89855f1a07b9d01a843c7874fc640e1371))
+* **cliproxy:** cover routing rule preservation ([2ce3bfc](https://github.com/kaitranntt/ccs/commit/2ce3bfca26df80481f87ad2b29c4a8d2835e6e7a))
+* **docs:** enforce documentation freshness ([8dc6b81](https://github.com/kaitranntt/ccs/commit/8dc6b817b2e9d66752892e12410ec17988676cb0))
+* **proxy:** harden system message ordering ([c621241](https://github.com/kaitranntt/ccs/commit/c621241a2e308b6910b556696da40f1820ca9a1d)), closes [#1687](https://github.com/kaitranntt/ccs/issues/1687)
+* **ui:** cover Claude Opus 5 catalog visibility ([0629b4a](https://github.com/kaitranntt/ccs/commit/0629b4a40573a41966da7218f5d9e64bd68b32be))
+* **websearch:** cover disabled launch snapshots ([9f5706c](https://github.com/kaitranntt/ccs/commit/9f5706c275aa9142f88fcbe4ee4b95cce087b674))
+
+### CI
+
+* **review:** configure explicit reasoning effort ([26c1393](https://github.com/kaitranntt/ccs/commit/26c1393c161a7dfbe7bae7c5c9aff59a0447a002))
+
 ## [8.8.1](https://github.com/kaitranntt/ccs/compare/v8.8.0...v8.8.1) (2026-07-19)
 
 ### Hotfixes
