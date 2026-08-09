@@ -1,10 +1,10 @@
 {
   "scope": "src/**/*.{ts,tsx,js,jsx,mjs,cjs}",
   "syncFs": {
-    "totalOccurrences": 2452,
-    "filesAffected": 259,
-    "hotpathOccurrences": 1167,
-    "hotpathFilesAffected": 153,
+    "totalOccurrences": 2471,
+    "filesAffected": 261,
+    "hotpathOccurrences": 1186,
+    "hotpathFilesAffected": 155,
     "topHotpathFiles": [
       {
         "file": "src/management/shared-manager/diverged-file-adopter.ts",
@@ -498,10 +498,10 @@
   "maintainability": {
     "typedErrors": {
       "totalThrows": 454,
-      "typedThrows": 82,
-      "plainThrows": 312,
+      "typedThrows": 83,
+      "plainThrows": 311,
       "otherThrows": 60,
-      "adoptionRatio": 0.1806,
+      "adoptionRatio": 0.1828,
       "topSubdomainsByThrows": [
         {
           "subdomain": "web-server",
@@ -579,8 +579,8 @@
     },
     "loggerCoverage": {
       "filesWithCreateLogger": 65,
-      "totalSourceFiles": 762,
-      "coverageRatio": 0.0853,
+      "totalSourceFiles": 764,
+      "coverageRatio": 0.0851,
       "subdomainsWithZeroCreateLogger": [
         "api",
         "bin",
@@ -616,7 +616,7 @@
         },
         {
           "subdomain": "management",
-          "count": 33,
+          "count": 35,
           "withLogger": 1
         },
         {

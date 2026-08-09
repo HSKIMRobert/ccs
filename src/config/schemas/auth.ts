@@ -27,9 +27,9 @@ export interface AccountConfig {
   context_group?: string;
   /** Shared continuity depth when context_mode='shared' */
   continuity_mode?: 'standard' | 'deeper';
-  /** Account-level shared resource behavior for plugins, commands, skills, agents, and settings.json */
+  /** Account-level shared resource behavior for plugins, commands, skills, agents, settings.json, and CLAUDE.md */
   shared_resource_mode?: 'shared' | 'profile-local';
-  /** Bare profile: no shared symlinks (commands, skills, agents, settings.json) */
+  /** Bare profile: no shared symlinks (commands, skills, agents, settings.json, CLAUDE.md) */
   bare?: boolean;
 }
 

@@ -284,6 +284,168 @@ describe('InstanceManager MCP sync', () => {
     expect(manager.listInstances()).toEqual(['work']);
   });
 
+  for (const testCase of [
+    {
+      label: 'isolated bare',
+      policy: { mode: 'isolated' as const },
+      options: { bare: true },
+    },
+    {
+      label: 'shared context',
+      policy: { mode: 'shared' as const, group: 'review-safety' },
+      options: {},
+    },
+  ]) {
+    it(`rejects an existing symlink instance root before ${testCase.label} mutation`, async () => {
+      const externalInstance = path.join(tempRoot, `external-${testCase.label.replace(' ', '-')}`);
+      const instancesDir = path.join(tempRoot, '.ccs', 'instances');
+      fs.mkdirSync(externalInstance, { recursive: true });
+      fs.writeFileSync(path.join(externalInstance, 'sentinel.txt'), 'unchanged', 'utf8');
+      fs.mkdirSync(instancesDir, { recursive: true });
+      fs.symlinkSync(externalInstance, path.join(instancesDir, 'work'), 'dir');
+
+      const manager = new InstanceManager();
+      await expect(
+        manager.ensureInstance('work', testCase.policy, testCase.options)
+      ).rejects.toThrow('Unsafe account instance path');
+
+      expect(fs.readdirSync(externalInstance)).toEqual(['sentinel.txt']);
+      expect(fs.readFileSync(path.join(externalInstance, 'sentinel.txt'), 'utf8')).toBe(
+        'unchanged'
+      );
+      expect(fs.readdirSync(instancesDir)).toEqual(['work']);
+    });
+  }
+
+  it('rejects a symlinked instances parent before creating a new instance or lock', async () => {
+    const externalInstances = path.join(tempRoot, 'external-instances');
+    const managedInstances = path.join(tempRoot, '.ccs', 'instances');
+    fs.mkdirSync(externalInstances, { recursive: true });
+    fs.mkdirSync(path.dirname(managedInstances), { recursive: true });
+    fs.symlinkSync(externalInstances, managedInstances, 'dir');
+
+    const manager = new InstanceManager();
+    await expect(
+      manager.ensureInstance('new-profile', { mode: 'shared', group: 'review-safety' })
+    ).rejects.toThrow('Unsafe account instance path');
+
+    expect(fs.readdirSync(externalInstances)).toEqual([]);
+  });
+
+  it('detects parent replacement and leaves only an empty redirected artifact', async () => {
+    const managedCcsDir = path.join(tempRoot, '.ccs');
+    const managedInstances = path.join(managedCcsDir, 'instances');
+    const displacedCcsDir = path.join(tempRoot, 'displaced-ccs');
+    const externalTarget = path.join(tempRoot, 'parent-race-target');
+    fs.mkdirSync(managedCcsDir, { recursive: true });
+    fs.mkdirSync(externalTarget, { recursive: true });
+    fs.writeFileSync(path.join(externalTarget, 'sentinel.txt'), 'unchanged', 'utf8');
+
+    const originalMkdirSync = fs.mkdirSync;
+    let replacedParent = false;
+    spyOn(fs, 'mkdirSync').mockImplementation((directoryPath, options) => {
+      if (directoryPath === managedInstances && !replacedParent) {
+        replacedParent = true;
+        fs.renameSync(managedCcsDir, displacedCcsDir);
+        fs.symlinkSync(externalTarget, managedCcsDir, 'dir');
+      }
+      return originalMkdirSync(directoryPath, options);
+    });
+
+    const manager = new InstanceManager();
+    await expect(
+      manager.ensureInstance('new-profile', { mode: 'isolated' }, { bare: true })
+    ).rejects.toThrow('Unsafe account instance path');
+
+    expect(replacedParent).toBe(true);
+    expect(fs.readdirSync(externalTarget).sort()).toEqual(['instances', 'sentinel.txt']);
+    expect(fs.readdirSync(path.join(externalTarget, 'instances'))).toEqual([]);
+    expect(fs.existsSync(path.join(externalTarget, 'instances', '.locks'))).toBe(false);
+    expect(fs.existsSync(path.join(externalTarget, 'instances', 'new-profile'))).toBe(false);
+    expect(fs.readdirSync(displacedCcsDir)).toEqual([]);
+  });
+
+  it('preserves created and unrelated directories when the redirected path is replaced', async () => {
+    const managedCcsDir = path.join(tempRoot, '.ccs');
+    const managedInstances = path.join(managedCcsDir, 'instances');
+    const displacedCcsDir = path.join(tempRoot, 'displaced-ccs-cleanup-race');
+    const externalTarget = path.join(tempRoot, 'cleanup-race-target');
+    const createdDirectory = path.join(externalTarget, 'created-instances');
+    const redirectedInstances = path.join(externalTarget, 'instances');
+    fs.mkdirSync(managedCcsDir, { recursive: true });
+    fs.mkdirSync(externalTarget, { recursive: true });
+
+    const originalMkdirSync = fs.mkdirSync;
+    const originalLstatSync = fs.lstatSync;
+    let replacedParent = false;
+    let createdIdentityObserved = false;
+    let substitutedUnrelatedDirectory = false;
+
+    spyOn(fs, 'mkdirSync').mockImplementation((directoryPath, options) => {
+      if (directoryPath === managedInstances && !replacedParent) {
+        replacedParent = true;
+        fs.renameSync(managedCcsDir, displacedCcsDir);
+        fs.symlinkSync(externalTarget, managedCcsDir, 'dir');
+      }
+      return originalMkdirSync(directoryPath, options);
+    });
+    spyOn(fs, 'lstatSync').mockImplementation((targetPath, options) => {
+      if (
+        targetPath === managedCcsDir &&
+        createdIdentityObserved &&
+        !substitutedUnrelatedDirectory
+      ) {
+        substitutedUnrelatedDirectory = true;
+        fs.renameSync(redirectedInstances, createdDirectory);
+        originalMkdirSync(redirectedInstances);
+      }
+      const stats = originalLstatSync(targetPath, options);
+      if (targetPath === managedInstances && replacedParent && stats.isDirectory()) {
+        createdIdentityObserved = true;
+      }
+      return stats;
+    });
+
+    const manager = new InstanceManager();
+    await expect(
+      manager.ensureInstance('new-profile', { mode: 'isolated' }, { bare: true })
+    ).rejects.toThrow('Unsafe account instance path');
+
+    expect(substitutedUnrelatedDirectory).toBe(true);
+    expect(fs.existsSync(redirectedInstances)).toBe(true);
+    expect(fs.readdirSync(redirectedInstances)).toEqual([]);
+    expect(fs.existsSync(createdDirectory)).toBe(true);
+    expect(fs.readdirSync(createdDirectory)).toEqual([]);
+    expect(fs.existsSync(path.join(redirectedInstances, '.locks'))).toBe(false);
+    expect(fs.existsSync(path.join(redirectedInstances, 'new-profile'))).toBe(false);
+    expect(fs.existsSync(path.join(createdDirectory, '.locks'))).toBe(false);
+    expect(fs.existsSync(path.join(createdDirectory, 'new-profile'))).toBe(false);
+  });
+
+  it('revalidates a newly created instance root before initializing its contents', async () => {
+    const externalInstance = path.join(tempRoot, 'post-create-race-target');
+    fs.mkdirSync(externalInstance, { recursive: true });
+    fs.writeFileSync(path.join(externalInstance, 'sentinel.txt'), 'unchanged', 'utf8');
+
+    const manager = new InstanceManager();
+    const instancePath = manager.getInstancePath('new-profile');
+    const originalMkdirSync = fs.mkdirSync;
+    spyOn(fs, 'mkdirSync').mockImplementation((directoryPath, options) => {
+      if (directoryPath === instancePath) {
+        fs.symlinkSync(externalInstance, instancePath, 'dir');
+        return undefined;
+      }
+      return originalMkdirSync(directoryPath, options);
+    });
+
+    await expect(
+      manager.ensureInstance('new-profile', { mode: 'isolated' }, { bare: true })
+    ).rejects.toThrow('Unsafe account instance path');
+
+    expect(fs.readdirSync(externalInstance)).toEqual(['sentinel.txt']);
+    expect(fs.readFileSync(path.join(externalInstance, 'sentinel.txt'), 'utf8')).toBe('unchanged');
+  });
+
   it('skips shared symlinks and MCP sync for bare instance creation', async () => {
     const linkSharedSpy = spyOn(
       SharedManager.prototype,
@@ -491,7 +653,9 @@ describe('InstanceManager MCP sync', () => {
         metadata?: Record<string, unknown>;
       }
     >;
-    const personalRegistry = readJson(path.join(personalPath, 'plugins', 'known_marketplaces.json')) as Record<
+    const personalRegistry = readJson(
+      path.join(personalPath, 'plugins', 'known_marketplaces.json')
+    ) as Record<
       string,
       {
         installLocation?: string;
@@ -552,10 +716,7 @@ describe('InstanceManager MCP sync', () => {
 
     const legacyRegistry = readJson(
       path.join(legacyPath, 'plugins', 'known_marketplaces.json')
-    ) as Record<
-      string,
-      { installLocation?: string; label?: string; refreshToken?: string }
-    >;
+    ) as Record<string, { installLocation?: string; label?: string; refreshToken?: string }>;
     expect(legacyRegistry['claude-code-plugins']).toMatchObject({
       installLocation: marketplacePath(legacyPath),
       label: 'Legacy marketplace',

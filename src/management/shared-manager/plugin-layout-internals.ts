@@ -39,6 +39,18 @@ import type { SharedItem } from './types';
  */
 export type PluginLayoutRoots = PluginMetadataRoots;
 
+function runGuardedInstanceMutation<T>(
+  assertInstanceIdentity: (() => void) | undefined,
+  operation: () => T
+): T {
+  assertInstanceIdentity?.();
+  try {
+    return operation();
+  } finally {
+    assertInstanceIdentity?.();
+  }
+}
+
 /**
  * Ensure the plugin layout default directories (cache, marketplaces) and
  * registry files (installed_plugins.json, known_marketplaces.json) exist
@@ -75,7 +87,11 @@ export function ensureSharedPluginLayoutDefaults(claudeDir: string): void {
  * Link shared plugins directory entries into an instance, creating the
  * instance plugins directory first if needed.
  */
-export function linkInstancePlugins(roots: PluginLayoutRoots, instancePath: string): void {
+export function linkInstancePlugins(
+  roots: PluginLayoutRoots,
+  instancePath: string,
+  assertInstanceIdentity?: () => void
+): void {
   const linkPath = path.join(instancePath, 'plugins');
   const targetPath = path.join(roots.sharedDir, 'plugins');
   let linkStats: fs.Stats | null = null;
@@ -87,30 +103,42 @@ export function linkInstancePlugins(roots: PluginLayoutRoots, instancePath: stri
       throw err;
     }
   }
+  assertInstanceIdentity?.();
 
   if (linkStats?.isSymbolicLink() || (linkStats && !linkStats.isDirectory())) {
-    removeExistingPath(linkPath, linkStats.isDirectory() ? 'directory' : 'file');
+    const existingType = linkStats.isDirectory() ? 'directory' : 'file';
+    runGuardedInstanceMutation(assertInstanceIdentity, () =>
+      removeExistingPath(linkPath, existingType)
+    );
   }
 
   if (!linkStats || !linkStats.isDirectory()) {
-    fs.mkdirSync(linkPath, { recursive: true, mode: 0o700 });
+    runGuardedInstanceMutation(assertInstanceIdentity, () =>
+      fs.mkdirSync(linkPath, { recursive: true, mode: 0o700 })
+    );
   }
 
-  for (const item of getSharedPluginLinkItems(roots.sharedDir)) {
+  const linkItems = getSharedPluginLinkItems(roots.sharedDir);
+  assertInstanceIdentity?.();
+
+  for (const item of linkItems) {
     const targetEntryPath = path.join(targetPath, item.name);
     const linkEntryPath = path.join(linkPath, item.name);
     let adoption: ReturnType<typeof adoptDivergedFileContent> = 'not-claimed';
 
     if (item.type === 'file') {
-      adoption = adoptDivergedFileContent(
-        linkEntryPath,
-        path.join(roots.claudeDir, 'plugins', item.name)
+      adoption = runGuardedInstanceMutation(assertInstanceIdentity, () =>
+        adoptDivergedFileContent(linkEntryPath, path.join(roots.claudeDir, 'plugins', item.name))
       );
       if (adoption === 'not-claimed') {
-        removeExistingPath(linkEntryPath, item.type);
+        runGuardedInstanceMutation(assertInstanceIdentity, () =>
+          removeExistingPath(linkEntryPath, item.type)
+        );
       }
     } else {
-      removeExistingPath(linkEntryPath, item.type);
+      runGuardedInstanceMutation(assertInstanceIdentity, () =>
+        removeExistingPath(linkEntryPath, item.type)
+      );
     }
     assertAdoptionPathAbsent(linkEntryPath, adoption);
 
@@ -119,10 +147,12 @@ export function linkInstancePlugins(roots: PluginLayoutRoots, instancePath: stri
       continue;
     }
 
+    assertInstanceIdentity?.();
     try {
       const symlinkType = item.type === 'directory' ? 'dir' : 'file';
       fs.symlinkSync(targetEntryPath, linkEntryPath, symlinkType);
     } catch (_err) {
+      assertInstanceIdentity?.();
       assertAdoptionPathAbsent(linkEntryPath, adoption);
       if (getLstatSync(linkEntryPath)) {
         console.log(warn(`Skipping plugins/${item.name}: path reappeared during reconciliation`));
@@ -130,9 +160,13 @@ export function linkInstancePlugins(roots: PluginLayoutRoots, instancePath: stri
       }
       if (process.platform === 'win32') {
         if (item.type === 'directory') {
-          copyDirectoryFallback(targetEntryPath, linkEntryPath);
+          runGuardedInstanceMutation(assertInstanceIdentity, () =>
+            copyDirectoryFallback(targetEntryPath, linkEntryPath)
+          );
         } else {
-          fs.copyFileSync(targetEntryPath, linkEntryPath, fs.constants.COPYFILE_EXCL);
+          runGuardedInstanceMutation(assertInstanceIdentity, () =>
+            fs.copyFileSync(targetEntryPath, linkEntryPath, fs.constants.COPYFILE_EXCL)
+          );
         }
         console.log(
           warn(`Symlink failed for plugins/${item.name}, copied instead (enable Developer Mode)`)
@@ -141,6 +175,7 @@ export function linkInstancePlugins(roots: PluginLayoutRoots, instancePath: stri
         throw _err;
       }
     }
+    assertInstanceIdentity?.();
   }
 }
 
