@@ -8,6 +8,7 @@
 import * as fs from 'fs';
 import { getCcsDir } from '../../config/config-loader-facade';
 import { getBarJsonPath, getServerPidPath } from './bar-paths';
+import { parseBarServerProcessRecord, parseLegacyServerPid } from './bar-process-control';
 
 // ---------------------------------------------------------------------------
 // Types — injectable deps
@@ -115,11 +116,21 @@ export async function handleBarStatus(
     return;
   }
 
-  const pid = parseInt(pidRaw, 10);
-  if (!Number.isFinite(pid) || pid <= 0) {
+  const processRecord = parseBarServerProcessRecord(pidRaw);
+  if (processRecord === null) {
+    const legacyPid = parseLegacyServerPid(pidRaw);
+    if (legacyPid !== null) {
+      console.log(
+        `[!] CCS Bar server: legacy server.pid has unverified PID ${legacyPid}; status cannot safely identify it.`
+      );
+      console.log(`[i] Verify manually with: ps -p ${legacyPid} -o command=`);
+      console.log('[i] If it is CCS Bar, stop it manually, remove server.pid, then restart.');
+      return;
+    }
     console.log(`[!] CCS Bar server: server.pid is invalid ("${pidRaw}")`);
     return;
   }
+  const { pid } = processRecord;
 
   // 2. Check process liveness.
   const alive = isProcessAlive(pid);

@@ -25,6 +25,10 @@ export interface DashboardInfo {
   authRequired?: boolean;
 }
 
+function isValidPort(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= 65535;
+}
+
 /**
  * Read the port recorded in an existing bar.json, falling back to the --port
  * in launch.json's args. `ccs bar stop` deletes bar.json but leaves
@@ -38,7 +42,7 @@ export function resolveBarPort(ccsDir: string): number | null {
   try {
     const raw = fs.readFileSync(barJsonPath, 'utf8');
     const parsed = JSON.parse(raw) as Partial<{ port: number }>;
-    if (typeof parsed.port === 'number') return parsed.port;
+    if (isValidPort(parsed.port)) return parsed.port;
   } catch {
     /* fall through to launch.json */
   }
@@ -50,8 +54,11 @@ export function resolveBarPort(ccsDir: string): number | null {
     const args = Array.isArray(parsed.args) ? parsed.args : [];
     const idx = args.indexOf('--port');
     if (idx !== -1 && idx + 1 < args.length) {
-      const n = parseInt(String(args[idx + 1]), 10);
-      if (Number.isFinite(n) && n > 0 && n < 65536) return n;
+      const rawPort = args[idx + 1];
+      if (typeof rawPort === 'string' && /^[1-9]\d{0,4}$/.test(rawPort)) {
+        const n = Number(rawPort);
+        if (isValidPort(n)) return n;
+      }
     }
   } catch {
     /* absent or malformed -> null */
@@ -102,18 +109,18 @@ export async function defaultFindRunningServer(ccsDir: string): Promise<Dashboar
         // loopback service that streams forever cannot block discovery from
         // returning a higher-priority hit.
         socket.destroy();
-        const authRequired = statusCode === 401 || statusCode === 403;
+        const proofMatch = headerSection.match(
+          new RegExp(`${BAR_AUTH_TOKEN_HEADER}:\\s*([^\\r\\n]+)`, 'i')
+        );
+        const proof = proofMatch ? proofMatch[1].trim() : '';
+        const tokenMatched = isMatchingBarAuthProof(token, nonce, proof);
+        const authRequired = (statusCode === 401 || statusCode === 403) && tokenMatched;
         if (authRequired) {
           resolve({ ok: true, authRequired: true });
           return;
         }
         if (statusCode === 200) {
-          // Accept only when the server includes a correct nonce-bound proof.
-          const echoMatch = headerSection.match(
-            new RegExp(`${BAR_AUTH_TOKEN_HEADER}:\\s*([^\\r\\n]+)`, 'i')
-          );
-          const proof = echoMatch ? echoMatch[1].trim() : '';
-          resolve({ ok: isMatchingBarAuthProof(token, nonce, proof), authRequired: false });
+          resolve({ ok: tokenMatched, authRequired: false });
           return;
         }
         resolve({ ok: false, authRequired: false });
@@ -135,12 +142,12 @@ export async function defaultFindRunningServer(ccsDir: string): Promise<Dashboar
         const statusMatch = rawResponse.match(/^HTTP\/\d(?:\.\d)?\s+(\d{3})/);
         if (statusMatch) {
           const code = Number(statusMatch[1]);
-          // For non-200 we can finish on the status line alone.
-          if (code !== 200) {
+          // CCS-authenticated 401/403 responses also carry the nonce proof, so
+          // wait for their complete headers before deciding identity.
+          if (code !== 200 && code !== 401 && code !== 403) {
             finish(code, rawResponse);
             return;
           }
-          // For 200 we need the headers section to extract the token.
           if (rawResponse.includes('\r\n\r\n')) {
             finish(code, rawResponse.split('\r\n\r\n')[0]);
           }

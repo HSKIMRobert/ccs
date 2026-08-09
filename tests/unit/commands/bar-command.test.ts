@@ -169,6 +169,13 @@ describe('bar command dispatcher (index.ts)', () => {
     expect(calls).toEqual(['launch:']);
   });
 
+  it('rejects an unknown bare launch flag without dispatching launch', async () => {
+    const handleBarCommand = await loadHandleBarCommand();
+    await handleBarCommand(['--porrt', '3999']);
+    expect(calls).toEqual([]);
+    expect(process.exitCode).toBe(1);
+  });
+
   it('dispatches `ccs bar install` to install subcommand', async () => {
     const handleBarCommand = await loadHandleBarCommand();
     await handleBarCommand(['install']);
@@ -3040,7 +3047,7 @@ describe('defaultFindRunningServer: socket-level 401/403 classifies authRequired
   // parser correctly sets authRequired without relying on the higher-level dep
   // injection that existing tests use (which bypasses real status-line parsing).
 
-  function makeNetMock(statusLine: string) {
+  function makeNetMock(statusLine: string, token: string) {
     return {
       connect: (opts: { host: string; port: number }, onConnect: () => void): unknown => {
         const listeners: Record<string, Array<(arg?: unknown) => void>> = {};
@@ -3054,19 +3061,25 @@ describe('defaultFindRunningServer: socket-level 401/403 classifies authRequired
             void cb;
             return socket;
           },
-          write() {
+          write(request: string) {
+            const nonce =
+              request.match(new RegExp(`${BAR_AUTH_NONCE_HEADER}:\\s*([^\\r\\n]+)`, 'i'))?.[1] ??
+              '';
+            const proof = createBarAuthProof(token, nonce);
+            setImmediate(() => {
+              for (const cb of listeners.data ?? []) {
+                cb(
+                  Buffer.from(`${statusLine}\r\n${BAR_AUTH_TOKEN_HEADER}: ${proof}\r\n\r\n`, 'utf8')
+                );
+              }
+            });
             return true;
           },
           destroy() {
             return socket;
           },
         };
-        setImmediate(() => {
-          onConnect();
-          for (const cb of listeners.data ?? []) {
-            cb(Buffer.from(`${statusLine}\r\n\r\n`, 'utf8'));
-          }
-        });
+        setImmediate(onConnect);
         return socket;
       },
     };
@@ -3081,7 +3094,8 @@ describe('defaultFindRunningServer: socket-level 401/403 classifies authRequired
       JSON.stringify({ port: 41401, baseUrl: 'http://127.0.0.1:41401', authMode: 'loopback' })
     );
 
-    mock.module('net', () => makeNetMock('HTTP/1.1 401 Unauthorized'));
+    const token = getOrCreateBarAuthToken(ccsDir);
+    mock.module('net', () => makeNetMock('HTTP/1.1 401 Unauthorized', token));
 
     moduleSeq++;
     const { defaultFindRunningServer } = (await import(
@@ -3111,7 +3125,8 @@ describe('defaultFindRunningServer: socket-level 401/403 classifies authRequired
       JSON.stringify({ port: 41403, baseUrl: 'http://127.0.0.1:41403', authMode: 'loopback' })
     );
 
-    mock.module('net', () => makeNetMock('HTTP/1.1 403 Forbidden'));
+    const token = getOrCreateBarAuthToken(ccsDir);
+    mock.module('net', () => makeNetMock('HTTP/1.1 403 Forbidden', token));
 
     moduleSeq++;
     const { defaultFindRunningServer } = (await import(
@@ -3300,6 +3315,30 @@ describe('defaultWaitForServerLive: rogue 200 without matching token is rejected
     expect(result).not.toBe('resolved');
     // It either timed out (still looping) or threw early — both correct outcomes.
     expect(result === 'timeout' || result === 'rejected').toBe(true);
+  });
+
+  it('unrelated 401/403 without a CCS proof does not trigger auth-required identity', async () => {
+    for (const status of [401, 403]) {
+      mock.module('net', () =>
+        buildNetMock(`HTTP/1.1 ${status} Unrelated Service\r\nConnection: close\r\n\r\n`)
+      );
+      moduleSeq++;
+      const { defaultWaitForServerLive } = (await import(
+        `../../../src/commands/bar/launch-subcommand?test=${Date.now()}-${moduleSeq}`
+      )) as {
+        defaultWaitForServerLive: (baseUrl: string) => Promise<void>;
+      };
+
+      const result = await Promise.race([
+        defaultWaitForServerLive(`http://127.0.0.1:${9900 + status}`).then(
+          () => 'resolved' as const,
+          () => 'rejected' as const
+        ),
+        new Promise<'still-probing'>((resolve) => setTimeout(() => resolve('still-probing'), 300)),
+      ]);
+      expect(result).toBe('still-probing');
+      mock.restore();
+    }
   });
 
   it('correct-token 200 resolves defaultWaitForServerLive immediately', async () => {
@@ -3796,6 +3835,104 @@ describe('launch: --port selects the server port', () => {
       port: number;
     };
     expect(barJson.port).toBe(3999);
+  });
+
+  it('preflights the destination before stopping a healthy running server', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps } = makePortDeps(ccsDir);
+    const events: string[] = [];
+    deps.findRunningServer = async () => ({ port: 3000, baseUrl: 'http://127.0.0.1:3000' });
+    deps.getPort = async () => {
+      events.push('preflight');
+      return 3999;
+    };
+    deps.stopDetachedServer = () => {
+      events.push('stop');
+    };
+
+    await handleBarLaunch(['--port', '3999'], deps);
+    expect(events).toEqual(['preflight', 'stop']);
+  });
+
+  it('leaves the healthy server running when destination preflight is busy', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+    deps.findRunningServer = async () => ({ port: 3000, baseUrl: 'http://127.0.0.1:3000' });
+    deps.getPort = async () => 4000;
+
+    await handleBarLaunch(['--port', '3999'], deps);
+    expect(seen.stopped).toBe(false);
+    expect(seen.spawnPort).toBeNull();
+  });
+
+  it('aborts the move when the verified stop fails', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+    deps.findRunningServer = async () => ({ port: 3000, baseUrl: 'http://127.0.0.1:3000' });
+    deps.stopDetachedServer = () => {
+      throw new Error('identity mismatch');
+    };
+
+    await handleBarLaunch(['--port', '3999'], deps);
+    expect(seen.spawnPort).toBeNull();
+  });
+
+  it('restores the prior server when a check-to-bind race breaks the replacement', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps } = makePortDeps(ccsDir);
+    const spawnedPorts: number[] = [];
+    deps.findRunningServer = async () => ({ port: 3000, baseUrl: 'http://127.0.0.1:3000' });
+    deps.spawnDetachedServer = (port: number) => {
+      spawnedPorts.push(port);
+    };
+    deps.waitForServerLive = async (baseUrl: string) => {
+      if (baseUrl.endsWith(':3999')) throw new Error('EADDRINUSE after preflight');
+    };
+
+    await handleBarLaunch(['--port', '3999'], deps);
+    expect(spawnedPorts).toEqual([3999, 3000]);
+  });
+
+  it('restores the prior server when replacement spawn fails', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps } = makePortDeps(ccsDir);
+    const spawnedPorts: number[] = [];
+    deps.findRunningServer = async () => ({ port: 3000, baseUrl: 'http://127.0.0.1:3000' });
+    deps.spawnDetachedServer = (port: number) => {
+      spawnedPorts.push(port);
+      if (port === 3999) throw new Error('spawn failed');
+    };
+
+    await handleBarLaunch(['--port', '3999'], deps);
+    expect(spawnedPorts).toEqual([3999, 3000]);
+  });
+
+  it('preserves prior discovery state when replacement and rollback both fail', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(path.join(ccsDir, 'bar'), { recursive: true });
+    const oldBarJson = JSON.stringify({
+      baseUrl: 'http://127.0.0.1:3000',
+      port: 3000,
+      authMode: 'loopback',
+    });
+    const oldLaunchJson = JSON.stringify({ args: ['ccs.js', 'bar', 'serve', '--port', '3000'] });
+    fs.writeFileSync(path.join(ccsDir, 'bar.json'), oldBarJson);
+    fs.writeFileSync(path.join(ccsDir, 'bar', 'launch.json'), oldLaunchJson);
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps } = makePortDeps(ccsDir);
+    deps.findRunningServer = async () => ({ port: 3000, baseUrl: 'http://127.0.0.1:3000' });
+    deps.spawnDetachedServer = () => {
+      throw new Error('spawn failed');
+    };
+
+    await handleBarLaunch(['--port', '3999'], deps);
+    expect(fs.readFileSync(path.join(ccsDir, 'bar.json'), 'utf8')).toBe(oldBarJson);
+    expect(fs.readFileSync(path.join(ccsDir, 'bar', 'launch.json'), 'utf8')).toBe(oldLaunchJson);
   });
 
   it('without --port, prefers the port recorded in bar.json (sticky port)', async () => {

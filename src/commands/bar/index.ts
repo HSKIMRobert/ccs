@@ -10,6 +10,7 @@
  */
 
 import { hasAnyFlag } from '../arg-extractor';
+import { validatePortArgs } from './port-arg';
 
 export async function handleBarCommand(args: string[]): Promise<void> {
   const subcommand = args[0];
@@ -59,7 +60,15 @@ export async function handleBarCommand(args: string[]): Promise<void> {
   // Bare `ccs bar` → launch. Bare flags (e.g. `ccs bar --port 3999`) also go to
   // launch with the full arg list preserved (--help/--version were handled above).
   if (!subcommand || subcommand === 'launch' || subcommand.startsWith('-')) {
-    await commandHandlers.launch(subcommand === 'launch' ? args.slice(1) : args);
+    const launchArgs = subcommand === 'launch' ? args.slice(1) : args;
+    const argError = validatePortArgs(launchArgs);
+    if (argError !== null) {
+      console.error(`[X] ${argError}`);
+      console.error('[i] Usage: ccs bar [--port N]');
+      process.exitCode = 1;
+      return;
+    }
+    await commandHandlers.launch(launchArgs);
     return;
   }
 
