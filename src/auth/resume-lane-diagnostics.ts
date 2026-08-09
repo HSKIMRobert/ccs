@@ -4,9 +4,11 @@ import { getDefaultClaudeConfigDir } from '../utils/claude-config-path';
 
 import InstanceManager from '../management/instance-manager';
 import ProfileDetector from './profile-detector';
+import ProfileRegistry from './profile-registry';
 import { resolveConfiguredContinuitySourceAccount } from './profile-continuity-inheritance';
 import type { ProfileType } from '../types/profile';
 import { getCcsDir } from '../config/config-loader-facade';
+import { isValidAccountProfileName } from './account-context';
 
 export type ResumeLaneKind =
   | 'native'
@@ -29,6 +31,37 @@ export interface ResumeFlagIntent {
   explicitSessionId?: string;
 }
 
+export interface ResumeSessionLane {
+  kind: 'native' | 'account';
+  configDir: string;
+  accountName?: string;
+}
+
+export interface ResumeSessionScanDependencies {
+  beforeSessionOpen?: (sessionPath: string) => void;
+}
+
+const SESSION_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isPathWithin(candidate: string, root: string): boolean {
+  return candidate === root || candidate.startsWith(`${root}${path.sep}`);
+}
+
+function hasSameIdentity(before: fs.Stats, after: fs.Stats): boolean {
+  return before.dev === after.dev && before.ino === after.ino;
+}
+
+function isStableDirectory(directoryPath: string, before: fs.Stats): boolean {
+  const after = fs.lstatSync(directoryPath);
+  return after.isDirectory() && !after.isSymbolicLink() && hasSameIdentity(before, after);
+}
+
+function isStableFile(filePath: string, before: fs.Stats): boolean {
+  const after = fs.lstatSync(filePath);
+  return after.isFile() && !after.isSymbolicLink() && hasSameIdentity(before, after);
+}
+
 function countTopLevelProjectDirs(projectsDir: string): number {
   try {
     return fs
@@ -37,6 +70,103 @@ function countTopLevelProjectDirs(projectsDir: string): number {
   } catch {
     return 0;
   }
+}
+
+function laneContainsSession(
+  configDir: string,
+  sessionId: string,
+  deps: ResumeSessionScanDependencies
+): boolean {
+  if (!SESSION_ID_PATTERN.test(sessionId)) {
+    return false;
+  }
+
+  const projectsDir = path.join(configDir, 'projects');
+  try {
+    const configStat = fs.lstatSync(configDir);
+    if (!configStat.isDirectory() || configStat.isSymbolicLink()) return false;
+    const configRealPath = fs.realpathSync(configDir);
+    const projectsStat = fs.lstatSync(projectsDir);
+    if (!projectsStat.isDirectory() || projectsStat.isSymbolicLink()) return false;
+    const projectsRealPath = fs.realpathSync(projectsDir);
+    if (!isPathWithin(projectsRealPath, configRealPath)) return false;
+
+    return fs.readdirSync(projectsDir, { withFileTypes: true }).some((projectEntry) => {
+      if (!projectEntry.isDirectory() || projectEntry.isSymbolicLink()) {
+        return false;
+      }
+      const projectPath = path.join(projectsDir, projectEntry.name);
+      const sessionPath = path.join(projectPath, `${sessionId}.jsonl`);
+      let sessionFd: number | undefined;
+      try {
+        const projectStat = fs.lstatSync(projectPath);
+        if (!projectStat.isDirectory() || projectStat.isSymbolicLink()) return false;
+        const projectRealPath = fs.realpathSync(projectPath);
+        if (!isPathWithin(projectRealPath, projectsRealPath)) return false;
+        const sessionRealPath = fs.realpathSync(sessionPath);
+        if (!isPathWithin(sessionRealPath, projectRealPath)) return false;
+        const sessionStat = fs.lstatSync(sessionPath);
+        if (!sessionStat.isFile() || sessionStat.isSymbolicLink()) return false;
+        deps.beforeSessionOpen?.(sessionPath);
+        sessionFd = fs.openSync(
+          sessionPath,
+          fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0)
+        );
+        const openedSessionStat = fs.fstatSync(sessionFd);
+        if (!openedSessionStat.isFile() || !hasSameIdentity(sessionStat, openedSessionStat)) {
+          return false;
+        }
+        return (
+          isStableDirectory(configDir, configStat) &&
+          isStableDirectory(projectsDir, projectsStat) &&
+          isStableDirectory(projectPath, projectStat) &&
+          isStableFile(sessionPath, sessionStat) &&
+          fs.realpathSync(configDir) === configRealPath &&
+          fs.realpathSync(projectsDir) === projectsRealPath &&
+          fs.realpathSync(projectPath) === projectRealPath &&
+          fs.realpathSync(sessionPath) === sessionRealPath
+        );
+      } catch {
+        return false;
+      } finally {
+        if (sessionFd !== undefined) fs.closeSync(sessionFd);
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
+export function findResumeSessionLanes(
+  sessionId: string,
+  deps: ResumeSessionScanDependencies = {}
+): ResumeSessionLane[] {
+  if (!SESSION_ID_PATTERN.test(sessionId)) {
+    return [];
+  }
+
+  const instanceMgr = new InstanceManager();
+  const profileRegistry = new ProfileRegistry();
+  const lanes: ResumeSessionLane[] = [];
+  const nativeConfigDir = getDefaultClaudeConfigDir();
+  if (laneContainsSession(nativeConfigDir, sessionId, deps)) {
+    lanes.push({ kind: 'native', configDir: nativeConfigDir });
+  }
+
+  const accountNames = Object.entries(profileRegistry.getAllProfilesMerged())
+    .filter(
+      ([accountName, profile]) =>
+        profile.type === 'account' && isValidAccountProfileName(accountName)
+    )
+    .map(([accountName]) => accountName);
+  for (const accountName of accountNames) {
+    const configDir = instanceMgr.getInstancePath(accountName);
+    if (laneContainsSession(configDir, sessionId, deps)) {
+      lanes.push({ kind: 'account', configDir, accountName });
+    }
+  }
+
+  return lanes;
 }
 
 function resolveNativeLaneSummary(

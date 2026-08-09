@@ -15,6 +15,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+function processRecord(pid: number, birthIdentity = 'test-birth'): string {
+  return JSON.stringify({ pid, birthIdentity }, null, 2);
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -24,6 +28,7 @@ let tempHome: string;
 let originalCcsHome: string | undefined;
 let originalConsoleLog: typeof console.log;
 let originalConsoleError: typeof console.error;
+let originalExitCode: number | undefined;
 
 function captureConsole(): void {
   originalConsoleLog = console.log;
@@ -113,6 +118,8 @@ beforeEach(() => {
 
   tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-bar-lifecycle-test-'));
   originalCcsHome = process.env.CCS_HOME;
+  originalExitCode = process.exitCode;
+  process.exitCode = 0;
   process.env.CCS_HOME = tempHome;
 });
 
@@ -124,6 +131,7 @@ afterEach(() => {
   } else {
     process.env.CCS_HOME = originalCcsHome;
   }
+  process.exitCode = originalExitCode ?? 0;
 
   try {
     fs.rmSync(tempHome, { recursive: true, force: true });
@@ -214,6 +222,7 @@ describe('serve: start new server', () => {
       exit: (code: number) => {
         throw new Error(`__EXIT_${code}__`);
       },
+      getProcessBirthIdentity: () => 'test-birth',
     });
 
     // bar.json must be written
@@ -226,7 +235,10 @@ describe('serve: start new server', () => {
     // server.pid must be written
     const pidPath = path.join(ccsDir, 'bar', 'server.pid');
     expect(writtenFiles[pidPath]).toBeDefined();
-    expect(writtenFiles[pidPath]).toBe(String(process.pid));
+    expect(JSON.parse(writtenFiles[pidPath])).toEqual({
+      pid: process.pid,
+      birthIdentity: 'test-birth',
+    });
 
     // Both SIGINT and SIGTERM handlers registered
     expect(signals).toContain('SIGINT');
@@ -309,7 +321,7 @@ describe('stop: SIGTERM and cleanup', () => {
     const ccsDir = path.join(tempHome, '.ccs');
     const barDir = path.join(ccsDir, 'bar');
     fs.mkdirSync(barDir, { recursive: true });
-    fs.writeFileSync(path.join(barDir, 'server.pid'), '12345');
+    fs.writeFileSync(path.join(barDir, 'server.pid'), processRecord(12345));
     fs.writeFileSync(path.join(ccsDir, 'bar.json'), '{"baseUrl":"http://127.0.0.1:3000"}');
 
     const killed: Array<{ pid: number; signal: string }> = [];
@@ -329,6 +341,8 @@ describe('stop: SIGTERM and cleanup', () => {
       killProcess: (pid: number, signal: string) => {
         killed.push({ pid, signal });
       },
+      getProcessBirthIdentity: () => 'test-birth',
+      waitForProcessExit: async () => 'exited',
       removeFile: (filePath: string) => {
         removed.push(filePath);
       },
@@ -338,7 +352,7 @@ describe('stop: SIGTERM and cleanup', () => {
     // Both pid and bar.json must be removed
     expect(removed.some((p) => p.includes('server.pid'))).toBe(true);
     expect(removed.some((p) => p.includes('bar.json'))).toBe(true);
-    expect(allOutput()).toMatch(/\[OK\].*SIGTERM/i);
+    expect(allOutput()).toMatch(/\[OK\].*stopped/i);
   });
 
   it('prints guidance and returns cleanly when no server.pid exists', async () => {
@@ -370,7 +384,8 @@ describe('stop: SIGTERM and cleanup', () => {
 
     await handleBarStop([], {
       getCcsDir: () => ccsDir,
-      readPidFile: () => '99999',
+      readPidFile: () => processRecord(99999),
+      getProcessBirthIdentity: () => null,
       killProcess: () => {
         const err = new Error('no such process') as NodeJS.ErrnoException;
         err.code = 'ESRCH';
@@ -402,9 +417,9 @@ describe('stop: SIGTERM and cleanup', () => {
       },
     });
 
-    expect(allOutput()).toMatch(/\[X\].*invalid/i);
-    // Corrupted pid file must be cleaned up
-    expect(removed.some((p) => p.includes('server.pid'))).toBe(true);
+    expect(allOutput()).toMatch(/\[X\].*verified process record/i);
+    // Unverified state is preserved rather than risking removal of recovery evidence.
+    expect(removed.some((p) => p.includes('server.pid'))).toBe(false);
   });
 });
 
@@ -419,7 +434,7 @@ describe('status: running state reporting', () => {
 
     await handleBarStatus([], {
       getCcsDir: () => ccsDir,
-      readPidFile: () => '12345',
+      readPidFile: () => processRecord(12345),
       isProcessAlive: () => true,
       probeServer: async () => true,
       readBarJsonBaseUrl: () => 'http://127.0.0.1:3000',
@@ -451,7 +466,7 @@ describe('status: running state reporting', () => {
 
     await handleBarStatus([], {
       getCcsDir: () => ccsDir,
-      readPidFile: () => '99999',
+      readPidFile: () => processRecord(99999),
       isProcessAlive: () => false,
       probeServer: async () => false,
       readBarJsonBaseUrl: () => null,
@@ -461,13 +476,34 @@ describe('status: running state reporting', () => {
     expect(allOutput()).toMatch(/99999/);
   });
 
+  it('reports legacy integer PIDs as unverified and does not inspect their liveness', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    const { handleBarStatus } = await loadStatusSubcommand();
+    let inspected = false;
+
+    await handleBarStatus([], {
+      getCcsDir: () => ccsDir,
+      readPidFile: () => '12345',
+      isProcessAlive: () => {
+        inspected = true;
+        return true;
+      },
+      probeServer: async () => true,
+      readBarJsonBaseUrl: () => null,
+    });
+
+    expect(inspected).toBe(false);
+    expect(allOutput()).toMatch(/legacy.*unverified PID 12345/i);
+    expect(allOutput()).toMatch(/ps -p 12345 -o command=/);
+  });
+
   it('reports alive-but-unreachable when PID is alive but HTTP probe fails', async () => {
     const ccsDir = path.join(tempHome, '.ccs');
     const { handleBarStatus } = await loadStatusSubcommand();
 
     await handleBarStatus([], {
       getCcsDir: () => ccsDir,
-      readPidFile: () => '12345',
+      readPidFile: () => processRecord(12345),
       isProcessAlive: () => true,
       probeServer: async () => false,
       readBarJsonBaseUrl: () => 'http://127.0.0.1:3000',

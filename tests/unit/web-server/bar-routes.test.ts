@@ -1116,6 +1116,49 @@ describe('/summary force flag passed to getNativeAccountRows', () => {
     expect(status).toBe(200);
     expect(body.some((r) => r.provider === 'codex')).toBe(true);
   });
+
+  it('enforces one absolute deadline across cost, quota, and blocked native work', async () => {
+    const { createBarRouter, resetForceFreshDebounce: resetDebounce } = await import(
+      '../../../src/web-server/routes/bar-routes'
+    );
+    const app = express();
+    app.use(express.json());
+    const router = createBarRouter({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      getAllAccountsSummary: () => ({ agy: [makeAccountInfo()] }) as any,
+      getCachedQuota: () => makeQuotaResult(),
+      setCachedQuota: () => {},
+      invalidateQuotaCache: () => {},
+      fetchAccountQuota: () => new Promise(() => {}),
+      getTodayCostByAccount: () => ({}),
+      loadCliproxyDetails: () => new Promise((resolve) => setTimeout(() => resolve([]), 1_400)),
+      loadDailyUsage: async () => [],
+      loadHourlyUsage: async () => [],
+      getNativeAccountRows: () => new Promise(() => {}),
+      getCachedNativeRows: () => [],
+    });
+    app.use('/api/bar', router);
+    const srv = await new Promise<Server>((resolve, reject) => {
+      const instance = app.listen(0, '127.0.0.1');
+      instance.once('error', reject);
+      instance.once('listening', () => resolve(instance));
+    });
+    const addr = srv.address();
+    if (!addr || typeof addr === 'string') throw new Error('No server address');
+    resetDebounce();
+
+    const startedAt = Date.now();
+    const { status } = await getJson<BarSummaryRow[]>(
+      `http://127.0.0.1:${(addr as { port: number }).port}`,
+      '/api/bar/summary?refresh=true'
+    );
+    const elapsed = Date.now() - startedAt;
+    await new Promise<void>((resolve) => srv.close(() => resolve()));
+
+    expect(status).toBe(200);
+    expect(elapsed).toBeGreaterThanOrEqual(2_200);
+    expect(elapsed).toBeLessThan(3_200);
+  });
 });
 
 // ============================================================================
