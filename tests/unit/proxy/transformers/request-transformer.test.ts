@@ -43,7 +43,7 @@ describe('ProxyRequestTransformer', () => {
     });
   });
 
-  it('accepts Claude Code system messages in the messages array', () => {
+  it('accepts Claude Code system messages in the messages array and hoists them to a single leading system message', () => {
     const transformer = new ProxyRequestTransformer();
     const result = transformer.transform({
       messages: [
@@ -53,10 +53,14 @@ describe('ProxyRequestTransformer', () => {
       ],
     });
 
+    // Strict OpenAI-compatible backends (e.g. LiteLLM) reject any payload
+    // where `system` is not alone at index 0, so a mid-array `system`
+    // message must be hoisted rather than left in place. See #1459 for why
+    // the message must be accepted at all, and the coalesce-duplicate-system
+    // fix for why it can't simply stay where it landed.
     expect(result.messages).toEqual([
-      { role: 'user', content: 'hello' },
       { role: 'system', content: 'answer tersely' },
-      { role: 'user', content: 'which model is this?' },
+      { role: 'user', content: 'hello\nwhich model is this?' },
     ]);
   });
 
