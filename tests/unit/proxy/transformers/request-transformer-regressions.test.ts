@@ -332,11 +332,12 @@ describe('ProxyRequestTransformer regressions', () => {
     const result = new ProxyRequestTransformer().transform({
       system: [{ type: 'text', text: 'You are Claude Code, a CLI tool.' }],
       messages: [
+        { role: 'user', content: 'ping' },
         {
           role: 'system',
           content: 'The following skills are available for use with the Skill tool:\n- foo',
         },
-        { role: 'user', content: 'ping' },
+        { role: 'user', content: 'pong' },
       ],
     });
 
@@ -347,6 +348,73 @@ describe('ProxyRequestTransformer regressions', () => {
       content:
         'You are Claude Code, a CLI tool.\n\nThe following skills are available for use with the Skill tool:\n- foo',
     });
-    expect(result.messages[1]).toEqual({ role: 'user', content: 'ping' });
+    expect(result.messages[1]).toEqual({ role: 'user', content: 'ping\npong' });
+  });
+
+  it('hoists a late system message after complete parallel tool results without disturbing tool order', () => {
+    const result = new ProxyRequestTransformer().transform({
+      system: 'base instructions',
+      messages: [
+        { role: 'user', content: 'inspect both files' },
+        {
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', id: 'toolu_1', name: 'read', input: { path: 'a.ts' } },
+            { type: 'tool_use', id: 'toolu_2', name: 'read', input: { path: 'b.ts' } },
+          ],
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 'toolu_1', content: 'a contents' },
+            { type: 'tool_result', tool_use_id: 'toolu_2', content: 'b contents' },
+          ],
+        },
+        { role: 'system', content: 'late instructions' },
+        { role: 'user', content: 'compare them' },
+      ],
+    });
+
+    expect(result.messages).toEqual([
+      { role: 'system', content: 'base instructions\n\nlate instructions' },
+      { role: 'user', content: 'inspect both files' },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          {
+            id: 'toolu_1',
+            type: 'function',
+            function: { name: 'read', arguments: '{"path":"a.ts"}' },
+          },
+          {
+            id: 'toolu_2',
+            type: 'function',
+            function: { name: 'read', arguments: '{"path":"b.ts"}' },
+          },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'toolu_1', content: 'a contents' },
+      { role: 'tool', tool_call_id: 'toolu_2', content: 'b contents' },
+      { role: 'user', content: 'compare them' },
+    ]);
+  });
+
+  it('rejects a system message inserted before pending tool results', () => {
+    expect(() =>
+      new ProxyRequestTransformer().transform({
+        messages: [
+          {
+            role: 'assistant',
+            content: [{ type: 'tool_use', id: 'toolu_1', name: 'read', input: { path: 'a.ts' } }],
+          },
+          { role: 'system', content: 'interrupting instructions' },
+          {
+            role: 'user',
+            content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'a contents' }],
+          },
+        ],
+      })
+    ).toThrow('role must be "user" with tool_result blocks after assistant tool_use');
   });
 });

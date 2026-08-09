@@ -672,7 +672,7 @@ function transformMessages(messagesValue: unknown): OpenAIMessage[] {
 }
 
 /**
- * Hoist every `role: "system"` message to a single leading system message.
+ * Hoist every accepted `role: "system"` message to one leading system message.
  *
  * Claude Code sends the system prompt as the top-level `system` field *and*,
  * separately, sends skill/plugin listings as `role: "system"` entries inside
@@ -687,9 +687,12 @@ function transformMessages(messagesValue: unknown): OpenAIMessage[] {
  * where a `system` message is not alone at index 0:
  * `400 A 'system' message can only appear at index 0 of the messages array.`
  *
- * This pass extracts all `system` messages in encounter order, joins their
- * content with a blank line, and reinserts the result as the sole leading
- * message — content-preserving, order-preserving for everything else.
+ * Inline system messages may appear between complete turns, including after
+ * tool results. They may not interrupt a pending assistant tool-call/result
+ * sequence; `transformMessages` rejects that ambiguous placement before this
+ * pass. Accepted system messages are extracted in encounter order, joined with
+ * a blank line, and reinserted as the sole leading message. Everything else
+ * keeps its relative order before normal same-role coalescing.
  */
 function hoistSystemMessages(messages: OpenAIMessage[]): OpenAIMessage[] {
   const systemParts: string[] = [];
