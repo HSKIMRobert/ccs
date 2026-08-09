@@ -47,9 +47,12 @@ class RoutingProxyDispatcher extends Dispatcher {
   close(): Promise<void>;
   close(callback: () => void): void;
   close(callback?: () => void): Promise<void> | void {
-    const promise = Promise.all(this.getDispatchers().map((dispatcher) => dispatcher.close())).then(
-      () => undefined
-    );
+    const promise = Promise.all(
+      this.getDispatchers().map((dispatcher) => {
+        const close = (dispatcher as unknown as { close?: () => Promise<void> }).close;
+        return typeof close === 'function' ? close.call(dispatcher) : Promise.resolve();
+      })
+    ).then(() => undefined);
 
     if (callback) {
       promise.then(
@@ -73,7 +76,14 @@ class RoutingProxyDispatcher extends Dispatcher {
     const error = typeof errOrCallback === 'function' ? null : errOrCallback;
     const done = typeof errOrCallback === 'function' ? errOrCallback : callback;
     const promise = Promise.all(
-      this.getDispatchers().map((dispatcher) => dispatcher.destroy(error ?? null))
+      this.getDispatchers().map((dispatcher) => {
+        const destroy = (
+          dispatcher as unknown as { destroy?: (error: Error | null) => Promise<void> }
+        ).destroy;
+        return typeof destroy === 'function'
+          ? destroy.call(dispatcher, error ?? null)
+          : Promise.resolve();
+      })
     ).then(() => undefined);
 
     if (done) {
@@ -156,11 +166,6 @@ export function applyGlobalFetchProxy(): { enabled: boolean; error?: string } {
     const message = error instanceof Error ? error.message : 'Unknown proxy configuration error';
     return { enabled: false, error: message };
   }
-}
-
-const setupResult = applyGlobalFetchProxy();
-if (setupResult.error) {
-  console.error(`[!] Skipping global fetch proxy setup: ${setupResult.error}`);
 }
 
 function resolveGlobalFetchProxyConfig(): GlobalFetchProxyConfig {

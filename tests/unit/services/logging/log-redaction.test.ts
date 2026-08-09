@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { redactContext } from '../../../../src/services/logging/log-redaction';
+import {
+  maskSecretTokens,
+  redactContext,
+  redactErrorInfo,
+} from '../../../../src/services/logging/log-redaction';
 
 describe('log redaction', () => {
   it('redacts sensitive keys and preserves non-sensitive values', () => {
@@ -99,5 +103,32 @@ describe('log redaction', () => {
         message: `${'boom'.repeat(500)}...[truncated]`,
       },
     });
+  });
+
+  it('redacts proxy URL userinfo from nested error causes', () => {
+    const redacted = redactErrorInfo({
+      name: 'TypeError',
+      message: 'fetch failed',
+      cause: {
+        name: 'ProxyError',
+        code: 'ECONNREFUSED',
+        message: 'connect http://sentinel-user:sentinel-password@proxy.example:8080',
+      },
+    });
+
+    expect(redacted?.cause).toEqual({
+      name: 'ProxyError',
+      code: 'ECONNREFUSED',
+      message: 'connect http://[redacted]@proxy.example:8080',
+    });
+    expect(JSON.stringify(redacted)).not.toContain('sentinel-user');
+    expect(JSON.stringify(redacted)).not.toContain('sentinel-password');
+  });
+
+  it('redacts URL userinfo without changing non-credential URLs', () => {
+    expect(maskSecretTokens('https://user:pass@example.com/path')).toBe(
+      'https://[redacted]@example.com/path'
+    );
+    expect(maskSecretTokens('https://example.com/path')).toBe('https://example.com/path');
   });
 });

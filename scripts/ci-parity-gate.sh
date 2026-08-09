@@ -67,6 +67,7 @@ echo "[i] Running CI-parity local checks..."
 bun run typecheck
 bun run lint
 bun run format:check
+bun run test:runtime-matrix
 bun run build:all
 bun run test:all
 CCS_E2E_SKIP_BUILD=1 bun run test:e2e

@@ -41,6 +41,7 @@ export interface LogErrorInfo {
   message: string;
   code?: string;
   stack?: string;
+  cause?: LogErrorInfo;
 }
 
 export interface LogEntry {
