@@ -110,13 +110,15 @@ const CODEX_PROVIDER = CODEX_NATIVE_PROVIDER;
 
 export interface NativeQuotaDeps {
   /** Read the native Claude Code credentials (global default path). */
-  readCredentials?: () => ClaudeNativeCredentials | null;
+  readCredentials?: () => ClaudeNativeCredentials | null | Promise<ClaudeNativeCredentials | null>;
   /**
    * Read credentials for a specific Claude profile (file-first, Keychain fallback).
    * Injected so tests never touch real fs or Keychain.
    * profile: the profile name (e.g. "work"); returns null when absent/unparseable.
    */
-  readClaudeCredentialsForProfile?: (profile: string) => ClaudeNativeCredentials | null;
+  readClaudeCredentialsForProfile?: (
+    profile: string
+  ) => ClaudeNativeCredentials | null | Promise<ClaudeNativeCredentials | null>;
   /** Fetch Claude quota with a directly-supplied native token. */
   fetchClaudeQuota?: (accessToken: string, accountId?: string) => Promise<ClaudeQuotaResult>;
   /**
@@ -495,14 +497,17 @@ function serveCached(state: ProviderState): BarSummaryRow | null {
 /**
  * Read credentials for a specific Claude Code profile (file-first, Keychain fallback).
  *
- * Looks for .credentials.json in the profile's instance directory. If the file
- * is absent or unparseable, returns null — the caller emits a parked row.
- * Never calls security/Keychain — zero new keychain access from this feature.
+ * Looks for .credentials.json in the profile's instance directory, then uses
+ * the bounded per-config-dir macOS Keychain fallback. If neither yields a
+ * parseable credential object, the caller emits a parked row.
  */
-function readClaudeCredentialsForProfileFromDisk(
+async function readClaudeCredentialsForProfileFromDisk(
   profile: string,
-  readDefaultCredentials: () => ClaudeNativeCredentials | null = readClaudeCredentials
-): ClaudeNativeCredentials | null {
+  readDefaultCredentials: () =>
+    | ClaudeNativeCredentials
+    | null
+    | Promise<ClaudeNativeCredentials | null> = readClaudeCredentials
+): Promise<ClaudeNativeCredentials | null> {
   try {
     const instanceDir = path.join(getCcsDir(), 'instances', profile);
 
@@ -510,7 +515,7 @@ function readClaudeCredentialsForProfileFromDisk(
     // ~/.claude/.credentials.json, falling back to the single global
     // "Claude Code-credentials" Keychain item that Claude Code itself maintains.
     if (profile === DEFAULT_PROFILE && !fs.existsSync(instanceDir)) {
-      return readDefaultCredentials();
+      return await readDefaultCredentials();
     }
 
     // Isolated `ccs auth` instance: <instanceDir>/.credentials.json first, then
@@ -518,7 +523,7 @@ function readClaudeCredentialsForProfileFromDisk(
     // CLAUDE_CONFIG_DIR ("Claude Code-credentials-<sha256(dir)[0..8]>"). On
     // macOS Claude Code stores tokens in the Keychain by default, so without
     // the Keychain read every isolated profile is permanently parked.
-    return readClaudeCredentialsForConfigDir(instanceDir);
+    return await readClaudeCredentialsForConfigDir(instanceDir);
   } catch {
     return null;
   }
@@ -916,12 +921,12 @@ async function collectClaudeRowForProfile(
       // pending DURING assignment, leaving a stale resolved promise that the
       // next call's coalescing check would return instead of re-evaluating.
       await Promise.resolve();
-      const creds = readCreds(profile);
+      const creds = await readCreds(profile);
 
       // No credentials file found -> emit parked row (needs auth, file absent).
       // This is the expected case when the profile exists in the registry but the
-      // user has not logged in via 'ccs auth' for this machine or the credentials
-      // are stored only in keychain (which we deliberately do not access here).
+      // user has not logged in via 'ccs auth' for this machine or neither the
+      // profile file nor its bounded macOS Keychain fallback yielded credentials.
       if (!creds) {
         const parkedRow = buildParkedClaudeProfileRow(profile, now);
         // Cache the parked row so repeated calls don't re-stat the fs.
@@ -1238,7 +1243,7 @@ async function collectClaudeRow(
 
   state.pending = (async (): Promise<BarSummaryRow | null> => {
     try {
-      const creds = readCredentialsFn();
+      const creds = await readCredentialsFn();
       // No token / unsupported subscription -> never spend a call, omit the row.
       if (!creds || !hasSupportedSubscription(creds)) {
         return serveCached(state);

@@ -89,7 +89,7 @@ Scope: `src/**/*.{ts,tsx,js,jsx,mjs,cjs}`
 
 | File | LOC |
 |---|---:|
-| `src/web-server/usage/native-quota-collector.ts` | 1730 |
+| `src/web-server/usage/native-quota-collector.ts` | 1758 |
 | `src/web-server/routes/cliproxy-auth-routes.ts` | 1531 |
 | `src/cliproxy/auth/oauth-handler.ts` | 1510 |
 | `src/cursor/cursor-executor.ts` | 1234 |

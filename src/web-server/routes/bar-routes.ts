@@ -243,6 +243,11 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
   });
 }
 
+/** Remaining milliseconds before one absolute request deadline. */
+function remainingRequestBudget(deadlineAt: number): number {
+  return Math.max(0, deadlineAt - Date.now());
+}
+
 /**
  * Map a row to its wire shape. The native-only additions use snake_case parent
  * keys ("quota_windows" / "stale_as_of") to match the existing payload's mixed
@@ -486,6 +491,7 @@ export function createBarRouter(deps: BarRouterDeps): Router {
    */
   router.get('/summary', async (req: Request, res: Response): Promise<void> => {
     try {
+      const deadlineAt = Date.now() + REQUEST_DEADLINE_MS;
       const wantsRefresh = req.query['refresh'] === 'true';
 
       // Determine effective refresh mode after applying debounce.
@@ -503,10 +509,20 @@ export function createBarRouter(deps: BarRouterDeps): Router {
         // else: debounce active — fall through to cache path
       }
 
+      // Start the native side-load immediately. It shares the same absolute
+      // response deadline as cost and CLIProxy quota work, so their individual
+      // fallback waits cannot stack into a multi-second tail.
+      const getNative = deps.getNativeAccountRows ?? (async () => [] as BarSummaryRow[]);
+      const getCachedNative = deps.getCachedNativeRows ?? (() => [] as BarSummaryRow[]);
+      const nativePromise = Promise.resolve().then(() => getNative({ force: doForceRefresh }));
+
       // Cost side-load is bounded so a slow usage-snapshot read can't stall the
       // glance. (Health is per-account, derived from each quota result below —
       // no blocking system audit on the request path.)
-      const details = await withTimeout(deps.loadCliproxyDetails(), SIDELOAD_TIMEOUT_MS);
+      const details = await withTimeout(
+        deps.loadCliproxyDetails(),
+        Math.min(SIDELOAD_TIMEOUT_MS, remainingRequestBudget(deadlineAt))
+      );
       const costByAccount: Record<string, number> = details
         ? deps.getTodayCostByAccount(details)
         : {};
@@ -565,24 +581,20 @@ export function createBarRouter(deps: BarRouterDeps): Router {
         return rows;
       })();
 
-      const deadline = new Promise<BarSummaryRow[]>((resolve) => {
-        setTimeout(() => resolve(cacheRows()), REQUEST_DEADLINE_MS);
-      });
+      const rows = (await withTimeout(gather, remainingRequestBudget(deadlineAt))) ?? cacheRows();
 
-      const rows = await Promise.race([gather, deadline]);
-
-      // Native subscription rows (Claude Code + Codex) are side-loaded AFTER the
+      // Native subscription rows (Claude Code + Codex) are joined after the
       // CLIProxy rows resolve, bounded so a slow/failed native fetch degrades
       // rather than blocking or erroring the response. Pass force so a
       // debounce-passing refresh also re-pulls native rows live. On timeout fall
       // back to the last-known cached native rows (NOT []) so a slow forced
       // re-pull never momentarily drops the Claude/Codex cards; the in-flight
       // fetch keeps warming the cache for the next poll.
-      const getNative = deps.getNativeAccountRows ?? (async () => [] as BarSummaryRow[]);
-      const getCachedNative = deps.getCachedNativeRows ?? (() => [] as BarSummaryRow[]);
       const nativeRows =
-        (await withTimeout(getNative({ force: doForceRefresh }), NATIVE_SIDELOAD_TIMEOUT_MS)) ??
-        getCachedNative();
+        (await withTimeout(
+          nativePromise,
+          Math.min(NATIVE_SIDELOAD_TIMEOUT_MS, remainingRequestBudget(deadlineAt))
+        )) ?? getCachedNative();
 
       res.json([...rows, ...nativeRows].map(serializeBarRow));
     } catch (err) {

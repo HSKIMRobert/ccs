@@ -15,7 +15,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import * as crypto from 'node:crypto';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -37,10 +37,20 @@ export interface CredentialReaderDeps {
   homedir?: string;
   existsSyncImpl?: (p: string) => boolean;
   readFileSyncImpl?: (p: string) => string;
-  execSyncImpl?: (cmd: string, opts: Record<string, unknown>) => string | Buffer;
+  execFileImpl?: ExecFileImpl;
+  keychainTimeoutMs?: number;
 }
 
+type ExecFileCallback = (error: Error | null, stdout: string | Buffer) => void;
+type ExecFileImpl = (
+  file: string,
+  args: readonly string[],
+  options: Record<string, unknown>,
+  callback: ExecFileCallback
+) => { kill?: () => void } | void;
+
 const KEYCHAIN_SERVICE = 'Claude Code-credentials';
+const SECURITY_PATH = '/usr/bin/security';
 const KEYCHAIN_TIMEOUT_MS = 5000;
 
 /** Subscription types that mean "no real subscription" -> skip the fetch. */
@@ -68,14 +78,13 @@ function parseCredentials(raw: string): ClaudeNativeCredentials | null {
  * Keychain as a fallback. Returns null when neither source yields a parseable
  * object.
  */
-export function readClaudeCredentials(
+export async function readClaudeCredentials(
   deps: CredentialReaderDeps = {}
-): ClaudeNativeCredentials | null {
+): Promise<ClaudeNativeCredentials | null> {
   const platform = deps.platform ?? os.platform();
   const homedir = deps.homedir ?? os.homedir();
   const existsImpl = deps.existsSyncImpl ?? existsSync;
   const readImpl = deps.readFileSyncImpl ?? ((p: string) => readFileSync(p, 'utf8'));
-  const execImpl = deps.execSyncImpl ?? execSync;
 
   const credentialsPath = path.join(homedir, '.claude', '.credentials.json');
   if (existsImpl(credentialsPath)) {
@@ -88,7 +97,7 @@ export function readClaudeCredentials(
   }
 
   if (platform === 'darwin') {
-    const parsed = readCredentialsFromKeychainService(KEYCHAIN_SERVICE, execImpl);
+    const parsed = await readCredentialsFromKeychainService(KEYCHAIN_SERVICE, deps);
     if (parsed) return parsed;
   }
 
@@ -96,25 +105,49 @@ export function readClaudeCredentials(
 }
 
 /** Read + parse one Keychain generic-password item. Returns null on any failure. */
-function readCredentialsFromKeychainService(
+async function readCredentialsFromKeychainService(
   service: string,
-  execImpl: NonNullable<CredentialReaderDeps['execSyncImpl']>
-): ClaudeNativeCredentials | null {
-  try {
-    const out = execImpl(`security find-generic-password -s "${service}" -w`, {
-      timeout: KEYCHAIN_TIMEOUT_MS,
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'ignore'],
-    });
-    const raw = (typeof out === 'string' ? out : out.toString('utf8')).trim();
-    if (raw) {
-      const parsed = parseCredentials(raw);
-      if (parsed) return parsed;
+  deps: CredentialReaderDeps
+): Promise<ClaudeNativeCredentials | null> {
+  const timeoutMs = deps.keychainTimeoutMs ?? KEYCHAIN_TIMEOUT_MS;
+  const execImpl: ExecFileImpl =
+    deps.execFileImpl ??
+    ((file, args, options, callback) =>
+      execFile(file, [...args], options, (error, stdout) => callback(error, stdout)));
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let child: { kill?: () => void } | void;
+    const finish = (credentials: ClaudeNativeCredentials | null): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(credentials);
+    };
+    const timer = setTimeout(() => {
+      child?.kill?.();
+      finish(null);
+    }, timeoutMs);
+    try {
+      child = execImpl(
+        SECURITY_PATH,
+        ['find-generic-password', '-s', service, '-w'],
+        {
+          timeout: timeoutMs,
+          encoding: 'utf8',
+          windowsHide: true,
+          maxBuffer: 1024 * 1024,
+        },
+        (error, stdout) => {
+          if (error) return finish(null);
+          const raw = (typeof stdout === 'string' ? stdout : stdout.toString('utf8')).trim();
+          finish(raw ? parseCredentials(raw) : null);
+        }
+      );
+    } catch {
+      finish(null);
     }
-  } catch {
-    // no Keychain entry / access denied -> null
-  }
-  return null;
+  });
 }
 
 /**
@@ -135,14 +168,13 @@ export function claudeKeychainServiceForConfigDir(configDir: string): string {
  * OAuth tokens in the Keychain by default, so without the Keychain fallback
  * every isolated profile looks permanently logged-out to the bar.
  */
-export function readClaudeCredentialsForConfigDir(
+export async function readClaudeCredentialsForConfigDir(
   configDir: string,
   deps: CredentialReaderDeps = {}
-): ClaudeNativeCredentials | null {
+): Promise<ClaudeNativeCredentials | null> {
   const platform = deps.platform ?? os.platform();
   const existsImpl = deps.existsSyncImpl ?? existsSync;
   const readImpl = deps.readFileSyncImpl ?? ((p: string) => readFileSync(p, 'utf8'));
-  const execImpl = deps.execSyncImpl ?? execSync;
 
   const credentialsPath = path.join(configDir, '.credentials.json');
   if (existsImpl(credentialsPath)) {
@@ -155,10 +187,7 @@ export function readClaudeCredentialsForConfigDir(
   }
 
   if (platform === 'darwin') {
-    return readCredentialsFromKeychainService(
-      claudeKeychainServiceForConfigDir(configDir),
-      execImpl
-    );
+    return readCredentialsFromKeychainService(claudeKeychainServiceForConfigDir(configDir), deps);
   }
 
   return null;

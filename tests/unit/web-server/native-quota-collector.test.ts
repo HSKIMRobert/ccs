@@ -1032,7 +1032,7 @@ function makeMultiProfileDeps(opts: {
     listCodexProfiles: () => codexProfiles,
     defaultClaudeProfile: () => claudeDefault,
     defaultCodexProfile: () => codexDefault,
-    // Credential seams (file-only, no keychain)
+    // Credential seams (fully injected; no real filesystem or Keychain access)
     readClaudeCredentialsForProfile: credsForProfile,
     readCodexNativeAuth: codexNativeAuth,
     // Fetch seams
@@ -1195,7 +1195,7 @@ describe('multi-profile: account_id and wire fields', () => {
   });
 });
 
-describe('multi-profile: Claude file-only reader', () => {
+describe('multi-profile: Claude credential reader', () => {
   it('profile with .credentials.json present -> live fetch row (paused:false when default)', async () => {
     const clock = { now: 1_000_000 };
     const deps = makeMultiProfileDeps({
