@@ -1,10 +1,10 @@
 {
   "scope": "src/**/*.{ts,tsx,js,jsx,mjs,cjs}",
   "syncFs": {
-    "totalOccurrences": 2445,
-    "filesAffected": 258,
-    "hotpathOccurrences": 1160,
-    "hotpathFilesAffected": 152,
+    "totalOccurrences": 2452,
+    "filesAffected": 259,
+    "hotpathOccurrences": 1167,
+    "hotpathFilesAffected": 153,
     "topHotpathFiles": [
       {
         "file": "src/management/shared-manager/diverged-file-adopter.ts",
@@ -306,8 +306,8 @@
     ]
   },
   "legacyShim": {
-    "totalMarkers": 458,
-    "filesAffected": 173,
+    "totalMarkers": 465,
+    "filesAffected": 176,
     "topFiles": [
       {
         "file": "src/auth/profile-detector.ts",
@@ -497,11 +497,11 @@
   },
   "maintainability": {
     "typedErrors": {
-      "totalThrows": 452,
-      "typedThrows": 80,
+      "totalThrows": 454,
+      "typedThrows": 82,
       "plainThrows": 312,
       "otherThrows": 60,
-      "adoptionRatio": 0.177,
+      "adoptionRatio": 0.1806,
       "topSubdomainsByThrows": [
         {
           "subdomain": "web-server",
@@ -510,16 +510,16 @@
           "plain": 45
         },
         {
+          "subdomain": "commands",
+          "count": 38,
+          "typed": 6,
+          "plain": 30
+        },
+        {
           "subdomain": "proxy",
           "count": 38,
           "typed": 0,
           "plain": 34
-        },
-        {
-          "subdomain": "commands",
-          "count": 36,
-          "typed": 4,
-          "plain": 30
         },
         {
           "subdomain": "codex-auth",
@@ -579,8 +579,8 @@
     },
     "loggerCoverage": {
       "filesWithCreateLogger": 65,
-      "totalSourceFiles": 759,
-      "coverageRatio": 0.0856,
+      "totalSourceFiles": 761,
+      "coverageRatio": 0.0854,
       "subdomainsWithZeroCreateLogger": [
         "api",
         "bin",
@@ -606,7 +606,7 @@
         },
         {
           "subdomain": "commands",
-          "count": 108,
+          "count": 110,
           "withLogger": 2
         },
         {
@@ -652,8 +652,8 @@
       ]
     },
     "hotpathConsoleErrors": {
-      "totalOccurrences": 571,
-      "exemptOccurrences": 305,
+      "totalOccurrences": 592,
+      "exemptOccurrences": 326,
       "hotpathOccurrences": 266,
       "filesAffected": 82,
       "topFiles": [
@@ -725,7 +725,7 @@
       "topOver400": [
         {
           "file": "src/web-server/usage/native-quota-collector.ts",
-          "loc": 1662
+          "loc": 1758
         },
         {
           "file": "src/web-server/routes/cliproxy-auth-routes.ts",

@@ -169,6 +169,13 @@ describe('bar command dispatcher (index.ts)', () => {
     expect(calls).toEqual(['launch:']);
   });
 
+  it('rejects an unknown bare launch flag without dispatching launch', async () => {
+    const handleBarCommand = await loadHandleBarCommand();
+    await handleBarCommand(['--porrt', '3999']);
+    expect(calls).toEqual([]);
+    expect(process.exitCode).toBe(1);
+  });
+
   it('dispatches `ccs bar install` to install subcommand', async () => {
     const handleBarCommand = await loadHandleBarCommand();
     await handleBarCommand(['install']);
@@ -3040,7 +3047,7 @@ describe('defaultFindRunningServer: socket-level 401/403 classifies authRequired
   // parser correctly sets authRequired without relying on the higher-level dep
   // injection that existing tests use (which bypasses real status-line parsing).
 
-  function makeNetMock(statusLine: string) {
+  function makeNetMock(statusLine: string, token: string) {
     return {
       connect: (opts: { host: string; port: number }, onConnect: () => void): unknown => {
         const listeners: Record<string, Array<(arg?: unknown) => void>> = {};
@@ -3054,19 +3061,25 @@ describe('defaultFindRunningServer: socket-level 401/403 classifies authRequired
             void cb;
             return socket;
           },
-          write() {
+          write(request: string) {
+            const nonce =
+              request.match(new RegExp(`${BAR_AUTH_NONCE_HEADER}:\\s*([^\\r\\n]+)`, 'i'))?.[1] ??
+              '';
+            const proof = createBarAuthProof(token, nonce);
+            setImmediate(() => {
+              for (const cb of listeners.data ?? []) {
+                cb(
+                  Buffer.from(`${statusLine}\r\n${BAR_AUTH_TOKEN_HEADER}: ${proof}\r\n\r\n`, 'utf8')
+                );
+              }
+            });
             return true;
           },
           destroy() {
             return socket;
           },
         };
-        setImmediate(() => {
-          onConnect();
-          for (const cb of listeners.data ?? []) {
-            cb(Buffer.from(`${statusLine}\r\n\r\n`, 'utf8'));
-          }
-        });
+        setImmediate(onConnect);
         return socket;
       },
     };
@@ -3081,7 +3094,8 @@ describe('defaultFindRunningServer: socket-level 401/403 classifies authRequired
       JSON.stringify({ port: 41401, baseUrl: 'http://127.0.0.1:41401', authMode: 'loopback' })
     );
 
-    mock.module('net', () => makeNetMock('HTTP/1.1 401 Unauthorized'));
+    const token = getOrCreateBarAuthToken(ccsDir);
+    mock.module('net', () => makeNetMock('HTTP/1.1 401 Unauthorized', token));
 
     moduleSeq++;
     const { defaultFindRunningServer } = (await import(
@@ -3111,7 +3125,8 @@ describe('defaultFindRunningServer: socket-level 401/403 classifies authRequired
       JSON.stringify({ port: 41403, baseUrl: 'http://127.0.0.1:41403', authMode: 'loopback' })
     );
 
-    mock.module('net', () => makeNetMock('HTTP/1.1 403 Forbidden'));
+    const token = getOrCreateBarAuthToken(ccsDir);
+    mock.module('net', () => makeNetMock('HTTP/1.1 403 Forbidden', token));
 
     moduleSeq++;
     const { defaultFindRunningServer } = (await import(
@@ -3300,6 +3315,30 @@ describe('defaultWaitForServerLive: rogue 200 without matching token is rejected
     expect(result).not.toBe('resolved');
     // It either timed out (still looping) or threw early — both correct outcomes.
     expect(result === 'timeout' || result === 'rejected').toBe(true);
+  });
+
+  it('unrelated 401/403 without a CCS proof does not trigger auth-required identity', async () => {
+    for (const status of [401, 403]) {
+      mock.module('net', () =>
+        buildNetMock(`HTTP/1.1 ${status} Unrelated Service\r\nConnection: close\r\n\r\n`)
+      );
+      moduleSeq++;
+      const { defaultWaitForServerLive } = (await import(
+        `../../../src/commands/bar/launch-subcommand?test=${Date.now()}-${moduleSeq}`
+      )) as {
+        defaultWaitForServerLive: (baseUrl: string) => Promise<void>;
+      };
+
+      const result = await Promise.race([
+        defaultWaitForServerLive(`http://127.0.0.1:${9900 + status}`).then(
+          () => 'resolved' as const,
+          () => 'rejected' as const
+        ),
+        new Promise<'still-probing'>((resolve) => setTimeout(() => resolve('still-probing'), 300)),
+      ]);
+      expect(result).toBe('still-probing');
+      mock.restore();
+    }
   });
 
   it('correct-token 200 resolves defaultWaitForServerLive immediately', async () => {
@@ -3641,5 +3680,334 @@ describe('bar install: --await-quit waits for the running app to quit (GH-1588)'
     expect(consoleOutput.join('\n')).toMatch(/Waiting for CCS Bar to quit/i);
     expect(launchCalled).toBe(true);
     expect(probes).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// --port support: `ccs bar [launch] --port N` (user-selectable dashboard port)
+// ---------------------------------------------------------------------------
+
+describe('bar dispatcher: bare flags route to launch', () => {
+  beforeEach(() => {
+    mock.module('../../../src/commands/bar/launch-subcommand', () => ({
+      handleBarLaunch: async (args: string[]) => {
+        calls.push(`launch:${args.join(' ')}`);
+      },
+    }));
+  });
+
+  it('dispatches `ccs bar --port 3999` to launch with the flag preserved', async () => {
+    const handleBarCommand = await loadHandleBarCommand();
+    await handleBarCommand(['--port', '3999']);
+    expect(calls).toEqual(['launch:--port 3999']);
+  });
+
+  it('dispatches `ccs bar launch --port 3999` to launch with the flag preserved', async () => {
+    const handleBarCommand = await loadHandleBarCommand();
+    await handleBarCommand(['launch', '--port', '3999']);
+    expect(calls).toEqual(['launch:--port 3999']);
+  });
+});
+
+describe('launch: --port selects the server port', () => {
+  function makePortDeps(ccsDir: string) {
+    const seen: {
+      spawnPort: number | null;
+      getPortCandidates: number[] | null;
+      stopped: boolean;
+      descriptorPort: number | null;
+    } = { spawnPort: null, getPortCandidates: null, stopped: false, descriptorPort: null };
+
+    const deps = {
+      findRunningServer: async () => null,
+      getPort: async (opts: { port: number[]; host: string }) => {
+        seen.getPortCandidates = opts.port;
+        return opts.port[0];
+      },
+      spawnDetachedServer: (p: number) => {
+        seen.spawnPort = p;
+      },
+      waitForServerLive: async () => {},
+      createLaunchDescriptor: (opts?: { port?: number }) => {
+        seen.descriptorPort = opts?.port ?? null;
+        return {
+          schema: 1 as const,
+          runtime: '/usr/bin/node',
+          args: ['/x/ccs.js', 'bar', 'serve'],
+          home: '/h',
+        };
+      },
+      writeLaunchDescriptor: () => {},
+      stopDetachedServer: () => {
+        seen.stopped = true;
+      },
+      openApp: async () => {},
+      getCcsDir: () => ccsDir,
+      appInstallPath: path.join(tempHome, 'Applications', 'CCS Bar.app'),
+    };
+    return { deps, seen };
+  }
+
+  it('spawns the detached server on the requested port and records it in bar.json', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+
+    await handleBarLaunch(['--port', '3999'], deps);
+
+    expect(seen.spawnPort).toBe(3999);
+    const barJson = JSON.parse(fs.readFileSync(path.join(ccsDir, 'bar.json'), 'utf8')) as {
+      port: number;
+      baseUrl: string;
+    };
+    expect(barJson.port).toBe(3999);
+    expect(barJson.baseUrl).toBe('http://127.0.0.1:3999');
+  });
+
+  it('persists the chosen port into the launch descriptor for app self-start', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+
+    await handleBarLaunch(['--port', '3999'], deps);
+
+    expect(seen.descriptorPort).toBe(3999);
+  });
+
+  it('errors without spawning when the requested port is busy', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+    deps.getPort = async () => 4001; // get-port fell back: 3999 not free
+
+    await handleBarLaunch(['--port', '3999'], deps);
+
+    expect(seen.spawnPort).toBeNull();
+    const allOutput = consoleOutput.join('\n');
+    expect(allOutput).toMatch(/3999/);
+    expect(allOutput.toLowerCase()).toMatch(/in use|busy|not free|unavailable/);
+  });
+
+  it('errors on an invalid --port value', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+
+    await handleBarLaunch(['--port', 'banana'], deps);
+
+    expect(seen.spawnPort).toBeNull();
+    expect(consoleOutput.join('\n').toLowerCase()).toMatch(/invalid.*port|port.*invalid/);
+  });
+
+  it('reuses a running server already on the requested port', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+    deps.findRunningServer = async () => ({ port: 3999, baseUrl: 'http://127.0.0.1:3999' });
+
+    await handleBarLaunch(['--port', '3999'], deps);
+
+    expect(seen.spawnPort).toBeNull(); // reuse, no new spawn
+    expect(seen.stopped).toBe(false);
+    const barJson = JSON.parse(fs.readFileSync(path.join(ccsDir, 'bar.json'), 'utf8')) as {
+      port: number;
+    };
+    expect(barJson.port).toBe(3999);
+  });
+
+  it('stops a running server on a different port, then starts on the requested one', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+    deps.findRunningServer = async () => ({ port: 3000, baseUrl: 'http://127.0.0.1:3000' });
+
+    await handleBarLaunch(['--port', '3999'], deps);
+
+    expect(seen.stopped).toBe(true);
+    expect(seen.spawnPort).toBe(3999);
+    const barJson = JSON.parse(fs.readFileSync(path.join(ccsDir, 'bar.json'), 'utf8')) as {
+      port: number;
+    };
+    expect(barJson.port).toBe(3999);
+  });
+
+  it('preflights the destination before stopping a healthy running server', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps } = makePortDeps(ccsDir);
+    const events: string[] = [];
+    deps.findRunningServer = async () => ({ port: 3000, baseUrl: 'http://127.0.0.1:3000' });
+    deps.getPort = async () => {
+      events.push('preflight');
+      return 3999;
+    };
+    deps.stopDetachedServer = () => {
+      events.push('stop');
+    };
+
+    await handleBarLaunch(['--port', '3999'], deps);
+    expect(events).toEqual(['preflight', 'stop']);
+  });
+
+  it('leaves the healthy server running when destination preflight is busy', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+    deps.findRunningServer = async () => ({ port: 3000, baseUrl: 'http://127.0.0.1:3000' });
+    deps.getPort = async () => 4000;
+
+    await handleBarLaunch(['--port', '3999'], deps);
+    expect(seen.stopped).toBe(false);
+    expect(seen.spawnPort).toBeNull();
+  });
+
+  it('aborts the move when the verified stop fails', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+    deps.findRunningServer = async () => ({ port: 3000, baseUrl: 'http://127.0.0.1:3000' });
+    deps.stopDetachedServer = () => {
+      throw new Error('identity mismatch');
+    };
+
+    await handleBarLaunch(['--port', '3999'], deps);
+    expect(seen.spawnPort).toBeNull();
+  });
+
+  it('restores the prior server when a check-to-bind race breaks the replacement', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps } = makePortDeps(ccsDir);
+    const spawnedPorts: number[] = [];
+    deps.findRunningServer = async () => ({ port: 3000, baseUrl: 'http://127.0.0.1:3000' });
+    deps.spawnDetachedServer = (port: number) => {
+      spawnedPorts.push(port);
+    };
+    deps.waitForServerLive = async (baseUrl: string) => {
+      if (baseUrl.endsWith(':3999')) throw new Error('EADDRINUSE after preflight');
+    };
+
+    await handleBarLaunch(['--port', '3999'], deps);
+    expect(spawnedPorts).toEqual([3999, 3000]);
+  });
+
+  it('restores the prior server when replacement spawn fails', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps } = makePortDeps(ccsDir);
+    const spawnedPorts: number[] = [];
+    deps.findRunningServer = async () => ({ port: 3000, baseUrl: 'http://127.0.0.1:3000' });
+    deps.spawnDetachedServer = (port: number) => {
+      spawnedPorts.push(port);
+      if (port === 3999) throw new Error('spawn failed');
+    };
+
+    await handleBarLaunch(['--port', '3999'], deps);
+    expect(spawnedPorts).toEqual([3999, 3000]);
+  });
+
+  it('preserves prior discovery state when replacement and rollback both fail', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(path.join(ccsDir, 'bar'), { recursive: true });
+    const oldBarJson = JSON.stringify({
+      baseUrl: 'http://127.0.0.1:3000',
+      port: 3000,
+      authMode: 'loopback',
+    });
+    const oldLaunchJson = JSON.stringify({ args: ['ccs.js', 'bar', 'serve', '--port', '3000'] });
+    fs.writeFileSync(path.join(ccsDir, 'bar.json'), oldBarJson);
+    fs.writeFileSync(path.join(ccsDir, 'bar', 'launch.json'), oldLaunchJson);
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps } = makePortDeps(ccsDir);
+    deps.findRunningServer = async () => ({ port: 3000, baseUrl: 'http://127.0.0.1:3000' });
+    deps.spawnDetachedServer = () => {
+      throw new Error('spawn failed');
+    };
+
+    await handleBarLaunch(['--port', '3999'], deps);
+    expect(fs.readFileSync(path.join(ccsDir, 'bar.json'), 'utf8')).toBe(oldBarJson);
+    expect(fs.readFileSync(path.join(ccsDir, 'bar', 'launch.json'), 'utf8')).toBe(oldLaunchJson);
+  });
+
+  it('without --port, prefers the port recorded in bar.json (sticky port)', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(ccsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'bar.json'),
+      JSON.stringify({ baseUrl: 'http://127.0.0.1:3777', port: 3777, authMode: 'loopback' })
+    );
+    const { handleBarLaunch } = await loadLaunchSubcommand();
+    const { deps, seen } = makePortDeps(ccsDir);
+
+    await handleBarLaunch([], deps);
+
+    expect(seen.getPortCandidates?.[0]).toBe(3777);
+    expect(seen.spawnPort).toBe(3777);
+  });
+});
+
+describe('resolveBarPort: launch.json fallback survives `ccs bar stop`', () => {
+  // `ccs bar stop` deletes bar.json, so bar.json alone cannot carry the sticky
+  // port across a stop/start cycle. launch.json (refreshed by launch, NOT
+  // deleted by stop) records the port in its args and acts as the fallback.
+  it('falls back to the --port recorded in launch.json when bar.json is absent', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(path.join(ccsDir, 'bar'), { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'bar', 'launch.json'),
+      JSON.stringify({
+        schema: 1,
+        runtime: '/usr/bin/node',
+        args: ['/x/ccs.js', 'bar', 'serve', '--port', '3456'],
+        home: tempHome,
+      })
+    );
+
+    const { resolveBarPort } = await loadLaunchSubcommand();
+    expect(resolveBarPort(ccsDir)).toBe(3456);
+  });
+
+  it('bar.json port wins over launch.json when both exist', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(path.join(ccsDir, 'bar'), { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'bar.json'),
+      JSON.stringify({ baseUrl: 'http://127.0.0.1:4000', port: 4000, authMode: 'loopback' })
+    );
+    fs.writeFileSync(
+      path.join(ccsDir, 'bar', 'launch.json'),
+      JSON.stringify({
+        schema: 1,
+        runtime: '/usr/bin/node',
+        args: ['/x/ccs.js', 'bar', 'serve', '--port', '3456'],
+        home: tempHome,
+      })
+    );
+
+    const { resolveBarPort } = await loadLaunchSubcommand();
+    expect(resolveBarPort(ccsDir)).toBe(4000);
+  });
+
+  it('returns null when launch.json has no --port and bar.json is absent', async () => {
+    const ccsDir = path.join(tempHome, '.ccs');
+    fs.mkdirSync(path.join(ccsDir, 'bar'), { recursive: true });
+    fs.writeFileSync(
+      path.join(ccsDir, 'bar', 'launch.json'),
+      JSON.stringify({
+        schema: 1,
+        runtime: '/usr/bin/node',
+        args: ['/x/ccs.js', 'bar', 'serve'],
+        home: tempHome,
+      })
+    );
+
+    const { resolveBarPort } = await loadLaunchSubcommand();
+    expect(resolveBarPort(ccsDir)).toBeNull();
   });
 });

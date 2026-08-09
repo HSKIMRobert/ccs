@@ -27,6 +27,8 @@ export interface LaunchDescriptorOptions {
   runtime?: string;
   home?: string;
   ccsHome?: string;
+  /** Server port; recorded in args so the Swift app self-starts on the same port. */
+  port?: number;
 }
 
 export function getLaunchShimPath(home: string = os.homedir()): string {
@@ -84,7 +86,12 @@ export function createBarLaunchDescriptor(options: LaunchDescriptorOptions = {})
   return {
     schema: LAUNCH_JSON_SCHEMA,
     runtime: options.runtime ?? process.execPath,
-    args: [entrypoint, 'bar', 'serve'],
+    args: [
+      entrypoint,
+      'bar',
+      'serve',
+      ...(options.port !== undefined ? ['--port', String(options.port)] : []),
+    ],
     home,
     ...(ccsHome ? { ccsHome } : {}),
   };

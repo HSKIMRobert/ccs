@@ -7,7 +7,11 @@
  * Detached model (replaces the old in-process model):
  *   1. Probe candidate ports (bar.json port first, then 3000/3001/3002/8000/8080).
  *   2. If a live server is found → reuse it, write bar.json, open app, return.
- *   3. Else → refresh launch.json, getPort to pick a free port, spawn
+ *      With an explicit --port that differs from the running server's port,
+ *      stop that server first and fall through to a fresh start instead.
+ *   3. Else → pick a port (--port exactly when given; otherwise bar.json's
+ *      recorded port first, then the default candidates), refresh launch.json
+ *      (including --port so the Swift app self-starts on the same port), spawn
  *      `ccs bar serve --port N` detached with stdio → serve.log, poll
  *      /api/bar/summary until 200 (timeout ~10 s), write bar.json, open app,
  *      return. The CLI process exits; the server continues as a detached child.
@@ -31,11 +35,13 @@ import {
 import { getBarDir, getBarJsonPath, getLaunchJsonPath, getServeLogPath } from './bar-paths';
 import type { LaunchJson } from './bar-paths';
 import { createBarLaunchDescriptor } from './launch-descriptor';
+import { parsePortFlag, validatePortArgs } from './port-arg';
 import {
   defaultFindRunningServer as _defaultFindRunningServer,
   resolveBarPort as _resolveBarPort,
 } from './bar-server-probe';
 import type { DashboardInfo as _DashboardInfo } from './bar-server-probe';
+import { stopDetachedBarServer } from './bar-process-control';
 
 const BAR_PROBE_TIMEOUT_MS = 1500;
 const MAX_BAR_PROBE_RESPONSE_BYTES = 8192;
@@ -84,9 +90,20 @@ export interface LaunchDeps {
    */
   waitForServerLive: (baseUrl: string) => Promise<void>;
   /**
+   * Build the launch.json descriptor (includes the chosen --port so the Swift
+   * app self-starts the server on the same port).
+   */
+  createLaunchDescriptor: (opts?: { port?: number }) => LaunchJson;
+  /**
    * Write launch.json so the Swift app can spawn the server independently.
    */
   writeLaunchDescriptor: (jsonPath: string, descriptor: LaunchJson) => void;
+  /**
+   * Stop the detached CCS Bar server recorded in server.pid and wait briefly
+   * for the port to free. Used when an explicit --port differs from the port
+   * the running server occupies.
+   */
+  stopDetachedServer: (ccsDir: string) => Promise<void>;
   /** Open the installed .app bundle. Throws if the app is not found. */
   openApp: (appPath: string) => Promise<void>;
   /** Returns path to ~/.ccs (respects CCS_HOME for test isolation). */
@@ -169,15 +186,11 @@ export async function defaultWaitForServerLive(baseUrl: string): Promise<void> {
         settled = true;
         clearTimeout(absoluteDeadline);
         socket.destroy();
-        if (statusCode === 200) {
-          const echoMatch = headerSection.match(
-            new RegExp(`${BAR_AUTH_TOKEN_HEADER}:\\s*([^\\r\\n]+)`, 'i')
-          );
-          const proof = echoMatch ? echoMatch[1].trim() : '';
-          resolve({ statusCode, tokenMatched: isMatchingBarAuthProof(token, nonce, proof) });
-          return;
-        }
-        resolve({ statusCode, tokenMatched: false });
+        const echoMatch = headerSection.match(
+          new RegExp(`${BAR_AUTH_TOKEN_HEADER}:\\s*([^\\r\\n]+)`, 'i')
+        );
+        const proof = echoMatch ? echoMatch[1].trim() : '';
+        resolve({ statusCode, tokenMatched: isMatchingBarAuthProof(token, nonce, proof) });
       };
       const socket = net.connect(
         { host: url.hostname.replace(/^\[|\]$/g, ''), port: Number(url.port) },
@@ -199,7 +212,7 @@ export async function defaultWaitForServerLive(baseUrl: string): Promise<void> {
         const statusMatch = rawResponse.match(/^HTTP\/\d(?:\.\d)?\s+(\d{3})/);
         if (statusMatch) {
           const code = Number(statusMatch[1]);
-          if (code !== 200) {
+          if (code !== 200 && code !== 401 && code !== 403) {
             finish(code, rawResponse);
             return;
           }
@@ -221,7 +234,7 @@ export async function defaultWaitForServerLive(baseUrl: string): Promise<void> {
     const { statusCode, tokenMatched } = await probe();
 
     if (statusCode === 200 && tokenMatched) return;
-    if (statusCode !== null && isAuthRequiredStatus(statusCode)) {
+    if (statusCode !== null && isAuthRequiredStatus(statusCode) && tokenMatched) {
       throw new BarServerAuthRequiredError(baseUrl, statusCode);
     }
 
@@ -258,19 +271,37 @@ export async function handleBarLaunch(
   _args: string[],
   deps: Partial<LaunchDeps> = {}
 ): Promise<void> {
+  const argError = validatePortArgs(_args);
+  if (argError !== null) {
+    console.error(`[X] ${argError}`);
+    process.exitCode = 1;
+    return;
+  }
   const ccsDir = (deps.getCcsDir ?? defaultGetCcsDir)();
   const openApp = deps.openApp ?? defaultOpenApp;
   const appInstallPath = deps.appInstallPath ?? DEFAULT_APP_INSTALL_PATH;
   const getPortFn = deps.getPort ?? defaultGetPort;
   const spawnDetachedServer = deps.spawnDetachedServer ?? defaultSpawnDetachedServer;
   const waitForServerLive = deps.waitForServerLive ?? defaultWaitForServerLive;
+  const createLaunchDescriptor = deps.createLaunchDescriptor ?? createBarLaunchDescriptor;
   const writeLaunchDescriptor = deps.writeLaunchDescriptor ?? defaultWriteLaunchDescriptor;
+  const stopDetachedServer = deps.stopDetachedServer ?? stopDetachedBarServer;
 
   // Wire findRunningServer after ccsDir is resolved.
   const findRunningServer = deps.findRunningServer ?? (() => _defaultFindRunningServer(ccsDir));
 
   const barJsonPath = getBarJsonPath(ccsDir);
   const launchJsonPath = getLaunchJsonPath(ccsDir);
+
+  // 0. Parse --port. A present-but-invalid value is a hard error (silently
+  //    launching on a different port than the user asked for is worse).
+  const portFlag = parsePortFlag(_args);
+  if (portFlag.present && portFlag.port === null) {
+    console.error('[X] Invalid --port value. Use a number between 1 and 65535.');
+    process.exitCode = 1;
+    return;
+  }
+  const requestedPort = portFlag.port;
 
   // 1. Probe for an already-running server.
   let running: DashboardInfo | null = null;
@@ -279,6 +310,9 @@ export async function handleBarLaunch(
   } catch {
     /* any probe error counts as null */
   }
+
+  let movingFrom: DashboardInfo | null = null;
+  let port: number | null = null;
 
   if (running !== null) {
     if (running.authRequired) {
@@ -291,59 +325,127 @@ export async function handleBarLaunch(
       return;
     }
 
-    // Reuse the live server — write bar.json and open the app.
-    const barJson: BarDiscoveryJson = {
-      baseUrl: running.baseUrl,
-      port: running.port,
-      authMode: 'loopback',
-    };
-    try {
-      fs.mkdirSync(ccsDir, { recursive: true });
-      fs.writeFileSync(barJsonPath, JSON.stringify(barJson, null, 2));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[X] Failed to write bar.json: ${msg}`);
+    if (requestedPort === null || running.port === requestedPort) {
+      // Reuse the live server — write bar.json and open the app.
+      const barJson: BarDiscoveryJson = {
+        baseUrl: running.baseUrl,
+        port: running.port,
+        authMode: 'loopback',
+      };
+      try {
+        fs.mkdirSync(ccsDir, { recursive: true });
+        fs.writeFileSync(barJsonPath, JSON.stringify(barJson, null, 2));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[X] Failed to write bar.json: ${msg}`);
+        return;
+      }
+      console.log(`[OK] Reusing running CCS web-server at ${running.baseUrl}`);
+      console.log(`[i]  Discovery file written: ${barJsonPath}`);
+      await _openAppWithFallback(appInstallPath, openApp);
       return;
     }
-    console.log(`[OK] Reusing running CCS web-server at ${running.baseUrl}`);
-    console.log(`[i]  Discovery file written: ${barJsonPath}`);
-    await _openAppWithFallback(appInstallPath, openApp);
-    return;
+
+    // Explicit --port that differs from the running server: preflight the
+    // destination before disrupting the healthy current service.
+    console.log(
+      `[i] CCS Bar server is running on port ${running.port}; moving to port ${requestedPort}...`
+    );
+    if (requestedPort === null) return;
+    try {
+      const availablePort = await getPortFn({ port: [requestedPort], host: '127.0.0.1' });
+      if (availablePort !== requestedPort) {
+        console.error(`[X] Port ${requestedPort} is already in use by another process.`);
+        console.error('[i] The existing CCS Bar server was left running.');
+        process.exitCode = 1;
+        return;
+      }
+      port = requestedPort;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[X] Could not preflight port ${requestedPort}: ${msg}`);
+      console.error('[i] The existing CCS Bar server was left running.');
+      process.exitCode = 1;
+      return;
+    }
+    try {
+      await stopDetachedServer(ccsDir);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[X] Could not safely stop the running server: ${msg}`);
+      console.error('[i] Recovery state was preserved; resolve the stop error, then retry.');
+      process.exitCode = 1;
+      return;
+    }
+    movingFrom = running;
+    // Fall through to the fresh-start path below.
   }
 
-  // 2. No live server — pick a port, write/refresh launch.json, spawn detached.
+  // 2. No live server (or moving ports) — pick a port, write/refresh
+  //    launch.json, spawn detached.
 
-  // 2a. Pick a free port.
-  let port: number;
+  // 2a. Pick a free port. An explicit --port must be honored exactly; without
+  //     it, the port recorded in bar.json is preferred so the server keeps
+  //     coming back on the port the user last chose (sticky port).
   try {
-    port = await getPortFn({ port: [3000, 3001, 3002, 8000, 8080], host: '127.0.0.1' });
+    if (port !== null) {
+      // Destination was already preflighted before stopping the prior server.
+    } else if (requestedPort !== null) {
+      const got = await getPortFn({ port: [requestedPort], host: '127.0.0.1' });
+      if (got !== requestedPort) {
+        console.error(`[X] Port ${requestedPort} is already in use by another process.`);
+        console.error('[i] Choose a different port or free it, then retry.');
+        process.exitCode = 1;
+        return;
+      }
+      port = requestedPort;
+    } else {
+      const stickyPort = _resolveBarPort(ccsDir);
+      const base = [3000, 3001, 3002, 8000, 8080];
+      const candidates =
+        stickyPort !== null ? [stickyPort, ...base.filter((p) => p !== stickyPort)] : base;
+      port = await getPortFn({ port: candidates, host: '127.0.0.1' });
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[X] Could not find a free port: ${msg}`);
     return;
   }
 
-  // 2b. Write/refresh launch.json so the Swift app can self-start next time.
-  try {
-    const launchDescriptor = createBarLaunchDescriptor();
-    writeLaunchDescriptor(launchJsonPath, launchDescriptor);
-  } catch (err) {
-    // Non-fatal — the Swift app falls back to resolving `ccs` via PATH.
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[!] Could not write launch.json: ${msg}`);
+  if (port === null) {
+    console.error('[X] Could not resolve a valid CCS Bar port.');
+    process.exitCode = 1;
+    return;
   }
+  const selectedPort = port;
 
-  // 2c. Spawn the detached server.
+  const rollbackPriorServer = async (): Promise<void> => {
+    if (movingFrom === null) return;
+    try {
+      spawnDetachedServer(movingFrom.port, serveLogPath);
+      await waitForServerLive(movingFrom.baseUrl);
+      console.log(`[OK] Restored CCS Bar server at ${movingFrom.baseUrl}.`);
+    } catch (rollbackErr) {
+      const message = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
+      console.error(`[X] Failed to restore CCS Bar at ${movingFrom.baseUrl}: ${message}`);
+      console.error('[i] Existing discovery and launch state was preserved for manual recovery.');
+    }
+  };
+
+  // 2b. Spawn the detached server. launch.json is not replaced until the new
+  // server is proven live, preserving the prior recovery path during a move.
   const serveLogPath = getServeLogPath(ccsDir);
-  const baseUrl = `http://127.0.0.1:${port}`;
+  const baseUrl = `http://127.0.0.1:${selectedPort}`;
   let spawnedChild: ChildProcess | void;
   try {
     fs.mkdirSync(getBarDir(ccsDir), { recursive: true });
-    spawnedChild = spawnDetachedServer(port, serveLogPath);
+    spawnedChild = spawnDetachedServer(selectedPort, serveLogPath);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[X] Could not start CCS web-server: ${msg}`);
-    console.error('[i] Run `ccs config` to start the dashboard manually.');
+    await rollbackPriorServer();
+    if (movingFrom === null) console.error('[i] Run `ccs config` to start the dashboard manually.');
+    process.exitCode = 1;
     return;
   }
 
@@ -361,18 +463,30 @@ export async function handleBarLaunch(
       console.error(
         '[i] Disable dashboard authentication for CCS Bar or start the dashboard manually.'
       );
-      return;
+    } else {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[X] Could not connect to CCS web-server: ${msg}`);
+      console.error(`[i] Check logs at ${serveLogPath}`);
     }
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[X] Could not connect to CCS web-server: ${msg}`);
-    console.error(`[i] Check logs at ${serveLogPath}`);
+    spawnedChild?.kill();
+    await rollbackPriorServer();
+    process.exitCode = 1;
     return;
+  }
+
+  // 2d. Persist the proven-good recovery descriptor.
+  try {
+    const launchDescriptor = createLaunchDescriptor({ port: selectedPort });
+    writeLaunchDescriptor(launchJsonPath, launchDescriptor);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[!] Could not write launch.json: ${msg}`);
   }
 
   // 2e. Write bar.json.
   const barJson: BarDiscoveryJson = {
     baseUrl,
-    port,
+    port: selectedPort,
     authMode: 'loopback',
   };
   try {
