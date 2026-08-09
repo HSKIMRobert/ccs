@@ -15,7 +15,7 @@ function unsafeInstancePath(targetPath: string): never {
   });
 }
 
-interface DirectoryIdentity {
+export interface DirectoryIdentity {
   device: number;
   inode: number;
   realPath: string;
@@ -113,6 +113,39 @@ export function ensureSafeAccountInstancesDirectory(instancesDir: string): void 
 
 export function assertSafeAccountInstancePath(instancesDir: string, instancePath: string): void {
   if (!isSafeAccountInstancePath(instancesDir, instancePath)) unsafeInstancePath(instancePath);
+}
+
+/**
+ * Capture the validated directory identity used by later mutation guards.
+ * This is defense-in-depth for static and ordinary concurrent replacement,
+ * not a hostile same-UID race boundary; that would require dirfd/openat-style APIs.
+ */
+export function captureSafeAccountInstanceIdentity(
+  instancesDir: string,
+  instancePath: string
+): DirectoryIdentity {
+  assertSafeAccountInstancePath(instancesDir, instancePath);
+  const identity = readDirectoryIdentity(instancePath);
+  assertAccountInstanceIdentity(instancesDir, instancePath, identity);
+  return identity;
+}
+
+/** Require the lexical instance path to still name the validated directory. */
+export function assertAccountInstanceIdentity(
+  instancesDir: string,
+  instancePath: string,
+  expectedIdentity: DirectoryIdentity
+): void {
+  if (!isSafeAccountInstancePath(instancesDir, instancePath)) unsafeInstancePath(instancePath);
+
+  let currentIdentity: DirectoryIdentity;
+  try {
+    currentIdentity = readDirectoryIdentity(instancePath);
+  } catch {
+    unsafeInstancePath(instancePath);
+  }
+
+  if (!identitiesMatch(expectedIdentity, currentIdentity)) unsafeInstancePath(instancePath);
 }
 
 export function listAccountInstanceNames(instancesDir: string): string[] {

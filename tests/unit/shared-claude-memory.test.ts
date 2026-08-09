@@ -62,6 +62,18 @@ describe('shared CLAUDE.md memory', () => {
     expect(path.resolve(path.dirname(filePath), fs.readlinkSync(filePath))).toBe(targetPath);
   }
 
+  function expectInvalidInstancePath(operation: () => void): void {
+    let thrown: unknown;
+    try {
+      operation();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(TypeError);
+    expect((thrown as NodeJS.ErrnoException).code).toBe('EINVAL');
+  }
+
   beforeEach(() => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-shared-claude-memory-'));
     originalHome = process.env.HOME;
@@ -324,6 +336,98 @@ describe('shared CLAUDE.md memory', () => {
     );
     expect(fs.readFileSync(instanceFile('work'), 'utf8')).toBe('# Late writer\n');
     expect(fs.readFileSync(conflictFiles(instanceFile('work'))[0], 'utf8')).toBe('# Claimed\n');
+  });
+
+  it('aborts when the instance root is replaced during shared-root setup', () => {
+    const manager = new SharedManager();
+    const workInstance = instanceDir('work');
+    const originalInstance = instanceDir('work-original');
+    const externalInstance = path.join(tempHome, 'external-work');
+    const sentinelPath = path.join(externalInstance, 'sentinel.bin');
+    const sentinel = Buffer.from([0x00, 0x7f, 0x80, 0xff]);
+    fs.mkdirSync(workInstance, { recursive: true });
+    fs.mkdirSync(externalInstance, { recursive: true });
+    fs.mkdirSync(path.join(tempHome, '.claude'), { recursive: true });
+    fs.mkdirSync(path.join(ccsDir(), 'shared'), { recursive: true });
+    fs.writeFileSync(sentinelPath, sentinel);
+
+    const originalMkdirSync = fs.mkdirSync;
+    let replaced = false;
+    spyOn(fs, 'mkdirSync').mockImplementation(((targetPath, options) => {
+      if (!replaced && String(targetPath) === path.join(tempHome, '.claude', 'plugins')) {
+        replaced = true;
+        fs.renameSync(workInstance, originalInstance);
+        fs.symlinkSync(externalInstance, workInstance, 'dir');
+      }
+      return originalMkdirSync(targetPath, options);
+    }) as typeof fs.mkdirSync);
+
+    expectInvalidInstancePath(() => manager.linkSharedDirectories(workInstance));
+    expect(fs.readFileSync(sentinelPath)).toEqual(sentinel);
+    expect(fs.readdirSync(externalInstance)).toEqual(['sentinel.bin']);
+  });
+
+  it('does not reconcile a regular replacement directory during shared-root setup', () => {
+    const manager = new SharedManager();
+    const workInstance = instanceDir('work');
+    const originalInstance = instanceDir('work-original');
+    const replacementFixture = path.join(tempHome, 'replacement-work');
+    const replacementMemory = path.join(replacementFixture, 'CLAUDE.md');
+    const sentinelPath = path.join(replacementFixture, 'sentinel.bin');
+    const memoryBytes = Buffer.from([0x23, 0x20, 0x80, 0xff, 0x0a]);
+    const sentinel = Buffer.from([0x11, 0x22, 0x33, 0x44]);
+    fs.mkdirSync(workInstance, { recursive: true });
+    fs.mkdirSync(replacementFixture, { recursive: true });
+    fs.mkdirSync(path.join(tempHome, '.claude'), { recursive: true });
+    fs.mkdirSync(path.join(ccsDir(), 'shared'), { recursive: true });
+    fs.writeFileSync(replacementMemory, memoryBytes);
+    fs.writeFileSync(sentinelPath, sentinel);
+
+    const originalMkdirSync = fs.mkdirSync;
+    let replaced = false;
+    spyOn(fs, 'mkdirSync').mockImplementation(((targetPath, options) => {
+      if (!replaced && String(targetPath) === path.join(tempHome, '.claude', 'plugins')) {
+        replaced = true;
+        fs.renameSync(workInstance, originalInstance);
+        fs.renameSync(replacementFixture, workInstance);
+      }
+      return originalMkdirSync(targetPath, options);
+    }) as typeof fs.mkdirSync);
+
+    expectInvalidInstancePath(() => manager.linkSharedDirectories(workInstance));
+    expect(fs.readFileSync(path.join(workInstance, 'CLAUDE.md'))).toEqual(memoryBytes);
+    expect(fs.readFileSync(path.join(workInstance, 'sentinel.bin'))).toEqual(sentinel);
+    expect(fs.readdirSync(workInstance).sort()).toEqual(['CLAUDE.md', 'sentinel.bin']);
+  });
+
+  it('aborts when the instance root is replaced during plugin linking', () => {
+    const manager = new SharedManager();
+    const workInstance = instanceDir('work');
+    const originalInstance = instanceDir('work-original');
+    const externalInstance = path.join(tempHome, 'external-work');
+    const externalPlugins = path.join(externalInstance, 'plugins');
+    const sentinelPath = path.join(externalPlugins, 'sentinel.bin');
+    const sentinel = Buffer.from([0x10, 0x20, 0x30, 0x40]);
+    fs.mkdirSync(path.join(workInstance, 'plugins'), { recursive: true });
+    fs.mkdirSync(externalPlugins, { recursive: true });
+    fs.writeFileSync(sentinelPath, sentinel);
+
+    const originalLstatSync = fs.lstatSync;
+    let replaced = false;
+    spyOn(fs, 'lstatSync').mockImplementation(((targetPath, options) => {
+      const result = originalLstatSync(targetPath, options);
+      if (!replaced && String(targetPath) === path.join(workInstance, 'plugins')) {
+        replaced = true;
+        fs.renameSync(workInstance, originalInstance);
+        fs.symlinkSync(externalInstance, workInstance, 'dir');
+      }
+      return result;
+    }) as typeof fs.lstatSync);
+
+    expectInvalidInstancePath(() => manager.linkSharedDirectories(workInstance));
+    expect(fs.readFileSync(sentinelPath)).toEqual(sentinel);
+    expect(fs.readdirSync(externalPlugins)).toEqual(['sentinel.bin']);
+    expect(fs.readdirSync(externalInstance)).toEqual(['plugins']);
   });
 
   it('rejects linking through a symlinked instances root without touching its target', () => {
