@@ -672,6 +672,52 @@ function transformMessages(messagesValue: unknown): OpenAIMessage[] {
 }
 
 /**
+ * Hoist every accepted `role: "system"` message to one leading system message.
+ *
+ * Claude Code sends the system prompt as the top-level `system` field *and*,
+ * separately, sends skill/plugin listings as `role: "system"` entries inside
+ * `messages` (see #1459). `ProxyRequestTransformer.transform` prepends the
+ * top-level `system` field unconditionally, so once both are present the
+ * resulting array holds two `system` messages that are not adjacent —
+ * `coalesceMessages` only merges *consecutive* same-role messages, so it
+ * cannot fix this case even if it did coalesce `system` (which it explicitly
+ * excludes below).
+ *
+ * Strict OpenAI-compatible backends (LiteLLM among them) reject any request
+ * where a `system` message is not alone at index 0:
+ * `400 A 'system' message can only appear at index 0 of the messages array.`
+ *
+ * Inline system messages may appear between complete turns, including after
+ * tool results. They may not interrupt a pending assistant tool-call/result
+ * sequence; `transformMessages` rejects that ambiguous placement before this
+ * pass. Accepted system messages are extracted in encounter order, joined with
+ * a blank line, and reinserted as the sole leading message. Everything else
+ * keeps its relative order before normal same-role coalescing.
+ */
+function hoistSystemMessages(messages: OpenAIMessage[]): OpenAIMessage[] {
+  const systemParts: string[] = [];
+  const rest: OpenAIMessage[] = [];
+
+  for (const message of messages) {
+    if (message.role !== 'system') {
+      rest.push(message);
+      continue;
+    }
+    const content = message.content;
+    const text = typeof content === 'string' ? content : '';
+    if (text.trim().length > 0) {
+      systemParts.push(text);
+    }
+  }
+
+  if (systemParts.length === 0) {
+    return rest;
+  }
+
+  return [{ role: 'system', content: systemParts.join('\n\n') }, ...rest];
+}
+
+/**
  * Coalesce consecutive messages of the same role.
  * OpenAI/vLLM/Ollama/Mistral require strict user<->assistant alternation.
  * Multiple consecutive tool messages are allowed (assistant -> tool* -> user).
@@ -741,7 +787,7 @@ export class ProxyRequestTransformer {
       // was billed. See:
       // https://platform.openai.com/docs/api-reference/chat-streaming
       ...(source.stream === true ? { stream_options: { include_usage: true } } : {}),
-      messages: coalesceMessages(allMessages),
+      messages: coalesceMessages(hoistSystemMessages(allMessages)),
       max_tokens: asNumber(source.max_tokens),
       temperature: asNumber(source.temperature),
       top_p: asNumber(source.top_p),

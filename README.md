@@ -217,6 +217,7 @@ ccs ollama "summarize these logs"
 - Contributing guide: [CONTRIBUTING.md](./CONTRIBUTING.md)
 - Daily local gate: `bun run format && bun run lint:fix && bun run validate` (`validate` is the fast path only)
 - Before review or merge confidence: `bun run validate:ci-parity`
+- Cross-runtime proxy transport: `bun run test:runtime-matrix` (Node 18/22/26 and Bun)
 - If PR checks stay queued for more than 10 minutes, assume the self-hosted runner is offline and notify a maintainer instead of retrying blindly
 - Starter work:
   [good first issue](https://github.com/kaitranntt/ccs/labels/good%20first%20issue),

@@ -1032,7 +1032,7 @@ function makeMultiProfileDeps(opts: {
     listCodexProfiles: () => codexProfiles,
     defaultClaudeProfile: () => claudeDefault,
     defaultCodexProfile: () => codexDefault,
-    // Credential seams (file-only, no keychain)
+    // Credential seams (fully injected; no real filesystem or Keychain access)
     readClaudeCredentialsForProfile: credsForProfile,
     readCodexNativeAuth: codexNativeAuth,
     // Fetch seams
@@ -1170,8 +1170,10 @@ describe('multi-profile: account_id and wire fields', () => {
 
     const rows = await getNativeAccountRows(deps);
     expect(rows.length).toBe(claudeProfiles.length + codexProfiles.length);
-    expect(deps.claudeFetchCount()).toBe(1);
-    expect(deps.codexNetworkCount()).toBe(1);
+    // Budget per pass: the default + one rotating non-default live slot per
+    // surface — constant regardless of profile count.
+    expect(deps.claudeFetchCount()).toBe(2);
+    expect(deps.codexNetworkCount()).toBe(2);
   });
 
   it('rows are sorted by (surface, profile)', async () => {
@@ -1193,7 +1195,7 @@ describe('multi-profile: account_id and wire fields', () => {
   });
 });
 
-describe('multi-profile: Claude file-only reader', () => {
+describe('multi-profile: Claude credential reader', () => {
   it('profile with .credentials.json present -> live fetch row (paused:false when default)', async () => {
     const clock = { now: 1_000_000 };
     const deps = makeMultiProfileDeps({
@@ -1396,8 +1398,9 @@ describe('multi-profile: per-profile circuit breaker isolation', () => {
     const ckRow = rows.find((r) => r.profile === 'ck');
     const workRow = rows.find((r) => r.profile === 'work');
 
-    // 'ck' stays cache-only, independent of work's breaker.
-    expect(ckRow?.quotaStatus).toBe('unsupported');
+    // 'ck' gets its own live row via the rotating slot, independent of work's
+    // breaker history.
+    expect(ckRow?.quotaStatus).toBe('ok');
     // 'work' is also fine after reset (no breaker state).
     expect(workRow?.quotaStatus).toBe('ok');
   });
@@ -1431,10 +1434,11 @@ describe('multi-profile: per-profile circuit breaker isolation', () => {
       },
     });
 
-    // First call: 'work' gets a 429, 'ck' remains cache-only.
+    // First call: 'work' gets a 429; 'ck' is refreshed by the rotating slot and
+    // succeeds — work's failures do not leak into ck's state.
     const rows1 = await getNativeAccountRows(deps);
     const ck1 = rows1.find((r) => r.profile === 'ck');
-    expect(ck1?.quotaStatus).toBe('unsupported');
+    expect(ck1?.quotaStatus).toBe('ok');
     expect(workCall429Count).toBeGreaterThanOrEqual(1);
 
     // Skip past cooldown for 'work' only; 'ck' is within TTL.
@@ -1443,8 +1447,8 @@ describe('multi-profile: per-profile circuit breaker isolation', () => {
     // Second call past 'work' cooldown: work tries again (429 again); ck cached.
     const rows2 = await getNativeAccountRows(deps);
     const ck2 = rows2.find((r) => r.profile === 'ck');
-    // 'ck' remains cache-only and is not affected by work's breaker.
-    expect(ck2?.quotaStatus).toBe('unsupported');
+    // 'ck' keeps its healthy cached row and is not affected by work's breaker.
+    expect(ck2?.quotaStatus).toBe('ok');
   });
 });
 
@@ -1537,15 +1541,18 @@ describe('review focus areas: reauth caching + codex local fallback', () => {
       codexNetworkFetch: async () => ({ success: false, needsReauth: true }) as CodexQuotaResult,
     });
 
+    // The rotating slot polls 'ck' once; the 401 parks it into the reauth
+    // cooldown.
     const first = await getNativeAccountRows(deps);
     const r1 = first.find((r) => r.profile === 'ck');
     expect(r1?.needsReauth).toBe(true);
     expect(r1?.paused).toBe(true);
-    expect(deps.codexNetworkCount()).toBe(0);
+    expect(deps.codexNetworkCount()).toBe(1);
 
+    // Within the cooldown it is NOT re-polled (no repeated 401s), even forced.
     const second = await getNativeAccountRows(deps, { force: true });
     expect(second.find((r) => r.profile === 'ck')?.cached).toBe(true);
-    expect(deps.codexNetworkCount()).toBe(0);
+    expect(deps.codexNetworkCount()).toBe(1);
   });
 
   it('Codex named profile without on-disk auth is parked, never filled from global local data', async () => {
@@ -1655,7 +1662,7 @@ describe('review focus areas: reauth caching + codex local fallback', () => {
     expect(deps.claudeFetchCount()).toBe(1); // re-checked -> fetched
   });
 
-  it('Codex named profile with valid auth but sparse payload stays parked when not default', async () => {
+  it('Codex named profile with valid auth but sparse payload yields an active quota-less row', async () => {
     resetNativeQuotaState();
     const clock = { now: 7_000_000 };
     const deps = makeMultiProfileDeps({
@@ -1668,13 +1675,15 @@ describe('review focus areas: reauth caching + codex local fallback', () => {
       codexNetworkFetch: async () => ({ success: true }) as CodexQuotaResult,
     });
 
+    // The rotating slot polls 'ck'; the token authenticated, so it is a valid
+    // active subscription with a sparse payload — an active quota-less row,
+    // still dimmed because it is not the default profile.
     const rows = await getNativeAccountRows(deps);
     const ck = rows.find((r) => r.profile === 'ck');
     expect(ck).toBeDefined();
-    expect(ck?.paused).toBe(true); // cache-only, parked until selected as default
-    expect(ck?.needsReauth).toBe(true);
-    expect(ck?.quotaStatus).toBe('unsupported');
-    expect(ck?.quota_percentage).toBeNull(); // no windows while parked
+    expect(ck?.paused).toBe(true); // non-default rows always render dimmed
+    expect(ck?.needsReauth).toBe(false);
+    expect(ck?.quota_percentage).toBeNull(); // no windows in the payload
   });
 
   it('non-default cache-only rows do not overwrite the canonical live cache', async () => {
@@ -1691,9 +1700,11 @@ describe('review focus areas: reauth caching + codex local fallback', () => {
     });
     deps.defaultCodexProfile = () => codexDefault;
 
+    // First pass: 'ck' (default) is live-polled and the rotating slot also
+    // refreshes 'default' — two upstream calls.
     const first = await getNativeAccountRows(deps);
     expect(first.find((r) => r.profile === 'ck')?.paused).toBe(false);
-    expect(deps.codexNetworkCount()).toBe(1);
+    expect(deps.codexNetworkCount()).toBe(2);
 
     codexDefault = 'default';
     const second = await getNativeAccountRows(deps);
@@ -1707,6 +1718,237 @@ describe('review focus areas: reauth caching + codex local fallback', () => {
     const ckDefaultAgain = third.find((r) => r.profile === 'ck');
     expect(ckDefaultAgain?.cached).toBe(true);
     expect(ckDefaultAgain?.paused).toBe(false);
+    expect(deps.codexNetworkCount()).toBe(2);
+  });
+});
+
+// ============================================================================
+// Multi-profile: rotating live slot for non-default profiles
+//
+// Non-default profiles used to be cache-only forever, so accounts other than
+// the default never showed real quota — they sat parked ("needs re-auth") for
+// the lifetime of the server. One rotating live slot per surface refreshes the
+// stalest eligible non-default profile per pass, so every account converges to
+// real data within a few polls while the per-pass upstream budget stays
+// constant (<= 2 calls per surface) regardless of profile count.
+// ============================================================================
+
+describe('multi-profile: rotating live slot for non-default profiles', () => {
+  it('live-polls the default plus one stale non-default Claude profile per pass', async () => {
+    const clock = { now: 1_000_000 };
+    const deps = makeMultiProfileDeps({
+      clock,
+      claudeProfiles: ['work', 'personal', 'fc'],
+      codexProfiles: [],
+      claudeDefault: 'work',
+      credsForProfile: () => maxCreds(),
+      claudeFetch: async () => successQuota(),
+    });
+
+    // Pass 1: default (work) + one stale non-default get live data.
+    let rows = await getNativeAccountRows(deps);
+    expect(deps.claudeFetchCount()).toBe(2);
+    expect(rows.filter((r) => r.quotaStatus === 'ok').length).toBe(2);
+
+    // Pass 2 after the parked TTL: the remaining profile gets its live row.
+    clock.now += 31_000;
+    rows = await getNativeAccountRows(deps);
+    expect(deps.claudeFetchCount()).toBe(3);
+    expect(rows.filter((r) => r.quotaStatus === 'ok').length).toBe(3);
+
+    // Pass 3 while everything is within TTL: fully cached, zero upstream calls.
+    clock.now += 1_000;
+    rows = await getNativeAccountRows(deps);
+    expect(deps.claudeFetchCount()).toBe(3);
+    expect(rows.filter((r) => r.quotaStatus === 'ok').length).toBe(3);
+  });
+
+  it('rotated non-default rows keep paused:true (only the default renders active)', async () => {
+    const clock = { now: 1_000_000 };
+    const deps = makeMultiProfileDeps({
+      clock,
+      claudeProfiles: ['work', 'personal'],
+      codexProfiles: [],
+      claudeDefault: 'work',
+      credsForProfile: () => maxCreds(),
+      claudeFetch: async () => successQuota(),
+    });
+
+    const rows = await getNativeAccountRows(deps);
+    const personal = rows.find((r) => r.profile === 'personal');
+    expect(personal?.quotaStatus).toBe('ok');
+    expect(personal?.needsReauth).toBe(false);
+    expect(personal?.paused).toBe(true);
+    expect(personal?.is_default).toBe(false);
+  });
+
+  it('codex non-default profiles also get one rotating live slot per pass', async () => {
+    const clock = { now: 1_000_000 };
+    const deps = makeMultiProfileDeps({
+      clock,
+      claudeProfiles: [],
+      codexProfiles: ['personal', 'ck'],
+      codexDefault: 'personal',
+      codexNativeAuth: (p) => ({ accessToken: `tok-${p}`, accountId: `id-${p}` }),
+      codexNetworkFetch: async () => codexSuccessQuota(),
+    });
+
+    const rows = await getNativeAccountRows(deps);
+    expect(deps.codexNetworkCount()).toBe(2);
+    const ck = rows.find((r) => r.profile === 'ck');
+    expect(ck?.paused).toBe(true);
+    expect(ck?.needsReauth).toBe(false);
+  });
+
+  it('profiles in reauth cooldown are skipped by the rotating slot', async () => {
+    const clock = { now: 1_000_000 };
+    let failProfile: string | null = 'personal';
+    const deps = makeMultiProfileDeps({
+      clock,
+      claudeProfiles: ['work', 'personal'],
+      codexProfiles: [],
+      claudeDefault: 'work',
+      credsForProfile: () => maxCreds(),
+      claudeFetch: async (_token: string, accountId?: string) =>
+        accountId === `ccs:${failProfile}`
+          ? ({ success: false, needsReauth: true, retryable: false } as ClaudeQuotaResult)
+          : successQuota(),
+    });
+
+    // Pass 1: personal is rotated in, 401s, and enters the reauth cooldown.
+    let rows = await getNativeAccountRows(deps);
+    expect(rows.find((r) => r.profile === 'personal')?.needsReauth).toBe(true);
+    expect(deps.claudeFetchCount()).toBe(2);
+
+    // Pass 2 inside the cooldown: the slot must NOT re-poll (and re-401) it.
+    clock.now += 31_000;
+    rows = await getNativeAccountRows(deps);
+    expect(deps.claudeFetchCount()).toBe(2);
+    expect(rows.find((r) => r.profile === 'personal')?.needsReauth).toBe(true);
+  });
+});
+
+// ============================================================================
+// Quota reset invalidates cached rows
+//
+// A cached row whose next_reset has passed no longer describes the current
+// window — the quota snapped back at the reset boundary. Serving it for the
+// rest of the 10-min TTL makes the bar visibly wrong right after a reset, so
+// a passed reset marks the row stale (guarded: only when the row was fetched
+// BEFORE the reset, so a post-reset payload that still reports a past reset
+// cannot cause a refetch loop).
+// ============================================================================
+
+describe('multi-profile: quota reset invalidates cached rows', () => {
+  function quotaResettingAt(resetIso: string): ClaudeQuotaResult {
+    const base = successQuota();
+    return {
+      ...base,
+      coreUsage: {
+        fiveHour: { ...base.coreUsage!.fiveHour!, resetAt: resetIso },
+        weekly: base.coreUsage!.weekly,
+      },
+    };
+  }
+
+  it('re-fetches the default Claude profile once its next_reset passes, before TTL expiry', async () => {
+    const clock = { now: Date.parse('2026-06-09T10:00:00.000Z') };
+    const resetIso = '2026-06-09T10:01:00.000Z'; // 60s ahead
+    const deps = makeMultiProfileDeps({
+      clock,
+      claudeProfiles: ['work'],
+      codexProfiles: [],
+      claudeDefault: 'work',
+      credsForProfile: () => maxCreds(),
+      claudeFetch: async () => quotaResettingAt(resetIso),
+    });
+
+    await getNativeAccountRows(deps);
+    expect(deps.claudeFetchCount()).toBe(1);
+
+    // 90s later: past the reset but far inside the 10-min TTL.
+    clock.now += 90_000;
+    await getNativeAccountRows(deps);
+    expect(deps.claudeFetchCount()).toBe(2);
+  });
+
+  it('does not refetch-loop when a post-reset payload still reports a past reset', async () => {
+    const clock = { now: Date.parse('2026-06-09T10:00:00.000Z') };
+    const resetIso = '2026-06-09T10:01:00.000Z';
+    const deps = makeMultiProfileDeps({
+      clock,
+      claudeProfiles: ['work'],
+      codexProfiles: [],
+      claudeDefault: 'work',
+      credsForProfile: () => maxCreds(),
+      claudeFetch: async () => quotaResettingAt(resetIso),
+    });
+
+    await getNativeAccountRows(deps);
+    clock.now += 90_000;
+    await getNativeAccountRows(deps); // refetch fires; payload STILL says 10:01
+    expect(deps.claudeFetchCount()).toBe(2);
+
+    // Another pass within TTL: the row was fetched after the reset passed, so
+    // the stale-by-reset rule must not apply again.
+    clock.now += 30_000;
+    await getNativeAccountRows(deps);
+    expect(deps.claudeFetchCount()).toBe(2);
+  });
+
+  it('rotating slot treats a non-default profile with a passed reset as stale', async () => {
+    const clock = { now: Date.parse('2026-06-09T10:00:00.000Z') };
+    const resetIso = '2026-06-09T10:01:00.000Z';
+    const farFuture = '2026-06-16T00:00:00.000Z';
+    const deps = makeMultiProfileDeps({
+      clock,
+      claudeProfiles: ['work', 'personal'],
+      codexProfiles: [],
+      claudeDefault: 'work',
+      credsForProfile: () => maxCreds(),
+      claudeFetch: async (_t, accountId) =>
+        quotaResettingAt(accountId === 'ccs:personal' ? resetIso : farFuture),
+    });
+
+    // Pass 1: work (default) + personal (rotating slot, never fetched).
+    await getNativeAccountRows(deps);
+    expect(deps.claudeFetchCount()).toBe(2);
+
+    // 90s later: personal's reset passed; work is fresh. The rotating slot
+    // must pick personal again even though its row is inside the 10-min TTL.
+    clock.now += 90_000;
+    await getNativeAccountRows(deps);
+    expect(deps.claudeFetchCount()).toBe(3);
+  });
+
+  it('Codex rows honour the same reset-staleness rule', async () => {
+    const clock = { now: Date.parse('2026-06-09T10:00:00.000Z') };
+    const codexQuota: CodexQuotaResult = {
+      ...codexSuccessQuota(),
+      coreUsage: {
+        fiveHour: {
+          label: 'Primary',
+          remainingPercent: 60,
+          resetAfterSeconds: 60,
+          resetAt: '2026-06-09T10:01:00.000Z',
+        },
+        weekly: codexSuccessQuota().coreUsage!.weekly,
+      },
+    };
+    const deps = makeMultiProfileDeps({
+      clock,
+      claudeProfiles: [],
+      codexProfiles: ['personal'],
+      codexDefault: 'personal',
+      codexNativeAuth: (p) => ({ accessToken: `tok-${p}`, accountId: `id-${p}` }),
+      codexNetworkFetch: async () => codexQuota,
+    });
+
+    await getNativeAccountRows(deps);
+    expect(deps.codexNetworkCount()).toBe(1);
+
+    clock.now += 90_000;
+    await getNativeAccountRows(deps);
     expect(deps.codexNetworkCount()).toBe(2);
   });
 });

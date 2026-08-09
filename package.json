@@ -1,6 +1,6 @@
 {
   "name": "@kaitranntt/ccs",
-  "version": "8.8.1-dev.16",
+  "version": "8.8.1-dev.21",
   "description": "Claude Codex Switch - Instant profile switching between Claude, GLM, Kimi, and more",
   "keywords": [
     "cli",
@@ -81,6 +81,7 @@
     "test:unit": "bun test tests/unit",
     "test:npm": "bun test tests/npm/",
     "test:native": "bash tests/native/unix/edge-cases.sh",
+    "test:runtime-matrix": "bun run build && CCS_RUNTIME_MATRIX=1 bun test tests/integration/proxy/runtime-transport-matrix.test.ts --timeout 60000",
     "test:e2e": "bun test tests/e2e/ --bail --timeout 60000",
     "report:hardening": "node scripts/hardening-inventory.js",
     "dev": "bun run build:server && node dist/ccs.js config --dev",

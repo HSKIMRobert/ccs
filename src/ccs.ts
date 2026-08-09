@@ -1,5 +1,3 @@
-import './utils/fetch-proxy-setup';
-
 import { ErrorManager } from './utils/error-manager';
 import { fail } from './utils/ui';
 // Import centralized error handling
@@ -7,6 +5,7 @@ import { handleError, runCleanup } from './errors';
 
 import { createLogger, runWithRequestId } from './services/logging';
 import { redactArgv } from './services/logging/log-redaction';
+import { applyGlobalFetchProxy } from './utils/fetch-proxy-setup';
 // Import target adapter system
 import { registerTarget, ClaudeAdapter, DroidAdapter, CodexAdapter } from './targets';
 
@@ -19,6 +18,11 @@ import { resolveProfileAndTarget } from './dispatcher/profile-resolver';
 // ========== Main Execution ==========
 
 async function main(): Promise<void> {
+  const fetchProxySetup = applyGlobalFetchProxy();
+  if (fetchProxySetup.error) {
+    console.error(`[!] Skipping global fetch proxy setup: ${fetchProxySetup.error}`);
+  }
+
   // Register target adapters (singleton wiring — stays in main)
   registerTarget(new ClaudeAdapter());
   registerTarget(new DroidAdapter());

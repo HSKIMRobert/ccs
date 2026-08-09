@@ -50,6 +50,8 @@ function maskAuthSchemeValue(value: string): string {
 const SECRET_TOKEN_PATTERN =
   /(?:Bearer|Basic|Token)\s+\S{8,}|sk-ant-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9_-]{32,}|xox[bpoa]-[A-Za-z0-9-]{10,}|gh[opsu]_[A-Za-z0-9]{36,}|glpat-[A-Za-z0-9_-]{18,}|AIza[0-9A-Za-z_-]{35}|eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|secret)(?:=|%3D)[A-Za-z0-9._~+/=-]{8,}/g;
 
+const URL_USERINFO_PATTERN = /([a-z][a-z\d+.-]*:\/\/)([^\s/@]+)@/gi;
+
 /**
  * Scrub known credential shapes from an arbitrary string. Preserves the
  * Bearer/Basic/Token scheme prefix when present so the entry stays readable.
@@ -57,10 +59,12 @@ const SECRET_TOKEN_PATTERN =
  * (defense-in-depth for the hotpath console.error sweep).
  */
 export function maskSecretTokens(value: string): string {
-  return value.replace(SECRET_TOKEN_PATTERN, (match) => {
-    const scheme = /^(Bearer|Basic|Token)\s+/.exec(match);
-    return scheme ? `${scheme[1]} [redacted]` : '[redacted]';
-  });
+  return value
+    .replace(URL_USERINFO_PATTERN, '$1[redacted]@')
+    .replace(SECRET_TOKEN_PATTERN, (match) => {
+      const scheme = /^(Bearer|Basic|Token)\s+/.exec(match);
+      return scheme ? `${scheme[1]} [redacted]` : '[redacted]';
+    });
 }
 
 function sanitizeValue(value: unknown, depth: number): unknown {

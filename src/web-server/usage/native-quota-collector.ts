@@ -14,9 +14,9 @@
  *   - circuit breaker stops calling after repeated 429s for a cooldown
  *   - serve-stale-on-failure; only omit a row when there is genuinely no data
  *
- * Claude path: reads per-profile .credentials.json (file-only, NO keychain)
- * and polls api.anthropic.com/api/oauth/usage. If the file is absent the
- * profile is emitted as a parked row (paused:true) — never a keychain call.
+ * Claude path: reads per-profile .credentials.json, then the per-config-dir
+ * Keychain item, and polls api.anthropic.com/api/oauth/usage. If neither source
+ * yields credentials the profile is emitted as a parked row (paused:true).
  *
  * Codex path: PRIMARY = live network (chatgpt.com/backend-api/wham/usage, via
  * fetchCodexQuota), FALLBACK = local session logs (getCodexLocalQuota), mirroring
@@ -29,13 +29,15 @@
  * is maintained — at most 2 live upstream calls per /summary regardless of
  * profile count.
  *
- * NO macOS Keychain access anywhere in this module. The old global-default
- * Claude reader (readClaudeCredentials) is kept for back-compat but is no longer
- * used by the multi-profile path.
+ * Claude per-profile reads are file-first with a per-config-dir macOS Keychain
+ * fallback (Claude Code stores OAuth tokens in the Keychain by default on
+ * macOS). The old global-default Claude reader (readClaudeCredentials) is kept
+ * for back-compat but is no longer used by the multi-profile path.
  */
 
 import {
   readClaudeCredentials,
+  readClaudeCredentialsForConfigDir,
   getAccessToken,
   getSubscriptionTier,
   hasSupportedSubscription,
@@ -108,13 +110,15 @@ const CODEX_PROVIDER = CODEX_NATIVE_PROVIDER;
 
 export interface NativeQuotaDeps {
   /** Read the native Claude Code credentials (global default path). */
-  readCredentials?: () => ClaudeNativeCredentials | null;
+  readCredentials?: () => ClaudeNativeCredentials | null | Promise<ClaudeNativeCredentials | null>;
   /**
-   * Read credentials for a specific Claude profile (file-only, no keychain).
+   * Read credentials for a specific Claude profile (file-first, Keychain fallback).
    * Injected so tests never touch real fs or Keychain.
    * profile: the profile name (e.g. "work"); returns null when absent/unparseable.
    */
-  readClaudeCredentialsForProfile?: (profile: string) => ClaudeNativeCredentials | null;
+  readClaudeCredentialsForProfile?: (
+    profile: string
+  ) => ClaudeNativeCredentials | null | Promise<ClaudeNativeCredentials | null>;
   /** Fetch Claude quota with a directly-supplied native token. */
   fetchClaudeQuota?: (accessToken: string, accountId?: string) => Promise<ClaudeQuotaResult>;
   /**
@@ -487,43 +491,39 @@ function serveCached(state: ProviderState): BarSummaryRow | null {
 }
 
 // ============================================================================
-// File-only Claude credentials reader for per-profile paths (NO keychain)
+// Per-profile Claude credentials reader (file-first, Keychain fallback)
 // ============================================================================
 
 /**
- * Read credentials for a specific Claude Code profile (file-only, no keychain).
+ * Read credentials for a specific Claude Code profile (file-first, Keychain fallback).
  *
- * Looks for .credentials.json in the profile's instance directory. If the file
- * is absent or unparseable, returns null — the caller emits a parked row.
- * Never calls security/Keychain — zero new keychain access from this feature.
+ * Looks for .credentials.json in the profile's instance directory, then uses
+ * the bounded per-config-dir macOS Keychain fallback. If neither yields a
+ * parseable credential object, the caller emits a parked row.
  */
-function readClaudeCredentialsForProfileFromDisk(
+async function readClaudeCredentialsForProfileFromDisk(
   profile: string,
-  readDefaultCredentials: () => ClaudeNativeCredentials | null = readClaudeCredentials
-): ClaudeNativeCredentials | null {
+  readDefaultCredentials: () =>
+    | ClaudeNativeCredentials
+    | null
+    | Promise<ClaudeNativeCredentials | null> = readClaudeCredentials
+): Promise<ClaudeNativeCredentials | null> {
   try {
     const instanceDir = path.join(getCcsDir(), 'instances', profile);
-    const credFile = path.join(instanceDir, '.credentials.json');
-    if (fs.existsSync(credFile)) {
-      const raw = fs.readFileSync(credFile, 'utf8');
-      const parsed = JSON.parse(raw) as unknown;
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return parsed as ClaudeNativeCredentials;
-      }
-      return null;
-    }
 
     // The bare `ccs` default login uses the standard global credential lookup:
     // ~/.claude/.credentials.json, falling back to the single global
     // "Claude Code-credentials" Keychain item that Claude Code itself maintains.
-    // This is the ONE pre-existing global read the shipped Bar already performs --
-    // NOT a per-profile Keychain scan. Isolated `ccs auth` profiles stay
-    // file-only and never touch the Keychain; a real instance directory named
-    // "default" is therefore parked when its file is absent.
     if (profile === DEFAULT_PROFILE && !fs.existsSync(instanceDir)) {
-      return readDefaultCredentials();
+      return await readDefaultCredentials();
     }
-    return null;
+
+    // Isolated `ccs auth` instance: <instanceDir>/.credentials.json first, then
+    // the per-config-dir Keychain item Claude Code maintains for this
+    // CLAUDE_CONFIG_DIR ("Claude Code-credentials-<sha256(dir)[0..8]>"). On
+    // macOS Claude Code stores tokens in the Keychain by default, so without
+    // the Keychain read every isolated profile is permanently parked.
+    return await readClaudeCredentialsForConfigDir(instanceDir);
   } catch {
     return null;
   }
@@ -788,6 +788,72 @@ function markDefault(row: BarSummaryRow, isDefault: boolean): BarSummaryRow {
 }
 
 /**
+ * Force paused:true on a non-default row AND its cached copy. Non-default rows
+ * always render dimmed (only the default profile is "active"), including the
+ * pass where the rotating live slot refreshed them — otherwise the row would
+ * flicker active for one poll and dim again on the next.
+ */
+function markPausedAndSyncCache(
+  map: Map<string, ProviderState>,
+  profile: string,
+  row: BarSummaryRow
+): BarSummaryRow {
+  const state = map.get(profile);
+  if (state?.cachedRow) {
+    state.cachedRow = { ...state.cachedRow, paused: true };
+  }
+  return { ...row, paused: true };
+}
+
+/**
+ * True when the cached row was fetched BEFORE its own next_reset boundary and
+ * that boundary has now passed — the row describes the previous quota window,
+ * so its values (and the reset time itself) are visibly wrong in the bar.
+ * The cachedAt guard means a post-reset payload that still reports a past
+ * reset cannot cause a refetch loop: once re-fetched, normal TTL applies.
+ */
+function isCachedRowStaleByReset(state: ProviderState, now: number): boolean {
+  const nextReset = state.cachedRow?.next_reset;
+  if (!nextReset) return false;
+  const resetMs = Date.parse(nextReset);
+  if (!Number.isFinite(resetMs)) return false;
+  return resetMs <= now && state.cachedAt < resetMs;
+}
+
+/**
+ * Pick the non-default profile the rotating live slot should refresh this pass:
+ * the stalest profile whose cached row is missing, past its TTL, or past its
+ * own quota reset, skipping profiles inside a breaker/cooldown window (their
+ * collector would refuse the fetch anyway, wasting the slot). Returns null
+ * when every profile is fresh.
+ */
+function pickRotatingLiveProfile(
+  map: Map<string, ProviderState>,
+  profiles: string[],
+  defaultProfile: string | null,
+  now: number
+): string | null {
+  let picked: string | null = null;
+  let pickedAt = Number.POSITIVE_INFINITY;
+  for (const p of profiles) {
+    if (p === defaultProfile) continue;
+    const state = map.get(p);
+    if (state && (now < state.breakerOpenUntil || now < state.cooldownUntil)) continue;
+    const cachedRow = state?.cachedRow ?? null;
+    const cachedAt = state?.cachedAt ?? 0;
+    if (cachedRow && state) {
+      const ttl = cachedRow.quotaStatus === 'unsupported' ? PARKED_TTL_MS : NATIVE_QUOTA_TTL_MS;
+      if (now - cachedAt < ttl && !isCachedRowStaleByReset(state, now)) continue;
+    }
+    if (cachedAt < pickedAt) {
+      pickedAt = cachedAt;
+      picked = p;
+    }
+  }
+  return picked;
+}
+
+/**
  * Tag the row with is_default AND write the flag back onto the cached copy. The
  * collector caches a row before the default profile is known (the default is
  * resolved in the enumerator), so without this the cache-fallback path
@@ -819,9 +885,13 @@ async function collectClaudeRowForProfile(
   // Serve from cache while within TTL — force bypasses the short-circuit. Parked
   // rows (no creds -> quotaStatus 'unsupported') use a short TTL so a fresh login
   // is picked up within seconds instead of staying dimmed for the full quota TTL.
+  // A row whose own next_reset has passed is stale regardless of TTL — the
+  // quota snapped back at the boundary and the cached values are visibly wrong.
   if (!force && state.cachedRow) {
     const ttl = state.cachedRow.quotaStatus === 'unsupported' ? PARKED_TTL_MS : NATIVE_QUOTA_TTL_MS;
-    if (now - state.cachedAt < ttl) return serveCached(state);
+    if (now - state.cachedAt < ttl && !isCachedRowStaleByReset(state, now)) {
+      return serveCached(state);
+    }
   }
 
   // Breaker open or cooldown active -> zero network, serve stale (may be null).
@@ -835,7 +905,7 @@ async function collectClaudeRowForProfile(
     return state.pending;
   }
 
-  // For per-profile reads: use the injected seam (file-only, no keychain).
+  // For per-profile reads: use the injected seam (file-first, Keychain fallback).
   const readDefaultCredentials = deps.readCredentials ?? readClaudeCredentials;
   const readCreds =
     deps.readClaudeCredentialsForProfile ??
@@ -851,12 +921,12 @@ async function collectClaudeRowForProfile(
       // pending DURING assignment, leaving a stale resolved promise that the
       // next call's coalescing check would return instead of re-evaluating.
       await Promise.resolve();
-      const creds = readCreds(profile);
+      const creds = await readCreds(profile);
 
       // No credentials file found -> emit parked row (needs auth, file absent).
       // This is the expected case when the profile exists in the registry but the
-      // user has not logged in via 'ccs auth' for this machine or the credentials
-      // are stored only in keychain (which we deliberately do not access here).
+      // user has not logged in via 'ccs auth' for this machine or neither the
+      // profile file nor its bounded macOS Keychain fallback yielded credentials.
       if (!creds) {
         const parkedRow = buildParkedClaudeProfileRow(profile, now);
         // Cache the parked row so repeated calls don't re-stat the fs.
@@ -967,9 +1037,12 @@ async function collectCodexRowForProfile(
   // Serve from cache while within TTL — force bypasses the short-circuit. Parked
   // rows (no auth -> quotaStatus 'unsupported') use a short TTL so a fresh login
   // is picked up within seconds instead of staying dimmed for the full quota TTL.
+  // A row whose own next_reset has passed is stale regardless of TTL.
   if (!force && state.cachedRow) {
     const ttl = state.cachedRow.quotaStatus === 'unsupported' ? PARKED_TTL_MS : NATIVE_QUOTA_TTL_MS;
-    if (now - state.cachedAt < ttl) return serveCached(state);
+    if (now - state.cachedAt < ttl && !isCachedRowStaleByReset(state, now)) {
+      return serveCached(state);
+    }
   }
 
   // Breaker open or cooldown active -> skip network, go to LOCAL fallback.
@@ -1170,7 +1243,7 @@ async function collectClaudeRow(
 
   state.pending = (async (): Promise<BarSummaryRow | null> => {
     try {
-      const creds = readCredentialsFn();
+      const creds = await readCredentialsFn();
       // No token / unsupported subscription -> never spend a call, omit the row.
       if (!creds || !hasSupportedSubscription(creds)) {
         return serveCached(state);
@@ -1579,13 +1652,28 @@ async function getNativeAccountRowsMultiProfile(
   const results: (BarSummaryRow | null)[] = [];
   const now = (deps.now ?? Date.now)();
 
-  // Preserve the safety budget: only the active/default profile for each surface
-  // may perform a live refresh. Non-default profiles are cache-only (or parked)
-  // so one /summary request can trigger at most one Claude and one Codex live
-  // upstream call regardless of configured profile count.
+  // Preserve the safety budget: the active/default profile for each surface is
+  // live-polled every pass, plus ONE rotating live slot for the stalest
+  // non-default profile. All other profiles are cache-only (or parked), so one
+  // /summary request triggers at most two Claude and two Codex live upstream
+  // calls regardless of configured profile count — every account converges to
+  // real quota within a few polls without per-profile fan-out.
+  const claudeRotating = pickRotatingLiveProfile(
+    claudeProfileStates,
+    claudeProfiles,
+    claudeDefault,
+    now
+  );
+  const codexRotating = pickRotatingLiveProfile(
+    codexProfileStates,
+    codexProfiles,
+    codexDefault,
+    now
+  );
+
   for (const p of claudeProfiles) {
     const isDefault = p === claudeDefault;
-    if (!isDefault) {
+    if (!isDefault && p !== claudeRotating) {
       results.push(
         markDefaultAndSyncCache(
           claudeProfileStates,
@@ -1602,14 +1690,18 @@ async function getNativeAccountRowsMultiProfile(
         deps,
         force || claudeProfileStates.get(p)?.cachedRow?.quotaStatus === 'unsupported'
       )
-        .then((r) => (r ? markDefaultAndSyncCache(claudeProfileStates, p, r, true) : null))
+        .then((r) => {
+          if (!r) return null;
+          const marked = markDefaultAndSyncCache(claudeProfileStates, p, r, isDefault);
+          return isDefault ? marked : markPausedAndSyncCache(claudeProfileStates, p, marked);
+        })
         .catch(() => null)
     );
   }
 
   for (const p of codexProfiles) {
     const isDefault = p === codexDefault;
-    if (!isDefault) {
+    if (!isDefault && p !== codexRotating) {
       results.push(
         markDefaultAndSyncCache(
           codexProfileStates,
@@ -1626,7 +1718,11 @@ async function getNativeAccountRowsMultiProfile(
         deps,
         force || codexProfileStates.get(p)?.cachedRow?.quotaStatus === 'unsupported'
       )
-        .then((r) => (r ? markDefaultAndSyncCache(codexProfileStates, p, r, true) : null))
+        .then((r) => {
+          if (!r) return null;
+          const marked = markDefaultAndSyncCache(codexProfileStates, p, r, isDefault);
+          return isDefault ? marked : markPausedAndSyncCache(codexProfileStates, p, marked);
+        })
         .catch(() => null)
     );
   }
