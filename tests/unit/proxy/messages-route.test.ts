@@ -9,8 +9,13 @@ import { resolveOpenAICompatProfileConfig } from '../../../src/proxy/profile-rou
 import {
   attachDisconnectAbortHandlers,
   buildUpstreamAgentTimeouts,
-  handleProxyMessagesRequest,
+  handleProxyMessagesRequest as handleProxyMessagesRequestImpl,
 } from '../../../src/proxy/server/messages-route';
+import {
+  closeUpstreamDispatcher,
+  isBunRuntime,
+  toLogErrorInfo,
+} from '../../../src/proxy/server/upstream-transport';
 import { loadSettings } from '../../../src/utils/config-manager';
 
 class FakeSocket extends EventEmitter {
@@ -68,6 +73,24 @@ function buildProfile(profileName: string) {
   );
   expect(profile).toBeTruthy();
   return profile!;
+}
+
+function handleProxyMessagesRequest(
+  req: Parameters<typeof handleProxyMessagesRequestImpl>[0],
+  res: Parameters<typeof handleProxyMessagesRequestImpl>[1],
+  profile: Parameters<typeof handleProxyMessagesRequestImpl>[2],
+  expectedAuthToken: string,
+  insecureDispatcher?: Parameters<typeof handleProxyMessagesRequestImpl>[4]
+) {
+  return handleProxyMessagesRequestImpl(
+    req,
+    res,
+    profile,
+    expectedAuthToken,
+    insecureDispatcher,
+    undefined,
+    globalThis.fetch
+  );
 }
 
 beforeEach(() => {
@@ -191,6 +214,45 @@ describe('buildUpstreamAgentTimeouts', () => {
   });
 });
 
+describe('closeUpstreamDispatcher', () => {
+  it('closes an owned dispatcher once across repeated cleanup', async () => {
+    let closeCalls = 0;
+    const dispatcher = {
+      close: async () => {
+        closeCalls += 1;
+      },
+    } as never;
+
+    await Promise.all([
+      closeUpstreamDispatcher(dispatcher),
+      closeUpstreamDispatcher(dispatcher),
+      closeUpstreamDispatcher(dispatcher),
+    ]);
+
+    expect(closeCalls).toBe(1);
+  });
+});
+
+describe('toLogErrorInfo', () => {
+  it('preserves nested transport cause metadata for diagnostics', () => {
+    const cause = Object.assign(new Error('invalid onError method'), {
+      name: 'InvalidArgumentError',
+      code: 'UND_ERR_INVALID_ARG',
+    });
+    const error = new TypeError('fetch failed', { cause });
+
+    expect(toLogErrorInfo(error)).toEqual({
+      name: 'TypeError',
+      message: 'fetch failed',
+      cause: {
+        name: 'InvalidArgumentError',
+        message: 'invalid onError method',
+        code: 'UND_ERR_INVALID_ARG',
+      },
+    });
+  });
+});
+
 describe('handleProxyMessagesRequest', () => {
   it('dispatches secure upstream fetches with an explicit dispatcher (not undici defaults)', async () => {
     const activeProfile = buildProfile('hf');
@@ -217,7 +279,11 @@ describe('handleProxyMessagesRequest', () => {
 
     // A bare global-dispatcher fallback would reapply undici's 300s
     // headersTimeout/bodyTimeout and undercut the proxy's request timeout.
-    expect(capturedDispatcher).toBeDefined();
+    if (isBunRuntime()) {
+      expect(capturedDispatcher).toBeUndefined();
+    } else {
+      expect(capturedDispatcher).toBeDefined();
+    }
     expect(res.statusCode).toBe(502);
   });
 
@@ -403,9 +469,13 @@ describe('handleProxyMessagesRequest', () => {
     );
     await pending;
 
-    expect(capturedDispatcher).toBeInstanceOf(Agent);
+    if (isBunRuntime()) {
+      expect(capturedDispatcher).toBeUndefined();
+    } else {
+      expect(capturedDispatcher).toBeInstanceOf(Agent);
+    }
     expect(capturedDispatcher).not.toBe(sharedDispatcher);
-    expect(closeCalls).toBe(1);
+    expect(closeCalls).toBe(isBunRuntime() ? 0 : 1);
     expect(res.statusCode).toBe(502);
   });
 

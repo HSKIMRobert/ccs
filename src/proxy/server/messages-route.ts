@@ -1,5 +1,4 @@
 import * as http from 'http';
-import { Agent } from 'undici';
 import type { Dispatcher } from 'undici';
 import type { OpenAICompatProfileConfig } from '../profile-router';
 import { resolveProxyRequestRoute } from '../request-router';
@@ -10,11 +9,14 @@ import {
 import { ProxySseStreamTransformer } from '../transformers/sse-stream-transformer';
 import { isAnthropicPassthroughProfile, resolveOpenAIChatCompletionsUrl } from '../upstream-url';
 import { createLogger } from '../../services/logging';
-import {
-  createGlobalFetchProxyDispatcher,
-  type UpstreamAgentTimeoutOptions,
-} from '../../utils/fetch-proxy-setup';
+import type { UpstreamAgentTimeoutOptions } from '../../utils/fetch-proxy-setup';
 import { pipeWebResponseToNode, readRawBody, writeJson } from './http-helpers';
+import {
+  closeUpstreamDispatcher,
+  createUpstreamDispatcher,
+  fetchWithUpstreamTransport,
+  toLogErrorInfo,
+} from './upstream-transport';
 
 const REQUEST_TIMEOUT_MS = 600_000;
 // Keep undici's per-phase timeouts above the explicit request timeout so the
@@ -421,17 +423,6 @@ export function buildUpstreamAgentTimeouts(): UpstreamAgentTimeoutOptions {
   return { headersTimeout: ceiling, bodyTimeout: ceiling };
 }
 
-let defaultUpstreamDispatcher: Dispatcher | null = null;
-
-function getDefaultUpstreamDispatcher(): Dispatcher {
-  if (!defaultUpstreamDispatcher) {
-    const timeouts = buildUpstreamAgentTimeouts();
-    // Honor HTTP(S)_PROXY routing when configured; otherwise a plain Agent.
-    defaultUpstreamDispatcher = createGlobalFetchProxyDispatcher(timeouts) ?? new Agent(timeouts);
-  }
-  return defaultUpstreamDispatcher;
-}
-
 function formatTimeoutDuration(timeoutMs: number): string {
   return timeoutMs % 1000 === 0 ? `${timeoutMs / 1000} seconds` : `${timeoutMs}ms`;
 }
@@ -489,7 +480,10 @@ export async function handleProxyMessagesRequest(
   res: http.ServerResponse,
   profile: OpenAICompatProfileConfig,
   expectedAuthToken: string,
-  insecureDispatcher?: Dispatcher
+  insecureDispatcher?: Dispatcher,
+  sharedUpstreamDispatcher?: Dispatcher,
+  upstreamFetch?: typeof globalThis.fetch,
+  forceInsecureTls = false
 ): Promise<void> {
   const transformer = new ProxySseStreamTransformer();
   const startedAt = Date.now();
@@ -563,20 +557,26 @@ export async function handleProxyMessagesRequest(
       }
     );
 
+    const routeStaysOnActiveProfile = upstream.route.profile.profileName === profile.profileName;
     const useSharedInsecureDispatcher =
-      insecureDispatcher !== undefined &&
-      upstream.route.profile.profileName === profile.profileName;
+      insecureDispatcher !== undefined && routeStaysOnActiveProfile;
+    const useServerInsecureTls = forceInsecureTls && routeStaysOnActiveProfile;
     const useProfileInsecureTls = upstream.route.profile.insecure === true;
     const ephemeralInsecureDispatcher =
-      useProfileInsecureTls && !useSharedInsecureDispatcher
-        ? new Agent({ connect: { rejectUnauthorized: false }, ...buildUpstreamAgentTimeouts() })
+      useProfileInsecureTls && !useSharedInsecureDispatcher && !useServerInsecureTls
+        ? createUpstreamDispatcher(buildUpstreamAgentTimeouts(), true)
         : undefined;
-    const insecureTls = useSharedInsecureDispatcher || useProfileInsecureTls;
+    const insecureTls =
+      useSharedInsecureDispatcher || useServerInsecureTls || useProfileInsecureTls;
+    const ownedUpstreamDispatcher =
+      sharedUpstreamDispatcher || insecureTls
+        ? undefined
+        : createUpstreamDispatcher(buildUpstreamAgentTimeouts());
     const dispatcher = useSharedInsecureDispatcher
       ? insecureDispatcher
       : useProfileInsecureTls
         ? ephemeralInsecureDispatcher
-        : getDefaultUpstreamDispatcher();
+        : (sharedUpstreamDispatcher ?? ownedUpstreamDispatcher);
 
     try {
       logger.stage('dispatch', 'upstream.dispatch', 'Dispatching upstream fetch', {
@@ -588,17 +588,20 @@ export async function handleProxyMessagesRequest(
       const upstreamUrl = resolveOpenAIChatCompletionsUrl(upstream.route.profile.baseUrl, {
         passthrough,
       });
-      const upstreamResponse = await fetch(
-        upstreamUrl,
-        buildFetchInit(
-          upstream.route.profile,
-          upstream.body,
-          controller.signal,
-          req.headers,
-          passthrough,
-          dispatcher
-        )
+      const fetchInit = buildFetchInit(
+        upstream.route.profile,
+        upstream.body,
+        controller.signal,
+        req.headers,
+        passthrough,
+        dispatcher
       );
+      const upstreamResponse = upstreamFetch
+        ? await upstreamFetch(upstreamUrl, fetchInit)
+        : await fetchWithUpstreamTransport(upstreamUrl, fetchInit, {
+            dispatcher,
+            insecureTls,
+          });
       logger.stage('upstream', 'upstream.response', 'Received upstream response', {
         profileName: profile.profileName,
         routedProfileName: upstream.route.profile.profileName,
@@ -620,7 +623,7 @@ export async function handleProxyMessagesRequest(
       cleanupDisconnectHandlers();
       if (ephemeralInsecureDispatcher) {
         try {
-          await ephemeralInsecureDispatcher.close();
+          await closeUpstreamDispatcher(ephemeralInsecureDispatcher);
         } catch (closeError) {
           logger.stage(
             'cleanup',
@@ -635,13 +638,27 @@ export async function handleProxyMessagesRequest(
           );
         }
       }
+      if (ownedUpstreamDispatcher) {
+        try {
+          await closeUpstreamDispatcher(ownedUpstreamDispatcher);
+        } catch (closeError) {
+          logger.stage(
+            'cleanup',
+            'request.dispatcher_close_failed',
+            'Failed to close per-request upstream dispatcher',
+            {
+              profileName: profile.profileName,
+              routedProfileName: upstream.route.profile.profileName,
+              error: closeError instanceof Error ? closeError.message : String(closeError),
+            },
+            { level: 'warn' }
+          );
+        }
+      }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown proxy error';
-    const errInfo = {
-      name: error instanceof Error ? error.name : 'Error',
-      message,
-    };
+    const errInfo = toLogErrorInfo(error);
     logger.stage(
       'cleanup',
       'request.failed',

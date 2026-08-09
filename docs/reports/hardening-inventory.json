@@ -579,8 +579,8 @@
     },
     "loggerCoverage": {
       "filesWithCreateLogger": 65,
-      "totalSourceFiles": 761,
-      "coverageRatio": 0.0854,
+      "totalSourceFiles": 762,
+      "coverageRatio": 0.0853,
       "subdomainsWithZeroCreateLogger": [
         "api",
         "bin",
@@ -655,7 +655,7 @@
       "totalOccurrences": 592,
       "exemptOccurrences": 326,
       "hotpathOccurrences": 266,
-      "filesAffected": 82,
+      "filesAffected": 81,
       "topFiles": [
         {
           "file": "src/errors/error-handler.ts",
