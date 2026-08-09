@@ -86,6 +86,26 @@ describe('account instance directory enumeration', () => {
     expect(listAccountInstanceNames(instancesDir())).toEqual(['work']);
   });
 
+  it('rejects instance entries that symlink outside the managed root', () => {
+    const externalInstance = path.join(tempRoot, 'external-instance');
+    fs.mkdirSync(externalInstance, { recursive: true });
+    fs.mkdirSync(instancesDir(), { recursive: true });
+    fs.symlinkSync(externalInstance, path.join(instancesDir(), 'escaped'), 'dir');
+
+    expect(listAccountInstanceNames(instancesDir())).toEqual([]);
+    expect(listAccountInstancePaths(instancesDir())).toEqual([]);
+  });
+
+  it('rejects an instances root that is itself a symlink', () => {
+    const externalInstances = path.join(tempRoot, 'external-instances');
+    fs.mkdirSync(path.join(externalInstances, 'work'), { recursive: true });
+    fs.mkdirSync(path.dirname(instancesDir()), { recursive: true });
+    fs.symlinkSync(externalInstances, instancesDir(), 'dir');
+
+    expect(listAccountInstanceNames(instancesDir())).toEqual([]);
+    expect(listAccountInstancePaths(instancesDir())).toEqual([]);
+  });
+
   it('keeps ccs doctor settings symlinks healthy when .locks exists', () => {
     createValidSettingsLayout();
 

@@ -15,7 +15,13 @@ import type { AccountContextPolicy } from '../auth/account-context';
 import { getCcsHome } from '../utils/config-manager';
 import { createLogger } from '../services/logging';
 import { getCcsDir } from '../config/config-loader-facade';
-import { listAccountInstanceNames } from './instance-directory';
+import { ProfileError } from '../errors/error-types';
+import {
+  assertSafeAccountInstancePath,
+  ensureSafeAccountInstancesDirectory,
+  listAccountInstanceNames,
+  normalizeAccountInstanceName,
+} from './instance-directory';
 
 const logger = createLogger('management:instance-manager');
 
@@ -23,7 +29,7 @@ const MANAGED_MCP_SERVER_NAMES = new Set(['ccs-websearch', 'ccs-image-analysis',
 
 /** Options for instance creation */
 export interface InstanceOptions {
-  /** Skip shared symlinks (commands, skills, agents, settings.json) */
+  /** Skip shared symlinks (commands, skills, agents, settings.json, CLAUDE.md) */
   bare?: boolean;
 }
 
@@ -52,17 +58,27 @@ class InstanceManager {
     options: InstanceOptions = {}
   ): Promise<string> {
     const instancePath = this.getInstancePath(profileName);
+    const initialInstanceStats = this.getInstanceStats(instancePath);
+    if (initialInstanceStats) {
+      assertSafeAccountInstancePath(this.instancesDir, instancePath);
+    } else {
+      ensureSafeAccountInstancesDirectory(this.instancesDir);
+    }
 
     // Serialize context sync operations per profile across processes.
     await this.contextSyncLock.withLock(profileName, async () => {
       // Lazy initialization
-      if (!fs.existsSync(instancePath)) {
+      if (!this.getInstanceStats(instancePath)) {
+        ensureSafeAccountInstancesDirectory(this.instancesDir);
         logger.stage('route', 'instance.init', 'Initializing new profile instance', {
           profile: profileName,
           bare: options.bare === true,
         });
         this.initializeInstance(profileName, instancePath, options);
       }
+
+      // Re-check after locking/creation before any operation can mutate the instance.
+      assertSafeAccountInstancePath(this.instancesDir, instancePath);
 
       // Validate structure (auto-fix missing dirs)
       this.validateInstance(instancePath);
@@ -94,7 +110,7 @@ class InstanceManager {
    * Get instance path for profile
    */
   getInstancePath(profileName: string): string {
-    const safeName = this.sanitizeName(profileName);
+    const safeName = normalizeAccountInstanceName(profileName);
     return path.join(this.instancesDir, safeName);
   }
 
@@ -108,30 +124,14 @@ class InstanceManager {
   ): void {
     try {
       // Create base directory
-      fs.mkdirSync(instancePath, { recursive: true, mode: 0o700 });
+      fs.mkdirSync(instancePath, { mode: 0o700 });
 
-      // Create Claude-expected subdirectories (profile-specific only)
-      const subdirs = [
-        'session-env',
-        'todos',
-        'logs',
-        'file-history',
-        'shell-snapshots',
-        'debug',
-        '.anthropic',
-      ];
-
-      subdirs.forEach((dir) => {
-        const dirPath = path.join(instancePath, dir);
-        if (!fs.existsSync(dirPath)) {
-          fs.mkdirSync(dirPath, { recursive: true, mode: 0o700 });
-        }
-      });
-
-      // Shared links are created during ensureInstance() under the plugin layout lock.
+      // Expected subdirectories and shared links are created only after the
+      // caller validates that this new root stayed inside the managed parent.
     } catch (error) {
-      throw new Error(
-        `Failed to initialize instance for ${profileName}: ${(error as Error).message}`
+      throw new ProfileError(
+        `Failed to initialize instance for ${profileName}: ${(error as Error).message}`,
+        profileName
       );
     }
   }
@@ -268,12 +268,13 @@ class InstanceManager {
     }
   }
 
-  /**
-   * Sanitize profile name for filesystem
-   */
-  private sanitizeName(name: string): string {
-    // Replace unsafe characters with dash
-    return name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+  private getInstanceStats(instancePath: string): fs.Stats | null {
+    try {
+      return fs.lstatSync(instancePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
   }
 }
 

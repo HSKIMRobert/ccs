@@ -18,6 +18,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { info, warn } from '../../utils/ui';
+import { isSafeAccountInstancePath } from '../instance-directory';
 import {
   adoptDivergedFileContent,
   assertAdoptionPathAbsent,
@@ -41,6 +42,10 @@ import {
   ensureSharedPluginLayoutDefaults,
   linkInstancePlugins,
 } from './plugin-layout-internals';
+import {
+  preserveCanonicalFirstDivergence,
+  reconcileCanonicalFirstFile,
+} from './canonical-first-file-reconciler';
 import { SHARED_ITEMS } from './types';
 
 /**
@@ -120,11 +125,15 @@ export function ensureSharedDirectories(roots: LinkerRoots): void {
       recoverOrphanedCanonicalClaim(claudePath);
     }
 
+    if (item.type === 'file' && item.divergencePolicy === 'canonical-first') {
+      reconcileCanonicalFirstFile(roots, item.name);
+    }
+
     if (!getLstatSync(claudePath)) {
       if (item.type === 'directory') {
         fs.mkdirSync(claudePath, { recursive: true, mode: 0o700 });
       } else if (item.type === 'file') {
-        fs.writeFileSync(claudePath, JSON.stringify({}, null, 2), 'utf8');
+        fs.writeFileSync(claudePath, item.seedContent, 'utf8');
       }
     }
 
@@ -149,7 +158,9 @@ export function ensureSharedDirectories(roots: LinkerRoots): void {
         // Continue to recreate
       }
 
-      if (item.type === 'file') {
+      if (item.type === 'file' && item.divergencePolicy === 'canonical-first') {
+        removeExisting = !preserveCanonicalFirstDivergence(sharedPath, claudePath);
+      } else if (item.type === 'file') {
         sharedAdoption = adoptDivergedFileContent(sharedPath, claudePath);
         removeExisting = sharedAdoption === 'not-claimed';
       }
@@ -196,6 +207,11 @@ export function ensureSharedDirectories(roots: LinkerRoots): void {
  * Link shared directories into a specific instance path.
  */
 export function linkSharedDirectories(roots: LinkerRoots, instancePath: string): void {
+  if (!isSafeAccountInstancePath(roots.instancesDir, instancePath)) {
+    throw Object.assign(new TypeError(`Unsafe account instance path: ${instancePath}`), {
+      code: 'EINVAL',
+    });
+  }
   ensureSharedDirectories(roots);
 
   const sharedDir = roots.sharedDir;
@@ -210,7 +226,11 @@ export function linkSharedDirectories(roots: LinkerRoots, instancePath: string):
     const targetPath = path.join(sharedDir, item.name);
     let adoption: ReturnType<typeof adoptDivergedFileContent> = 'not-claimed';
 
-    if (item.type === 'file') {
+    if (item.type === 'file' && item.divergencePolicy === 'canonical-first') {
+      if (!preserveCanonicalFirstDivergence(linkPath, path.join(roots.claudeDir, item.name))) {
+        removeExistingPath(linkPath, item.type);
+      }
+    } else if (item.type === 'file') {
       adoption = adoptDivergedFileContent(linkPath, path.join(roots.claudeDir, item.name));
       if (adoption === 'not-claimed') {
         removeExistingPath(linkPath, item.type);
