@@ -5,11 +5,11 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as lockfile from 'proper-lockfile';
 import { CLIProxyProvider } from '../types';
 import { PROVIDER_CAPABILITIES } from '../provider-capabilities';
 import { PROVIDER_TYPE_VALUES } from '../auth/auth-types';
 import { getAuthDir, getCliproxyDir } from '../config/config-generator';
+import { withSyncLockRetry } from '../../utils/sync-lock-retry';
 import { AccountsRegistry, AccountInfo, PROVIDERS_WITHOUT_EMAIL, DrainOrderConfig } from './types';
 import {
   getAccountsRegistryPath,
@@ -338,24 +338,24 @@ function recoverAccountsRegistryFromCorruption(registryPath: string): AccountsRe
 
 function withAccountsRegistryLock<T>(callback: () => T): T {
   const lockTarget = getCliproxyDir();
-  let release: (() => void) | undefined;
 
   if (!fs.existsSync(lockTarget)) {
     fs.mkdirSync(lockTarget, { recursive: true, mode: 0o700 });
   }
 
-  try {
-    release = lockfile.lockSync(lockTarget, { stale: 10000 }) as () => void;
-    return callback();
-  } finally {
-    if (release) {
-      try {
-        release();
-      } catch {
-        // Best-effort release
-      }
-    }
-  }
+  // proper-lockfile rejects built-in retries in synchronous mode.
+  // Keep this API sync while waiting for short-lived concurrent launches.
+  // Preserve the existing stale-lock window.
+  // Retry only contention failures.
+  // Wait in short intervals so released locks are picked up promptly.
+  // Bound the wait so a genuinely stuck process still produces an error.
+  // The helper adds recovery guidance when that timeout is reached.
+  return withSyncLockRetry(lockTarget, callback, {
+    description: 'CLIProxy account registry lock',
+    staleMs: 10000,
+    retryDelayMs: 200,
+    retryTimeoutMs: 10000,
+  });
 }
 
 function readAccountsRegistryFromDisk(): AccountsRegistry {

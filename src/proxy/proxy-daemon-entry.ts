@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import { resolveOpenAICompatProfileConfig } from './profile-router';
 import { OPENAI_COMPAT_PROXY_DEFAULT_PORT } from './proxy-daemon-paths';
-import { startOpenAICompatProxyServer } from './server/proxy-server';
+import { closeOpenAICompatProxyServer, startOpenAICompatProxyServer } from './server/proxy-server';
 import { loadSettings } from '../config/config-loader-facade';
 
 interface RuntimeOptions {
@@ -99,9 +99,17 @@ function startRuntime(options: RuntimeOptions): void {
   });
   server.once('error', (error) => {
     process.stderr.write(String((error as Error).message) + '\n');
-    process.exit(1);
+    void closeOpenAICompatProxyServer(server).finally(() => {
+      process.exitCode = 1;
+    });
   });
-  const shutdown = () => server.close();
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = () => {
+    shutdownPromise ??= closeOpenAICompatProxyServer(server).catch((error) => {
+      process.stderr.write(`Proxy shutdown failed: ${String((error as Error).message)}\n`);
+      process.exitCode = 1;
+    });
+  };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 }

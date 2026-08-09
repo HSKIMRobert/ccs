@@ -20,7 +20,7 @@ If you are new to the project, start with a docs fix, a focused bug fix, or an i
 | CLI runtime | `src/`, `lib/`, `config/`, `scripts/` | Add or update tests in `tests/` |
 | Dashboard UI | `ui/src/` | Run `cd ui && bun run validate` |
 | Web server and config APIs | `src/web-server/`, `src/api/`, `src/config/` | Add unit or integration coverage |
-| Documentation | `https://docs.ccs.kaitran.ca`, `README.md`, `docs/`, `CONTRIBUTING.md` | Keep user-facing docs in sync |
+| Documentation | `https://docs.ccs.kaitran.ca`, `README.md`, [`docs/`](./docs/README.md), `CONTRIBUTING.md` | Update the owning source, not every page |
 | Static assets | `assets/` | Verify screenshots and references still match |
 
 Useful directories:
@@ -92,6 +92,21 @@ If `CI` or `Push CI` stays queued for a long time, it is a maintainer infrastruc
 
 `CONTRIBUTING.md` is the human entry point. For AI agents working in this repo, the authoritative automation and workflow rules live in [CLAUDE.md](./CLAUDE.md).
 
+## Documentation Ownership
+
+Documentation follows this truth order:
+
+1. Source, tests, package scripts, and workflows define implemented behavior.
+2. [CLAUDE.md](./CLAUDE.md) and this guide define repository workflow.
+3. [docs/README.md](./docs/README.md) maps maintainer documentation.
+4. [docs.ccs.kaitran.ca](https://docs.ccs.kaitran.ca) owns detailed user guides
+   and CLI reference.
+
+Update documentation when a change affects behavior, commands, setup,
+architecture, security posture, or contributor workflow. Prefer links to
+authoritative source files over copied trees, counts, and option lists that
+drift quickly.
+
 ## AI Review Lane
 
 CCS PR review no longer depends on `anthropics/claude-code-action`. The repository review lane is self-hosted PR-Agent:
@@ -100,7 +115,7 @@ CCS PR review no longer depends on `anthropics/claude-code-action`. The reposito
 - Use `/review` on the PR when you need a fresh pass after follow-up commits.
 - Only the trusted `/review` comment path is enabled.
 - Keep repository-level reviewer instructions in the root `.pr_agent.toml`.
-- Keep runtime wiring and defaults in `ai-review.yml`, which still maps the existing `AI_REVIEW_BASE_URL`, `AI_REVIEW_MODEL`, and `AI_REVIEW_API_KEY` integrations onto PR-Agent's `OPENAI.*` and `config.*` settings.
+- Keep runtime wiring and defaults in `ai-review.yml`, which maps the existing `AI_REVIEW_BASE_URL`, `AI_REVIEW_MODEL`, `AI_REVIEW_REASONING_EFFORT`, and `AI_REVIEW_API_KEY` integrations onto PR-Agent's `OPENAI.*` and `config.*` settings.
 - If you change review defaults, update the workflow or `.pr_agent.toml` alongside the contributor or architecture docs in the same PR.
 
 Example:

@@ -16,6 +16,20 @@ export interface SharedItem {
   type: 'directory' | 'file';
 }
 
+export interface ManagedSharedDirectoryItem extends SharedItem {
+  type: 'directory';
+}
+
+export interface ManagedSharedFileItem extends SharedItem {
+  type: 'file';
+  /** Exact bytes used when no canonical or adoptable source file exists. */
+  seedContent: string;
+  /** Controls whether an instance may replace an existing canonical file. */
+  divergencePolicy: 'newer-wins' | 'canonical-first';
+}
+
+export type ManagedSharedItem = ManagedSharedDirectoryItem | ManagedSharedFileItem;
+
 /**
  * Default content for a freshly provisioned installed_plugins.json registry.
  * Version 2 schema with an empty plugins map.
@@ -36,12 +50,23 @@ export const DEFAULT_INSTALLED_PLUGIN_REGISTRY = JSON.stringify(
  * Order matters: consumers rely on a stable iteration order when reconciling
  * symlinks, and 'plugins' is special-cased by the linker.
  */
-export const SHARED_ITEMS: readonly SharedItem[] = [
+export const SHARED_ITEMS: readonly ManagedSharedItem[] = [
   { name: 'commands', type: 'directory' },
   { name: 'skills', type: 'directory' },
   { name: 'agents', type: 'directory' },
   { name: 'plugins', type: 'directory' },
-  { name: 'settings.json', type: 'file' },
+  {
+    name: 'settings.json',
+    type: 'file',
+    seedContent: JSON.stringify({}, null, 2),
+    divergencePolicy: 'newer-wins',
+  },
+  {
+    name: 'CLAUDE.md',
+    type: 'file',
+    seedContent: '',
+    divergencePolicy: 'canonical-first',
+  },
 ];
 
 /**

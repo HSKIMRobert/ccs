@@ -16,9 +16,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getCcsDir } from '../../config/config-loader-facade';
 import { getBarJsonPath, getServerPidPath } from './bar-paths';
-import { defaultFindRunningServer } from './bar-server-probe';
+import { defaultFindRunningServer, resolveBarPort } from './bar-server-probe';
+import { parsePortFlag, validatePortArgs } from './port-arg';
 import type { DashboardInfo } from './bar-server-probe';
 import type { BarDiscoveryJson } from './launch-subcommand';
+import {
+  getProcessBirthIdentity,
+  removeBarServerProcessRecordIfOwned,
+  serializeBarServerProcessRecord,
+} from './bar-process-control';
+import type { BarServerProcessRecord } from './bar-process-control';
 
 // ---------------------------------------------------------------------------
 // Types — injectable deps for testability
@@ -44,10 +51,14 @@ export interface ServeDeps {
   writeFile: (filePath: string, content: string) => void;
   /** Remove a file if it exists (for cleanup on exit). */
   removeFile: (filePath: string) => void;
+  /** Remove server.pid only if it still identifies this process. */
+  removeProcessRecordIfOwned: (filePath: string, record: BarServerProcessRecord) => void;
   /** Register process signal handlers. */
   onSignal: (signal: 'SIGINT' | 'SIGTERM', handler: () => void) => void;
   /** Exit the process. */
   exit: (code: number) => never;
+  /** Read a stable OS birth marker so later stop commands cannot signal a reused PID. */
+  getProcessBirthIdentity: (pid: number) => string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,14 +84,6 @@ function defaultWriteFile(filePath: string, content: string): void {
   fs.writeFileSync(filePath, content);
 }
 
-function defaultRemoveFile(filePath: string): void {
-  try {
-    fs.unlinkSync(filePath);
-  } catch {
-    /* ignore — file may already be gone */
-  }
-}
-
 function defaultOnSignal(signal: 'SIGINT' | 'SIGTERM', handler: () => void): void {
   process.on(signal, handler);
 }
@@ -94,31 +97,26 @@ function defaultGetCcsDir(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Argument parsing helpers
-// ---------------------------------------------------------------------------
-
-function parsePortArg(args: string[]): number | null {
-  const idx = args.indexOf('--port');
-  if (idx !== -1 && idx + 1 < args.length) {
-    const n = parseInt(args[idx + 1], 10);
-    return Number.isFinite(n) && n > 0 && n < 65536 ? n : null;
-  }
-  return null;
-}
-
-// ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
 
 export async function handleBarServe(args: string[], deps: Partial<ServeDeps> = {}): Promise<void> {
+  const argError = validatePortArgs(args);
+  if (argError !== null) {
+    console.error(`[X] ${argError}`);
+    (deps.exit ?? defaultExit)(1);
+    return;
+  }
   const ccsDir = (deps.getCcsDir ?? defaultGetCcsDir)();
   const findRunningServer = deps.findRunningServer ?? (() => defaultFindRunningServer(ccsDir));
   const startServerFn = deps.startServer ?? defaultStartServer;
   const getPortFn = deps.getPort ?? defaultGetPort;
   const writeFile = deps.writeFile ?? defaultWriteFile;
-  const removeFile = deps.removeFile ?? defaultRemoveFile;
+  const removeProcessRecordIfOwned =
+    deps.removeProcessRecordIfOwned ?? removeBarServerProcessRecordIfOwned;
   const onSignal = deps.onSignal ?? defaultOnSignal;
   const exit = deps.exit ?? defaultExit;
+  const readProcessBirthIdentity = deps.getProcessBirthIdentity ?? getProcessBirthIdentity;
 
   const barJsonPath = getBarJsonPath(ccsDir);
   const serverPidPath = getServerPidPath(ccsDir);
@@ -151,12 +149,24 @@ export async function handleBarServe(args: string[], deps: Partial<ServeDeps> = 
 
   // 2. No live server found — start one.
   // Honor --port N from the launcher (it pre-selected via getPort to avoid races).
-  const requestedPort = parsePortArg(args);
+  // Without it, prefer the port recorded in bar.json so the server keeps coming
+  // back on the port the user last chose (sticky port).
+  const portFlag = parsePortFlag(args);
+  if (portFlag.present && portFlag.port === null) {
+    console.error('[X] Invalid --port value. Use an integer between 1 and 65535.');
+    exit(1);
+    return;
+  }
+  const requestedPort = portFlag.port;
   let port: number;
   if (requestedPort !== null) {
     port = requestedPort;
   } else {
-    port = await getPortFn({ port: [3000, 3001, 3002, 8000, 8080], host: '127.0.0.1' });
+    const stickyPort = resolveBarPort(ccsDir);
+    const base = [3000, 3001, 3002, 8000, 8080];
+    const candidates =
+      stickyPort !== null ? [stickyPort, ...base.filter((p) => p !== stickyPort)] : base;
+    port = await getPortFn({ port: candidates, host: '127.0.0.1' });
   }
 
   // TypeScript cannot infer that exit(1) is `never` when it is injected as a dep,
@@ -171,26 +181,43 @@ export async function handleBarServe(args: string[], deps: Partial<ServeDeps> = 
     exit(1);
   }
 
-  // 3. Write bar.json and server.pid.
+  // 3. Publish the owned process record before discovery. Stop cleanup uses
+  // server.pid as the ownership barrier, so discovery must never appear first.
   const barJson: BarDiscoveryJson = {
     baseUrl: dashboardInfo.baseUrl,
     port: dashboardInfo.port,
     authMode: 'loopback',
   };
+  const birthIdentity = readProcessBirthIdentity(process.pid);
+  if (birthIdentity === null) {
+    console.error('[X] Failed to record CCS Bar process identity; stopping unmanaged server.');
+    exit(1);
+    return;
+  }
+
+  const processRecord = { pid: process.pid, birthIdentity };
   try {
-    writeFile(barJsonPath, JSON.stringify(barJson, null, 2));
+    writeFile(serverPidPath, serializeBarServerProcessRecord(processRecord));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[X] Failed to write bar.json: ${msg}`);
+    console.error(`[X] Failed to write server.pid: ${msg}`);
     exit(1);
+    return;
   }
 
   try {
-    writeFile(serverPidPath, String(process.pid));
+    writeFile(barJsonPath, JSON.stringify(barJson, null, 2));
   } catch (err) {
-    // Non-fatal — stop/status will just degrade gracefully.
+    try {
+      removeProcessRecordIfOwned(serverPidPath, processRecord);
+    } catch (cleanupErr) {
+      const cleanupMessage = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
+      console.error(`[!] Failed to roll back server.pid: ${cleanupMessage}`);
+    }
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[!] Failed to write server.pid: ${msg}`);
+    console.error(`[X] Failed to write bar.json: ${msg}`);
+    exit(1);
+    return;
   }
 
   console.log(`[OK] CCS Bar server started at ${dashboardInfo.baseUrl}`);
@@ -198,7 +225,7 @@ export async function handleBarServe(args: string[], deps: Partial<ServeDeps> = 
 
   // 4. Clean shutdown on SIGINT / SIGTERM.
   const shutdown = (): void => {
-    removeFile(serverPidPath);
+    removeProcessRecordIfOwned(serverPidPath, processRecord);
     // bar.json is intentionally left in place on clean shutdown so
     // the Swift app self-heal poll can detect the server is gone via
     // the liveness check, not a stale discovery file.

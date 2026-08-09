@@ -1,6 +1,5 @@
 import * as http from 'http';
 import { randomUUID } from 'crypto';
-import { Agent } from 'undici';
 import type { OpenAICompatProfileConfig } from '../profile-router';
 import { OPENAI_COMPAT_PROXY_SERVICE_NAME } from '../proxy-daemon-paths';
 import { createLogger, withRequestContext } from '../../services/logging';
@@ -11,10 +10,19 @@ import {
   validateIncomingProxyAuth,
 } from './messages-route';
 import { writeJson } from './http-helpers';
+import { closeUpstreamDispatcher, createUpstreamDispatcher } from './upstream-transport';
 
 const REQUEST_ID_HEADER = 'x-ccs-request-id';
 // Loose UUID-ish guard: accepts UUIDs and similar opaque ids; rejects empty / control chars.
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9._-]{8,128}$/;
+const DEFAULT_SHUTDOWN_FORCE_MS = 1_000;
+
+type ProxyServerLifecycle = {
+  cleanup: () => Promise<void>;
+  shutdownPromise?: Promise<void>;
+};
+
+const proxyServerLifecycles = new WeakMap<http.Server, ProxyServerLifecycle>();
 
 function resolveInboundRequestId(headers: http.IncomingHttpHeaders): string {
   const raw = headers[REQUEST_ID_HEADER];
@@ -40,8 +48,17 @@ export function startOpenAICompatProxyServer(options: OpenAICompatProxyServerOpt
     port: options.port,
   });
   const insecureDispatcher = options.insecure
-    ? new Agent({ connect: { rejectUnauthorized: false }, ...buildUpstreamAgentTimeouts() })
+    ? createUpstreamDispatcher(buildUpstreamAgentTimeouts(), true)
     : undefined;
+  const upstreamDispatcher = createUpstreamDispatcher(buildUpstreamAgentTimeouts());
+  let cleanupPromise: Promise<void> | undefined;
+  const cleanup = () => {
+    cleanupPromise ??= Promise.all([
+      closeUpstreamDispatcher(upstreamDispatcher),
+      closeUpstreamDispatcher(insecureDispatcher),
+    ]).then(() => undefined);
+    return cleanupPromise;
+  };
   const server = http.createServer((req, res) => {
     const requestId = resolveInboundRequestId(req.headers);
     res.setHeader(REQUEST_ID_HEADER, requestId);
@@ -121,7 +138,10 @@ export function startOpenAICompatProxyServer(options: OpenAICompatProxyServerOpt
         res,
         options.profile,
         options.authToken,
-        insecureDispatcher
+        insecureDispatcher,
+        upstreamDispatcher,
+        undefined,
+        options.insecure === true
       );
       return;
     }
@@ -138,9 +158,55 @@ export function startOpenAICompatProxyServer(options: OpenAICompatProxyServerOpt
   });
   server.on('close', () => {
     logger.info('server.stop', 'OpenAI-compatible proxy server stopped');
-    void insecureDispatcher?.close();
+    void cleanup().catch((error) => {
+      logger.warn('server.dispatcher_close_failed', 'Failed to close upstream transport', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
   });
 
+  proxyServerLifecycles.set(server, { cleanup });
   server.listen(options.port, host);
   return server;
+}
+
+export function closeOpenAICompatProxyServer(
+  server: http.Server,
+  forceAfterMs = DEFAULT_SHUTDOWN_FORCE_MS
+): Promise<void> {
+  const lifecycle = proxyServerLifecycles.get(server);
+  if (lifecycle?.shutdownPromise) {
+    return lifecycle.shutdownPromise;
+  }
+
+  const shutdownPromise = (async () => {
+    if (server.listening) {
+      await new Promise<void>((resolve, reject) => {
+        let forceTimer: NodeJS.Timeout | undefined;
+        server.close((error) => {
+          if (forceTimer) {
+            clearTimeout(forceTimer);
+          }
+          if (error) {
+            reject(error);
+          } else {
+            resolve();
+          }
+        });
+
+        // Node 18 does not reap idle keep-alive sockets as part of close().
+        server.closeIdleConnections?.();
+        if (forceAfterMs > 0) {
+          forceTimer = setTimeout(() => server.closeAllConnections?.(), forceAfterMs);
+          forceTimer.unref();
+        }
+      });
+    }
+    await lifecycle?.cleanup();
+  })();
+
+  if (lifecycle) {
+    lifecycle.shutdownPromise = shutdownPromise;
+  }
+  return shutdownPromise;
 }

@@ -295,10 +295,21 @@ async function runClaudeUsageFetch(
           continue;
         }
         clearTimeout(timeoutId);
+        if (response.status === 429) {
+          return {
+            ...buildEmptyResult('Claude usage status temporarily unavailable', accountId),
+            httpStatus: response.status,
+            errorCode: 'usage_probe_unavailable',
+            actionHint:
+              'Inference may still be available. Retry the Claude quota status check later.',
+            retryable: true,
+            ...(retryAfter ? { errorDetail: `retry-after:${retryAfter}` } : {}),
+          };
+        }
         return {
           ...buildEmptyResult(lastError, accountId),
           httpStatus: response.status,
-          retryable: response.status === 429 || response.status >= 500,
+          retryable: response.status >= 500,
           ...(retryAfter ? { errorDetail: `retry-after:${retryAfter}` } : {}),
         };
       }

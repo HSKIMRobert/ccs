@@ -47,7 +47,10 @@ mock.module('../../config/config-generator', () => ({
 }));
 
 mock.module('../../../utils/websearch-manager', () => ({
-  appendThirdPartyWebSearchToolArgs: (args: string[]) => args,
+  appendThirdPartyWebSearchToolArgs: (args: string[], enabled = true) =>
+    enabled
+      ? [...args, '--append-system-prompt', 'CCS WebSearch steering']
+      : [...args, '--disallowedTools', 'WebSearch'],
   createWebSearchTraceContext: jest.fn().mockReturnValue({}),
   ensureWebSearchMcpOrThrow: jest.fn(),
   displayWebSearchStatus: jest.fn(),
@@ -124,6 +127,11 @@ function baseContext(overrides: object = {}) {
     skipLocalAuth: true,
     sessionId: undefined,
     imageAnalysisMcpReady: false,
+    webSearchLaunch: {
+      config: { enabled: true },
+      enabled: true,
+      hookEnv: { CCS_WEBSEARCH_ENABLED: '1' },
+    },
     browserRuntimeEnv: undefined,
     inheritedClaudeConfigDir: undefined,
     codexReasoningProxy: null,
@@ -191,6 +199,22 @@ describe('launchClaude', () => {
     );
     const spawnArgs = mockSpawn.mock.calls[0][1] as string[];
     expect(spawnArgs).toContain('--browser');
+  });
+
+  it('disallows native WebSearch without CCS steering when the launch snapshot is disabled', async () => {
+    await launchClaude(
+      baseContext({
+        webSearchLaunch: {
+          config: { enabled: false },
+          enabled: false,
+          hookEnv: { CCS_WEBSEARCH_ENABLED: '0', CCS_WEBSEARCH_SKIP: '1' },
+        },
+      })
+    );
+    const spawnArgs = mockSpawn.mock.calls[0][1] as string[];
+    expect(spawnArgs).toContain('--disallowedTools');
+    expect(spawnArgs).toContain('WebSearch');
+    expect(spawnArgs).not.toContain('CCS WebSearch steering');
   });
 
   it('registers cleanup handlers after spawn', async () => {

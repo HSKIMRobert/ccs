@@ -9,9 +9,9 @@ import { fail, info, ok } from '../utils/ui';
 import {
   appendThirdPartyWebSearchToolArgs,
   createWebSearchTraceContext,
-  getWebSearchHookEnv,
   syncWebSearchMcpToConfigDir,
 } from '../utils/websearch-manager';
+import type { WebSearchLaunchState } from '../utils/websearch-manager';
 import { getImageAnalysisHookEnv, resolveImageAnalysisRuntimeStatus } from '../utils/hooks';
 import { stripClaudeCodeEnv } from '../utils/shell-executor';
 import { checkAuthStatus } from './cursor-auth';
@@ -106,11 +106,19 @@ export async function resolveCursorImageAnalysisEnv(
   return { env, warning: null };
 }
 
+export function buildCursorClaudeLaunchArgs(
+  claudeArgs: string[],
+  webSearchEnabled: boolean
+): string[] {
+  return appendThirdPartyWebSearchToolArgs(claudeArgs, webSearchEnabled);
+}
+
 export async function executeCursorProfile(
   config: CursorConfig,
   claudeArgs: string[],
   claudeConfigDir?: string,
-  claudeCliPath = 'claude'
+  claudeCliPath = 'claude',
+  webSearchLaunch?: WebSearchLaunchState
 ): Promise<number> {
   if (!config.enabled) {
     process.stderr.write(fail('Cursor integration is not enabled.') + '\n');
@@ -163,7 +171,7 @@ export async function executeCursorProfile(
   const cursorEnv = generateCursorEnv(config, daemonToken, claudeConfigDir);
   const globalEnvConfig = getGlobalEnvConfig();
   const globalEnv = globalEnvConfig.enabled ? globalEnvConfig.env : {};
-  const webSearchEnv = getWebSearchHookEnv();
+  const webSearchEnv = webSearchLaunch?.hookEnv ?? {};
   const { env: imageAnalysisEnv, warning: imageAnalysisWarning } =
     await resolveCursorImageAnalysisEnv();
   const env = stripClaudeCodeEnv({
@@ -184,7 +192,7 @@ export async function executeCursorProfile(
   syncWebSearchMcpToConfigDir(claudeConfigDir);
 
   return new Promise((resolve) => {
-    const launchArgs = appendThirdPartyWebSearchToolArgs(claudeArgs);
+    const launchArgs = buildCursorClaudeLaunchArgs(claudeArgs, webSearchLaunch?.enabled ?? true);
     const traceEnv = createWebSearchTraceContext({
       launcher: 'cursor.executor',
       args: launchArgs,

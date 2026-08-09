@@ -3,6 +3,10 @@
  */
 
 import type { CompositeTierConfig } from '../../config/unified-config-types';
+import type {
+  CLIProxyOAuthModelAliasConfig,
+  CLIProxyPayloadConfig,
+} from '../../config/schemas/cliproxy';
 import type { CliproxyRoutingStrategy } from './provider-types';
 
 /** CLIProxy config.yaml structure (minimal) */
@@ -11,6 +15,8 @@ export interface CLIProxyConfig {
   'api-keys': string[];
   'auth-dir': string;
   debug: boolean;
+  'oauth-model-alias'?: CLIProxyOAuthModelAliasConfig;
+  payload?: CLIProxyPayloadConfig;
   routing?: {
     strategy?: CliproxyRoutingStrategy;
     'session-affinity'?: boolean;

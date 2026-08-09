@@ -236,6 +236,22 @@ describe('Model Catalog', () => {
       assert.strictEqual(fable5.extendedContext, true);
     });
 
+    it('includes Claude Opus 5 with adaptive levels and extended context', () => {
+      const { MODEL_CATALOG } = modelCatalog;
+      const opus5 = MODEL_CATALOG.claude.models.find((m) => m.id === 'claude-opus-5');
+      assert(opus5, 'Should include Claude Opus 5');
+      assert.strictEqual(opus5.name, 'Claude Opus 5');
+      // Opus 5 requires adaptive thinking (type: 'levels') like Sonnet 5 and Opus 4.8;
+      // manual budget_tokens is rejected with 400. Proxy reports zero + dynamic allowed.
+      assert.strictEqual(opus5.thinking.type, 'levels');
+      assert.deepStrictEqual(opus5.thinking.levels, ['low', 'medium', 'high', 'xhigh', 'max']);
+      assert.strictEqual(opus5.thinking.maxLevel, 'max');
+      assert.strictEqual(opus5.thinking.zeroAllowed, true);
+      assert.strictEqual(opus5.thinking.dynamicAllowed, true);
+      assert.strictEqual(opus5.nativeImageInput, true);
+      assert.strictEqual(opus5.extendedContext, true);
+    });
+
     it('retains previous 4.5 snapshot models for explicit selection', () => {
       const { MODEL_CATALOG } = modelCatalog;
       const ids = MODEL_CATALOG.claude.models.map((m) => m.id);

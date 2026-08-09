@@ -71,6 +71,8 @@ export {
 
 // Claude launch args
 export { appendThirdPartyWebSearchToolArgs } from './claude-tool-args';
+export { resolveWebSearchLaunchState } from './launch-state';
+export type { WebSearchConfigSnapshot, WebSearchLaunchState } from './launch-state';
 
 // Trace helpers
 export {

@@ -123,6 +123,77 @@ export interface CLIProxyRoutingConfig {
 }
 
 /**
+ * CLIProxy request-retry configuration.
+ * Controls CLIProxy's own retry-on-transient-error behavior
+ * (403, 408, 500, 502, 503, 504). Defaults to disabled (0/0): retrying can
+ * burn quota on multi-account pools, so this is opt-in.
+ */
+export interface CLIProxyRetryConfig {
+  /** Number of times to retry a request on a transient error (integer >= 0, default: 0 = disabled) */
+  request_retry?: number;
+  /** Maximum wait time in seconds for a cooled-down credential before retrying (integer >= 0, default: 0) */
+  max_retry_interval?: number;
+}
+
+/** One OAuth model alias exposed by CLIProxy to compatible clients. */
+export interface CLIProxyOAuthModelAliasEntry {
+  /** Upstream model ID used after alias resolution. */
+  name: string;
+  /** Client-visible model ID accepted by CLIProxy. */
+  alias: string;
+  /** Keep both the upstream name and alias visible when supported upstream. */
+  fork?: boolean;
+}
+
+/** Provider/protocol keyed OAuth model aliases (for example `codex`). */
+export type CLIProxyOAuthModelAliasConfig = Record<string, CLIProxyOAuthModelAliasEntry[]>;
+
+/** Model selector for a CLIProxy payload rule. */
+export interface CLIProxyPayloadModelSelector {
+  /** Client-visible model ID to match before OAuth alias resolution. */
+  name: string;
+  /** Optional protocol boundary, such as `codex`. */
+  protocol?: string;
+  /** Additional CLIProxy selector constraints retained across regeneration. */
+  [constraint: string]: unknown;
+}
+
+/** A scoped CLIProxy payload override rule. */
+export interface CLIProxyPayloadOverrideRule {
+  /** All client model/protocol selectors covered by this rule. */
+  models: CLIProxyPayloadModelSelector[];
+  /** Upstream request parameters added when a selector matches. */
+  params: Record<string, unknown>;
+  /** Additional CLIProxy match constraints retained across regeneration. */
+  [constraint: string]: unknown;
+}
+
+/**
+ * User-owned CLIProxy payload configuration.
+ *
+ * Unknown supported payload subsections are retained so CCS regeneration does
+ * not erase options introduced by newer CLIProxy releases.
+ */
+export interface CLIProxyPayloadConfig {
+  override?: CLIProxyPayloadOverrideRule[];
+  [section: string]: unknown;
+}
+
+/** Lower bound (inclusive) accepted for CLIProxy retry config fields. */
+export const CLIPROXY_RETRY_MIN_VALUE = 0;
+
+/** Human-readable accepted-range description for CLIProxy retry config fields. */
+export const CLIPROXY_RETRY_RANGE_MESSAGE = `must be a whole number ${CLIPROXY_RETRY_MIN_VALUE} or greater`;
+
+/**
+ * Validate a single CLIProxy retry config field value (request_retry or
+ * max_retry_interval). Both fields share the same bounds: non-negative integer.
+ */
+export function isValidCliproxyRetryValue(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= CLIPROXY_RETRY_MIN_VALUE;
+}
+
+/**
  * Pool routing configuration for multi-account CLIProxy rotation.
  *
  * Pool routing is opt-in at the 1->2 account-add transition.
@@ -188,4 +259,10 @@ export interface CLIProxyConfig {
   routing?: CLIProxyRoutingConfig;
   /** Pool routing opt-in state and configuration */
   pool_routing?: CLIProxyPoolRoutingConfig;
+  /** Request-retry behavior for transient upstream errors (opt-in, default: disabled) */
+  retry?: CLIProxyRetryConfig;
+  /** User-defined OAuth model aliases emitted into managed CLIProxy config. */
+  oauth_model_alias?: CLIProxyOAuthModelAliasConfig;
+  /** Scoped payload rules emitted into managed CLIProxy config. */
+  payload?: CLIProxyPayloadConfig;
 }

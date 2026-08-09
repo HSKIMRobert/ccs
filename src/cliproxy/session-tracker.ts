@@ -17,10 +17,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import * as lockfile from 'proper-lockfile';
 import { getCliproxyDir } from './config/config-generator';
 import { getPortProcess, isCLIProxyProcess } from '../utils/port-utils';
 import { CLIPROXY_DEFAULT_PORT } from './config/config-generator';
+import { withSyncLockRetry } from '../utils/sync-lock-retry';
 
 /** Session lock file structure */
 interface SessionLock {
@@ -61,22 +61,9 @@ function ensureCliproxyDir(): string {
 
 function withSessionTrackerLock<T>(fn: () => T): T {
   const dir = ensureCliproxyDir();
-  let release: (() => void) | undefined;
-
-  try {
-    release = lockfile.lockSync(dir, {
-      stale: 10000,
-    }) as () => void;
-    return fn();
-  } finally {
-    if (release) {
-      try {
-        release();
-      } catch {
-        // Best-effort release
-      }
-    }
-  }
+  return withSyncLockRetry(dir, fn, {
+    description: 'CLIProxy session tracker lock',
+  });
 }
 
 /** Get path to session lock file (default port) - kept for future use */

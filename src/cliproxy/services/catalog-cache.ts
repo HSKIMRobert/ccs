@@ -221,6 +221,13 @@ function mapRemoteToModelEntry(provider: CLIProxyProvider, remote: RemoteModelIn
     name: remote.display_name || remote.id,
   };
   if (remote.description) entry.description = remote.description;
+  if (
+    typeof remote.context_length === 'number' &&
+    Number.isInteger(remote.context_length) &&
+    remote.context_length > 0
+  ) {
+    entry.contextWindow = remote.context_length;
+  }
   // xAI context length is inherent to the model ID; its API does not accept
   // Claude's [1m] model suffix.
   if (provider !== 'xai' && remote.context_length && remote.context_length >= 1_000_000) {
@@ -286,6 +293,7 @@ export function mergeCatalog(
         issueUrl: staticEntry.issueUrl,
         deprecated: staticEntry.deprecated,
         deprecationReason: staticEntry.deprecationReason,
+        contextWindow: remoteEntry.contextWindow ?? staticEntry.contextWindow,
       });
     } else {
       mergedModels.push(remoteEntry);

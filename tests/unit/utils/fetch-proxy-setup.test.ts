@@ -4,7 +4,7 @@ import {
   Agent,
   Dispatcher,
   ProxyAgent,
-  fetch,
+  fetch as undiciFetch,
   getGlobalDispatcher,
   setGlobalDispatcher,
 } from 'undici';
@@ -26,18 +26,24 @@ const PROXY_ENV_KEYS = [
 
 describe('global fetch proxy setup', () => {
   const originalEnv = new Map<string, string | undefined>();
+  const originalFetch = globalThis.fetch;
   const originalDispatcher = getGlobalDispatcher();
-
   beforeEach(() => {
+    globalThis.fetch = originalFetch;
+    setGlobalDispatcher(originalDispatcher);
     for (const key of PROXY_ENV_KEYS) {
       originalEnv.set(key, process.env[key]);
       delete process.env[key];
     }
-    setGlobalDispatcher(originalDispatcher);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    const activeDispatcher = getGlobalDispatcher();
+    globalThis.fetch = originalFetch;
     setGlobalDispatcher(originalDispatcher);
+    if (activeDispatcher !== originalDispatcher) {
+      await activeDispatcher.close();
+    }
     for (const key of PROXY_ENV_KEYS) {
       const value = originalEnv.get(key);
       if (value === undefined) {
@@ -112,18 +118,6 @@ describe('global fetch proxy setup', () => {
     });
   });
 
-  it('rebinds globalThis.fetch to undici fetch when proxying is enabled', () => {
-    const originalFetch = globalThis.fetch;
-    process.env.HTTP_PROXY = 'http://proxy.example:8080';
-
-    try {
-      expect(applyGlobalFetchProxy()).toEqual({ enabled: true });
-      expect(globalThis.fetch).toBe(fetch);
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
-  });
-
   it('bypasses loopback fetches even when HTTP_PROXY is set', async () => {
     process.env.HTTP_PROXY = 'http://127.0.0.1:9';
 
@@ -139,11 +133,14 @@ describe('global fetch proxy setup', () => {
     }
 
     try {
-      expect(applyGlobalFetchProxy()).toEqual({ enabled: true });
-
-      const response = await fetch(`http://127.0.0.1:${address.port}/health`);
+      const dispatcher = createGlobalFetchProxyDispatcher();
+      expect(dispatcher).not.toBeNull();
+      const response = await undiciFetch(`http://127.0.0.1:${address.port}/health`, {
+        dispatcher: dispatcher!,
+      });
       expect(response.status).toBe(200);
       expect(await response.text()).toBe('ok');
+      await dispatcher?.close();
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
@@ -156,6 +153,15 @@ describe('global fetch proxy setup', () => {
 
     const result = await captureDispatchRouting('http://example.com/quota');
     expect(result).toEqual({ directCalls: 0, proxyCalls: 1 });
+  });
+
+  it('applies the proxy transport only when explicitly invoked', () => {
+    process.env.HTTP_PROXY = 'http://proxy.example:8080';
+
+    expect(globalThis.fetch).toBe(originalFetch);
+    expect(applyGlobalFetchProxy()).toEqual({ enabled: true });
+    expect(globalThis.fetch).toBe(undiciFetch);
+    expect(getGlobalDispatcher()).not.toBe(originalDispatcher);
   });
 
   it('routes HTTPS requests through HTTPS_PROXY', async () => {

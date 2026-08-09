@@ -25,6 +25,7 @@ export async function showHelp(): Promise<void> {
     [
       'Options:',
       [
+        ['--port <n>', 'Run the server on this port (persists; later launches keep the same port)'],
         ['--help, -h', 'Show this help message'],
         ['--version', 'Show CLI and installed app versions'],
       ],
@@ -44,6 +45,7 @@ export async function showHelp(): Promise<void> {
       'Examples:',
       [
         ['ccs bar', 'Start the server detached and open CCS Bar'],
+        ['ccs bar --port 3999', 'Start (or move) the server on port 3999 instead of 3000'],
         ['ccs bar stop', 'Stop the detached CCS Bar server'],
         ['ccs bar status', 'Show server running state and PID'],
         ['ccs bar install', 'Download and install CCS Bar, then prompt to launch'],

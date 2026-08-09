@@ -19,6 +19,15 @@ import * as path from 'path';
 
 import { info, warn } from '../../utils/ui';
 import {
+  assertAccountInstanceIdentity,
+  captureSafeAccountInstanceIdentity,
+} from '../instance-directory';
+import {
+  adoptDivergedFileContent,
+  assertAdoptionPathAbsent,
+  recoverOrphanedCanonicalClaim,
+} from './diverged-file-adopter';
+import {
   copyDirectoryFallback,
   getLstatSync,
   isPathWithinDirectory,
@@ -36,6 +45,10 @@ import {
   ensureSharedPluginLayoutDefaults,
   linkInstancePlugins,
 } from './plugin-layout-internals';
+import {
+  preserveCanonicalFirstDivergence,
+  reconcileCanonicalFirstFile,
+} from './canonical-first-file-reconciler';
 import { SHARED_ITEMS } from './types';
 
 /**
@@ -43,6 +56,18 @@ import { SHARED_ITEMS } from './types';
  * linker operates on the same three roots.
  */
 export type LinkerRoots = PluginMetadataRoots;
+
+function runInstanceMutationStage<T>(
+  assertInstanceIdentity: (() => void) | undefined,
+  operation: () => T
+): T {
+  assertInstanceIdentity?.();
+  try {
+    return operation();
+  } finally {
+    assertInstanceIdentity?.();
+  }
+}
 
 /**
  * Detect a circular symlink before creation. A symlink is circular when its
@@ -92,76 +117,115 @@ export function detectCircularSymlink(target: string, sharedDir: string): boolea
  * Ensure shared directories exist as symlinks to ~/.claude/ and that the
  * plugin layout default directories and registry files are present.
  */
-export function ensureSharedDirectories(roots: LinkerRoots): void {
+export function ensureSharedDirectories(
+  roots: LinkerRoots,
+  assertInstanceIdentity?: () => void
+): void {
   const claudeDir = roots.claudeDir;
   const sharedDir = roots.sharedDir;
 
-  if (!getLstatSync(claudeDir)) {
-    console.log(info('Creating ~/.claude/ directory structure'));
-    fs.mkdirSync(claudeDir, { recursive: true, mode: 0o700 });
-  }
+  runInstanceMutationStage(assertInstanceIdentity, () => {
+    if (!getLstatSync(claudeDir)) {
+      console.log(info('Creating ~/.claude/ directory structure'));
+      fs.mkdirSync(claudeDir, { recursive: true, mode: 0o700 });
+    }
+  });
 
-  if (!getLstatSync(sharedDir)) {
-    fs.mkdirSync(sharedDir, { recursive: true, mode: 0o700 });
-  }
+  runInstanceMutationStage(assertInstanceIdentity, () => {
+    if (!getLstatSync(sharedDir)) {
+      fs.mkdirSync(sharedDir, { recursive: true, mode: 0o700 });
+    }
+  });
 
-  ensureSharedPluginLayoutDefaults(claudeDir);
+  runInstanceMutationStage(assertInstanceIdentity, () =>
+    ensureSharedPluginLayoutDefaults(claudeDir)
+  );
 
   for (const item of SHARED_ITEMS) {
-    const claudePath = path.join(claudeDir, item.name);
-    const sharedPath = path.join(sharedDir, item.name);
+    runInstanceMutationStage(assertInstanceIdentity, () => {
+      const claudePath = path.join(claudeDir, item.name);
+      const sharedPath = path.join(sharedDir, item.name);
 
-    if (!getLstatSync(claudePath)) {
-      if (item.type === 'directory') {
-        fs.mkdirSync(claudePath, { recursive: true, mode: 0o700 });
-      } else if (item.type === 'file') {
-        fs.writeFileSync(claudePath, JSON.stringify({}, null, 2), 'utf8');
-      }
-    }
-
-    if (detectCircularSymlink(claudePath, sharedDir)) {
-      console.log(warn(`Skipping ${item.name}: circular symlink detected`));
-      continue;
-    }
-
-    if (getLstatSync(sharedPath)) {
-      try {
-        const stats = fs.lstatSync(sharedPath);
-        if (stats.isSymbolicLink()) {
-          const currentTarget = fs.readlinkSync(sharedPath);
-          const resolvedTarget = path.resolve(path.dirname(sharedPath), currentTarget);
-          if (resolvedTarget === claudePath) {
-            continue;
-          }
-        }
-      } catch (_err) {
-        // Continue to recreate
+      if (item.type === 'file') {
+        recoverOrphanedCanonicalClaim(claudePath);
       }
 
-      if (item.type === 'directory') {
-        fs.rmSync(sharedPath, { recursive: true, force: true });
-      } else {
-        fs.unlinkSync(sharedPath);
+      if (item.type === 'file' && item.divergencePolicy === 'canonical-first') {
+        reconcileCanonicalFirstFile(roots, item.name);
       }
-    }
 
-    try {
-      const symlinkType = item.type === 'directory' ? 'dir' : 'file';
-      fs.symlinkSync(claudePath, sharedPath, symlinkType);
-    } catch (_err) {
-      if (process.platform === 'win32') {
+      if (!getLstatSync(claudePath)) {
         if (item.type === 'directory') {
-          copyDirectoryFallback(claudePath, sharedPath);
+          fs.mkdirSync(claudePath, { recursive: true, mode: 0o700 });
         } else if (item.type === 'file') {
-          fs.copyFileSync(claudePath, sharedPath);
+          fs.writeFileSync(claudePath, item.seedContent, 'utf8');
         }
-        console.log(
-          warn(`Symlink failed for ${item.name}, copied instead (enable Developer Mode)`)
-        );
-      } else {
-        throw _err;
       }
-    }
+
+      if (detectCircularSymlink(claudePath, sharedDir)) {
+        console.log(warn(`Skipping ${item.name}: circular symlink detected`));
+        return;
+      }
+
+      let sharedAdoption: ReturnType<typeof adoptDivergedFileContent> = 'not-claimed';
+      if (getLstatSync(sharedPath)) {
+        let removeExisting = true;
+        try {
+          const stats = fs.lstatSync(sharedPath);
+          if (stats.isSymbolicLink()) {
+            const currentTarget = fs.readlinkSync(sharedPath);
+            const resolvedTarget = path.resolve(path.dirname(sharedPath), currentTarget);
+            if (resolvedTarget === claudePath) {
+              return;
+            }
+          }
+        } catch (_err) {
+          // Continue to recreate
+        }
+
+        if (item.type === 'file' && item.divergencePolicy === 'canonical-first') {
+          removeExisting = !preserveCanonicalFirstDivergence(sharedPath, claudePath);
+        } else if (item.type === 'file') {
+          sharedAdoption = adoptDivergedFileContent(sharedPath, claudePath);
+          removeExisting = sharedAdoption === 'not-claimed';
+        }
+
+        if (item.type === 'directory' && removeExisting) {
+          fs.rmSync(sharedPath, { recursive: true, force: true });
+        } else if (removeExisting) {
+          fs.unlinkSync(sharedPath);
+        }
+        assertAdoptionPathAbsent(sharedPath, sharedAdoption);
+      }
+
+      if (getLstatSync(sharedPath)) {
+        console.log(warn(`Skipping ${item.name}: path reappeared during reconciliation`));
+        return;
+      }
+
+      try {
+        const symlinkType = item.type === 'directory' ? 'dir' : 'file';
+        fs.symlinkSync(claudePath, sharedPath, symlinkType);
+      } catch (_err) {
+        assertAdoptionPathAbsent(sharedPath, sharedAdoption);
+        if (getLstatSync(sharedPath)) {
+          console.log(warn(`Skipping ${item.name}: path reappeared during reconciliation`));
+          return;
+        }
+        if (process.platform === 'win32') {
+          if (item.type === 'directory') {
+            copyDirectoryFallback(claudePath, sharedPath);
+          } else if (item.type === 'file') {
+            fs.copyFileSync(claudePath, sharedPath, fs.constants.COPYFILE_EXCL);
+          }
+          console.log(
+            warn(`Symlink failed for ${item.name}, copied instead (enable Developer Mode)`)
+          );
+        } else {
+          throw _err;
+        }
+      }
+    });
   }
 }
 
@@ -169,45 +233,79 @@ export function ensureSharedDirectories(roots: LinkerRoots): void {
  * Link shared directories into a specific instance path.
  */
 export function linkSharedDirectories(roots: LinkerRoots, instancePath: string): void {
-  ensureSharedDirectories(roots);
+  const instanceIdentity = captureSafeAccountInstanceIdentity(roots.instancesDir, instancePath);
+  const assertInstanceIdentity = () =>
+    assertAccountInstanceIdentity(roots.instancesDir, instancePath, instanceIdentity);
+
+  ensureSharedDirectories(roots, assertInstanceIdentity);
+  assertInstanceIdentity();
 
   const sharedDir = roots.sharedDir;
 
   for (const item of SHARED_ITEMS) {
-    if (item.name === 'plugins') {
-      linkInstancePlugins(roots, instancePath);
-      continue;
-    }
-
-    const linkPath = path.join(instancePath, item.name);
-    const targetPath = path.join(sharedDir, item.name);
-
-    removeExistingPath(linkPath, item.type);
-
-    try {
-      const symlinkType = item.type === 'directory' ? 'dir' : 'file';
-      fs.symlinkSync(targetPath, linkPath, symlinkType);
-    } catch (_err) {
-      if (process.platform === 'win32') {
-        if (item.type === 'directory') {
-          copyDirectoryFallback(targetPath, linkPath);
-        } else if (item.type === 'file') {
-          fs.copyFileSync(targetPath, linkPath);
-        }
-        console.log(
-          warn(`Symlink failed for ${item.name}, copied instead (enable Developer Mode)`)
-        );
-      } else {
-        throw _err;
+    runInstanceMutationStage(assertInstanceIdentity, () => {
+      if (item.name === 'plugins') {
+        linkInstancePlugins(roots, instancePath, assertInstanceIdentity);
+        return;
       }
-    }
+
+      const linkPath = path.join(instancePath, item.name);
+      const targetPath = path.join(sharedDir, item.name);
+      let adoption: ReturnType<typeof adoptDivergedFileContent> = 'not-claimed';
+
+      if (item.type === 'file' && item.divergencePolicy === 'canonical-first') {
+        if (!preserveCanonicalFirstDivergence(linkPath, path.join(roots.claudeDir, item.name))) {
+          removeExistingPath(linkPath, item.type);
+        }
+      } else if (item.type === 'file') {
+        adoption = adoptDivergedFileContent(linkPath, path.join(roots.claudeDir, item.name));
+        if (adoption === 'not-claimed') {
+          removeExistingPath(linkPath, item.type);
+        }
+      } else {
+        removeExistingPath(linkPath, item.type);
+      }
+      assertAdoptionPathAbsent(linkPath, adoption);
+
+      if (getLstatSync(linkPath)) {
+        console.log(warn(`Skipping ${item.name}: path reappeared during reconciliation`));
+        return;
+      }
+
+      try {
+        const symlinkType = item.type === 'directory' ? 'dir' : 'file';
+        fs.symlinkSync(targetPath, linkPath, symlinkType);
+      } catch (_err) {
+        assertAdoptionPathAbsent(linkPath, adoption);
+        if (getLstatSync(linkPath)) {
+          console.log(warn(`Skipping ${item.name}: path reappeared during reconciliation`));
+          return;
+        }
+        if (process.platform === 'win32') {
+          if (item.type === 'directory') {
+            copyDirectoryFallback(targetPath, linkPath);
+          } else if (item.type === 'file') {
+            fs.copyFileSync(targetPath, linkPath, fs.constants.COPYFILE_EXCL);
+          }
+          console.log(
+            warn(`Symlink failed for ${item.name}, copied instead (enable Developer Mode)`)
+          );
+        } else {
+          throw _err;
+        }
+      }
+    });
   }
 
   // Preserve original behavior: linkSharedDirectories always concludes by
   // normalizing plugin + marketplace metadata for the freshly linked
   // instance. migrateFromV311 relies on this side effect.
-  normalizePluginRegistryPaths(roots, instancePath);
-  normalizeMarketplaceRegistryPaths(roots, instancePath);
+  runInstanceMutationStage(assertInstanceIdentity, () =>
+    normalizePluginRegistryPaths(roots, instancePath)
+  );
+  runInstanceMutationStage(assertInstanceIdentity, () =>
+    normalizeMarketplaceRegistryPaths(roots, instancePath)
+  );
 }
 
 /**

@@ -142,7 +142,7 @@ class AuthCommands {
       `  ${color('--deeper-continuity', 'command')}       Advanced shared mode: sync additional continuity artifacts`
     );
     console.log(
-      `  ${color('--bare', 'command')}                    Create clean profile without shared symlinks (no CK/commands/skills)`
+      `  ${color('--bare', 'command')}                    Create clean profile without shared settings/instructions/resources`
     );
     console.log(
       `  ${color('--mode <mode>', 'command')}              Shared resource mode for resources: shared|profile-local`
@@ -169,10 +169,10 @@ class AuthCommands {
     );
     console.log(`  Account logins, tokens, and .anthropic stay isolated for every profile.`);
     console.log(
-      `  Non-bare account profiles share basic ${color('settings.json', 'path')} with ${color('~/.claude/settings.json', 'path')}; ${color('ccs auth show <profile>', 'command')} shows the link state.`
+      `  Non-bare account profiles share ${color('settings.json', 'path')} and ${color('CLAUDE.md', 'path')} from ${color('~/.claude/', 'path')}; ${color('ccs auth show <profile>', 'command')} shows resource mode and settings link state.`
     );
     console.log(
-      `  Shared Resources control plugins/commands/skills/agents/settings.json; History Sync controls project/session continuity only.`
+      `  Shared Resources control plugins/commands/skills/agents/settings.json/CLAUDE.md; History Sync controls project/session continuity only.`
     );
     console.log(
       `  History sync is opt-in: both accounts need shared mode and the same ${color('context_group', 'path')}.`

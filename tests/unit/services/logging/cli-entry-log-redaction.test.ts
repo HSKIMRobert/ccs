@@ -63,7 +63,9 @@ beforeEach(() => {
   baselineUncaughtExceptionListeners = process.listeners('uncaughtException');
   baselineUnhandledRejectionListeners = process.listeners('unhandledRejection');
 
-  mock.module('../../../../src/utils/fetch-proxy-setup', () => ({}));
+  mock.module('../../../../src/utils/fetch-proxy-setup', () => ({
+    applyGlobalFetchProxy: () => ({ enabled: false }),
+  }));
   mock.module('../../../../src/utils/error-manager', () => ({
     ErrorManager: class ErrorManager {
       static async showProfileNotFound(): Promise<void> {}

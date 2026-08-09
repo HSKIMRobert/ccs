@@ -1,113 +1,25 @@
 {
   "scope": "src/**/*.{ts,tsx,js,jsx,mjs,cjs}",
   "syncFs": {
-    "totalOccurrences": 2301,
-    "filesAffected": 247,
-    "hotpathOccurrences": 1946,
-    "hotpathFilesAffected": 197,
+    "totalOccurrences": 2471,
+    "filesAffected": 261,
+    "hotpathOccurrences": 1186,
+    "hotpathFilesAffected": 155,
     "topHotpathFiles": [
       {
-        "file": "src/cliproxy/__tests__/pool-routing-phase3.test.ts",
-        "count": 96,
+        "file": "src/management/shared-manager/diverged-file-adopter.ts",
+        "count": 39,
         "calls": [
-          "existsSync",
-          "mkdirSync",
-          "mkdtempSync",
+          "closeSync",
+          "fsyncSync",
+          "linkSync",
+          "lstatSync",
+          "openSync",
+          "readdirSync",
           "readFileSync",
-          "rmSync",
-          "writeFileSync"
-        ],
-        "markers": []
-      },
-      {
-        "file": "src/cliproxy/config/__tests__/config-generator.test.js",
-        "count": 88,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "mkdtempSync",
-          "readFileSync",
-          "rmSync",
-          "writeFileSync"
-        ],
-        "markers": []
-      },
-      {
-        "file": "src/cliproxy/config/__tests__/claude-model-neutral.test.ts",
-        "count": 63,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "mkdtempSync",
-          "readFileSync",
-          "rmSync",
+          "readlinkSync",
+          "renameSync",
           "statSync",
-          "writeFileSync"
-        ],
-        "markers": []
-      },
-      {
-        "file": "src/cliproxy/accounts/__tests__/account-safety-quota-exhaustion.test.ts",
-        "count": 48,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "mkdtempSync",
-          "readFileSync",
-          "rmSync",
-          "writeFileSync"
-        ],
-        "markers": []
-      },
-      {
-        "file": "src/cliproxy/accounts/__tests__/account-registry-integrity.test.ts",
-        "count": 45,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "mkdtempSync",
-          "readdirSync",
-          "readFileSync",
-          "rmSync",
-          "writeFileSync"
-        ],
-        "markers": []
-      },
-      {
-        "file": "src/cliproxy/executor/__tests__/variant-port-integration.test.js",
-        "count": 36,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "readdirSync",
-          "readFileSync",
-          "rmSync",
-          "unlinkSync",
-          "writeFileSync"
-        ],
-        "markers": []
-      },
-      {
-        "file": "src/cliproxy/executor/__tests__/composite-variant-service.test.ts",
-        "count": 33,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "mkdtempSync",
-          "readFileSync",
-          "rmSync",
-          "writeFileSync"
-        ],
-        "markers": []
-      },
-      {
-        "file": "src/cliproxy/executor/__tests__/variant-port-edge-cases.test.js",
-        "count": 33,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "readdirSync",
-          "rmSync",
           "unlinkSync",
           "writeFileSync"
         ],
@@ -130,16 +42,120 @@
         "markers": []
       },
       {
-        "file": "src/cliproxy/__tests__/session-tracker-port.test.js",
-        "count": 31,
+        "file": "src/utils/image-analysis/mcp-installer.ts",
+        "count": 30,
+        "calls": [
+          "chmodSync",
+          "copyFileSync",
+          "existsSync",
+          "mkdirSync",
+          "readFileSync",
+          "renameSync",
+          "statSync",
+          "unlinkSync",
+          "writeFileSync"
+        ],
+        "markers": []
+      },
+      {
+        "file": "src/utils/claude-symlink-manager.ts",
+        "count": 27,
+        "calls": [
+          "copyFileSync",
+          "existsSync",
+          "lstatSync",
+          "mkdirSync",
+          "readdirSync",
+          "readlinkSync",
+          "renameSync",
+          "rmSync",
+          "statSync",
+          "symlinkSync",
+          "unlinkSync"
+        ],
+        "markers": []
+      },
+      {
+        "file": "src/cliproxy/config/env-builder.ts",
+        "count": 25,
         "calls": [
           "existsSync",
           "mkdirSync",
-          "readdirSync",
           "readFileSync",
-          "rmSync",
+          "writeFileSync"
+        ],
+        "markers": []
+      },
+      {
+        "file": "src/management/shared-manager/migrations.ts",
+        "count": 25,
+        "calls": [
+          "copyFileSync",
+          "cpSync",
+          "existsSync",
+          "lstatSync",
+          "mkdirSync",
+          "readdirSync",
+          "symlinkSync",
           "unlinkSync",
           "writeFileSync"
+        ],
+        "markers": []
+      },
+      {
+        "file": "src/utils/websearch/mcp-installer.ts",
+        "count": 25,
+        "calls": [
+          "chmodSync",
+          "copyFileSync",
+          "existsSync",
+          "mkdirSync",
+          "readFileSync",
+          "renameSync",
+          "statSync",
+          "unlinkSync",
+          "writeFileSync"
+        ],
+        "markers": []
+      },
+      {
+        "file": "src/cliproxy/services/variant-settings.ts",
+        "count": 23,
+        "calls": [
+          "existsSync",
+          "mkdirSync",
+          "readFileSync",
+          "renameSync",
+          "unlinkSync",
+          "writeFileSync"
+        ],
+        "markers": []
+      },
+      {
+        "file": "src/management/recovery-manager.ts",
+        "count": 23,
+        "calls": [
+          "copyFileSync",
+          "existsSync",
+          "lstatSync",
+          "mkdirSync",
+          "renameSync",
+          "statSync",
+          "unlinkSync",
+          "writeFileSync"
+        ],
+        "markers": []
+      },
+      {
+        "file": "src/utils/shell-completion.ts",
+        "count": 23,
+        "calls": [
+          "appendFileSync",
+          "copyFileSync",
+          "existsSync",
+          "mkdirSync",
+          "readFileSync",
+          "statSync"
         ],
         "markers": []
       }
@@ -213,6 +229,25 @@
         "markers": []
       },
       {
+        "file": "src/management/shared-manager/diverged-file-adopter.ts",
+        "count": 39,
+        "calls": [
+          "closeSync",
+          "fsyncSync",
+          "linkSync",
+          "lstatSync",
+          "openSync",
+          "readdirSync",
+          "readFileSync",
+          "readlinkSync",
+          "renameSync",
+          "statSync",
+          "unlinkSync",
+          "writeFileSync"
+        ],
+        "markers": []
+      },
+      {
         "file": "src/cliproxy/executor/__tests__/variant-port-integration.test.js",
         "count": 36,
         "calls": [
@@ -267,26 +302,12 @@
           "writeFileSync"
         ],
         "markers": []
-      },
-      {
-        "file": "src/cliproxy/__tests__/session-tracker-port.test.js",
-        "count": 31,
-        "calls": [
-          "existsSync",
-          "mkdirSync",
-          "readdirSync",
-          "readFileSync",
-          "rmSync",
-          "unlinkSync",
-          "writeFileSync"
-        ],
-        "markers": []
       }
     ]
   },
   "legacyShim": {
-    "totalMarkers": 427,
-    "filesAffected": 164,
+    "totalMarkers": 465,
+    "filesAffected": 176,
     "topFiles": [
       {
         "file": "src/auth/profile-detector.ts",
@@ -310,6 +331,28 @@
           "// Priority 0.25: Check explicit legacy Cursor bridge profile.",
           "// Priority 3: Check settings-based profiles (glm, km) - LEGACY FALLBACK",
           "// Priority 4: Check account-based profiles (work, personal) - LEGACY FALLBACK"
+        ]
+      },
+      {
+        "file": "src/web-server/usage/native-quota-collector.ts",
+        "count": 15,
+        "calls": [],
+        "markers": [
+          "* are used for backward compatibility.",
+          "* Kept for backward compatibility with existing tests.",
+          "* Legacy Codex collector — uses the old getDefaultCodexAccountId dep.",
+          "* List all Claude profiles from the profile registry (merged legacy + unified).",
+          "* profile name. Kept for backward compatibility with existing tests that stub",
+          "* When no enumeration deps are injected (legacy mode / old tests that stub only",
+          "/** Legacy Codex network row builder. */",
+          "/** Legacy Codex row builder (local quota). */",
+          "/** Legacy row builder — no surface/profile/is_subscription fields. */",
+          "// everything except the legacy harness takes the multi-profile path below.",
+          "// For the network fallback: the legacy getDefaultCodexAccountId is the",
+          "// Legacy path: backward-compatible with old tests that only inject",
+          "// Legacy single-profile collectors (unchanged; used by old tests + back-compat)",
+          "// Multi-profile enumeration is the DEFAULT (production) behavior. The legacy",
+          "// Use the legacy single-state approach via profile key '__legacy__' to avoid"
         ]
       },
       {
@@ -373,14 +416,14 @@
         "count": 10,
         "calls": [],
         "markers": [
-          "* - Legacy CLI fallbacks: Gemini, Grok, OpenCode",
           "* Legacy AI CLI fallbacks remain available for compatibility only.",
           "* Uses deterministic search backends first, with optional legacy CLI fallback.",
           "/** Enable Gemini CLI legacy fallback (default: false) */",
           "/** Enable Grok CLI legacy fallback (default: false - requires GROK_API_KEY) */",
           "/** Enable OpenCode CLI legacy fallback (default: false) */",
-          "/** Gemini CLI - optional legacy LLM fallback */",
+          "/** Gemini CLI - deprecated legacy LLM fallback (retired upstream) */",
           "/** Grok CLI - optional legacy LLM fallback */",
+          "/** Model to use (default: gemini-2.5-flash; accepts legacy gemini ids) */",
           "/** OpenCode - optional legacy LLM fallback */",
           "// Legacy fields (deprecated, kept for backwards compatibility)"
         ]
@@ -440,20 +483,6 @@
           "it('legacy variant does not block port allocation', function () {",
           "legacy: {"
         ]
-      },
-      {
-        "file": "src/cliproxy/config/__tests__/config-generator.test.js",
-        "count": 7,
-        "calls": [],
-        "markers": [
-          "'Should preserve lone manual high-version aliases during legacy cleanup'",
-          "'Should preserve manual aliases after legacy migration has already run'",
-          "'Should preserve the manual 3.2 compatibility cluster during legacy cleanup'",
-          "'Should preserve the pruned legacy alias in the migration backup'",
-          "assert(fs.existsSync(backupPath), 'Should keep a backup of the legacy config before pruning');",
-          "it('prunes partially retained broad guessed ranges during legacy cleanup', () => {",
-          "it('writes a one-time backup before pruning legacy Gemini aliases during migration', () => {"
-        ]
       }
     ],
     "explicitShimFiles": [
@@ -468,11 +497,11 @@
   },
   "maintainability": {
     "typedErrors": {
-      "totalThrows": 431,
-      "typedThrows": 37,
-      "plainThrows": 336,
-      "otherThrows": 58,
-      "adoptionRatio": 0.0858,
+      "totalThrows": 454,
+      "typedThrows": 83,
+      "plainThrows": 311,
+      "otherThrows": 60,
+      "adoptionRatio": 0.1828,
       "topSubdomainsByThrows": [
         {
           "subdomain": "web-server",
@@ -481,16 +510,22 @@
           "plain": 45
         },
         {
+          "subdomain": "commands",
+          "count": 38,
+          "typed": 6,
+          "plain": 30
+        },
+        {
           "subdomain": "proxy",
           "count": 38,
           "typed": 0,
           "plain": 34
         },
         {
-          "subdomain": "commands",
-          "count": 33,
-          "typed": 0,
-          "plain": 32
+          "subdomain": "codex-auth",
+          "count": 35,
+          "typed": 4,
+          "plain": 27
         },
         {
           "subdomain": "utils",
@@ -499,22 +534,22 @@
           "plain": 33
         },
         {
-          "subdomain": "codex-auth",
-          "count": 31,
-          "typed": 0,
-          "plain": 27
-        },
-        {
           "subdomain": "targets",
           "count": 27,
-          "typed": 0,
-          "plain": 25
+          "typed": 9,
+          "plain": 16
         },
         {
           "subdomain": "cursor",
           "count": 23,
-          "typed": 0,
-          "plain": 21
+          "typed": 4,
+          "plain": 17
+        },
+        {
+          "subdomain": "cliproxy/auth",
+          "count": 16,
+          "typed": 16,
+          "plain": 0
         },
         {
           "subdomain": "cliproxy/accounts",
@@ -527,12 +562,6 @@
           "count": 12,
           "typed": 12,
           "plain": 0
-        },
-        {
-          "subdomain": "cliproxy/ai-providers",
-          "count": 12,
-          "typed": 0,
-          "plain": 12
         }
       ]
     },
@@ -543,15 +572,15 @@
         "web-server/routes",
         "auth"
       ],
-      "numerator": 21,
-      "denominator": 23,
-      "ratio": 0.913,
+      "numerator": 28,
+      "denominator": 30,
+      "ratio": 0.9333,
       "targetRatio": 0.4
     },
     "loggerCoverage": {
-      "filesWithCreateLogger": 64,
-      "totalSourceFiles": 745,
-      "coverageRatio": 0.0859,
+      "filesWithCreateLogger": 65,
+      "totalSourceFiles": 764,
+      "coverageRatio": 0.0851,
       "subdomainsWithZeroCreateLogger": [
         "api",
         "bin",
@@ -572,21 +601,26 @@
       "topSubdomainsByFiles": [
         {
           "subdomain": "web-server",
-          "count": 111,
+          "count": 112,
           "withLogger": 10
         },
         {
           "subdomain": "commands",
-          "count": 107,
+          "count": 110,
           "withLogger": 2
         },
         {
           "subdomain": "utils",
-          "count": 87,
+          "count": 90,
           "withLogger": 1
         },
         {
           "subdomain": "management",
+          "count": 35,
+          "withLogger": 1
+        },
+        {
+          "subdomain": "cliproxy/auth",
           "count": 32,
           "withLogger": 1
         },
@@ -596,24 +630,19 @@
           "withLogger": 5
         },
         {
-          "subdomain": "cliproxy/auth",
-          "count": 30,
-          "withLogger": 1
-        },
-        {
           "subdomain": "config",
           "count": 27,
           "withLogger": 0
         },
         {
+          "subdomain": "codex-auth",
+          "count": 24,
+          "withLogger": 9
+        },
+        {
           "subdomain": "cursor",
           "count": 24,
           "withLogger": 2
-        },
-        {
-          "subdomain": "codex-auth",
-          "count": 23,
-          "withLogger": 8
         },
         {
           "subdomain": "auth",
@@ -623,10 +652,10 @@
       ]
     },
     "hotpathConsoleErrors": {
-      "totalOccurrences": 569,
-      "exemptOccurrences": 302,
-      "hotpathOccurrences": 267,
-      "filesAffected": 82,
+      "totalOccurrences": 592,
+      "exemptOccurrences": 326,
+      "hotpathOccurrences": 266,
+      "filesAffected": 81,
       "topFiles": [
         {
           "file": "src/errors/error-handler.ts",
@@ -691,16 +720,20 @@
       ]
     },
     "largeFiles": {
-      "countOver400": 89,
-      "countOver600": 39,
+      "countOver400": 91,
+      "countOver600": 42,
       "topOver400": [
         {
+          "file": "src/web-server/usage/native-quota-collector.ts",
+          "loc": 1758
+        },
+        {
           "file": "src/web-server/routes/cliproxy-auth-routes.ts",
-          "loc": 1515
+          "loc": 1531
         },
         {
           "file": "src/cliproxy/auth/oauth-handler.ts",
-          "loc": 1455
+          "loc": 1510
         },
         {
           "file": "src/cursor/cursor-executor.ts",
@@ -708,31 +741,31 @@
         },
         {
           "file": "src/web-server/model-pricing.ts",
-          "loc": 1070
+          "loc": 1127
         },
         {
-          "file": "src/web-server/routes/settings-routes.ts",
-          "loc": 1041
+          "file": "src/cliproxy/config/generator.ts",
+          "loc": 1109
+        },
+        {
+          "file": "src/cliproxy/auth/oauth-process.ts",
+          "loc": 1048
         },
         {
           "file": "src/cliproxy/config/env-builder.ts",
-          "loc": 1037
+          "loc": 1045
+        },
+        {
+          "file": "src/web-server/routes/settings-routes.ts",
+          "loc": 1042
         },
         {
           "file": "src/cliproxy/proxy/tool-sanitization-proxy.ts",
           "loc": 1020
         },
         {
-          "file": "src/cliproxy/auth/oauth-process.ts",
-          "loc": 1018
-        },
-        {
-          "file": "src/cliproxy/config/generator.ts",
-          "loc": 1012
-        },
-        {
           "file": "src/commands/cliproxy/variant-subcommand.ts",
-          "loc": 978
+          "loc": 997
         },
         {
           "file": "src/cliproxy/quota/quota-manager.ts",
@@ -749,10 +782,6 @@
         {
           "file": "src/cliproxy/accounts/registry.ts",
           "loc": 871
-        },
-        {
-          "file": "src/channels/official-channels-runtime.ts",
-          "loc": 867
         }
       ]
     }

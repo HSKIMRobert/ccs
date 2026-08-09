@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { displayClaudeQuotaSection } from '../../../src/commands/cliproxy/quota-subcommand/sections/claude';
 
 async function loadQuotaCommandTestExports() {
   const moduleId = Date.now() + Math.random();
@@ -9,6 +10,43 @@ async function loadQuotaCommandTestExports() {
 }
 
 describe('cliproxy quota subcommand failure formatting', () => {
+  it('renders Claude usage-probe 429 as a warning with an inference-safe hint', () => {
+    const output: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => output.push(args.map(String).join(' '));
+
+    try {
+      displayClaudeQuotaSection([
+        {
+          account: 'healthy@example.com',
+          quota: {
+            success: false,
+            windows: [],
+            coreUsage: { fiveHour: null, weekly: null },
+            lastUpdated: 1,
+            accountId: 'healthy@example.com',
+            error: 'Claude usage status temporarily unavailable',
+            errorCode: 'usage_probe_unavailable',
+            actionHint:
+              'Inference may still be available. Retry the Claude quota status check later.',
+            httpStatus: 429,
+            errorDetail: 'retry-after:0',
+            retryable: true,
+          },
+        },
+      ]);
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(output.join('\n')).toContain('[!] healthy@example.com');
+    expect(output.join('\n')).not.toContain('[X] healthy@example.com');
+    expect(output.join('\n')).toContain('Claude usage status temporarily unavailable');
+    expect(output.join('\n')).toContain('Inference may still be available');
+    expect(output.join('\n')).toContain('HTTP 429 | Code: usage_probe_unavailable | Retryable');
+    expect(output.join('\n')).toContain('Detail: retry-after:0');
+  });
+
   it('builds Gemini failure lines with the remediation hint, code, and detail', async () => {
     const { getQuotaFailureDisplayEntries } = await loadQuotaCommandTestExports();
 

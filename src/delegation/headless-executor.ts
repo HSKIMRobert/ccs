@@ -55,8 +55,8 @@ import {
   appendWebSearchTrace,
   createWebSearchTraceContext,
   ensureWebSearchMcpForLaunch,
-  getWebSearchHookEnv,
   readWebSearchTraceRecords,
+  resolveWebSearchLaunchState,
   syncWebSearchMcpToConfigDir,
 } from '../utils/websearch-manager';
 import { getCcsDir, getGlobalEnvConfig, loadSettings } from '../config/config-loader-facade';
@@ -159,7 +159,8 @@ export class HeadlessExecutor {
       );
     }
 
-    ensureWebSearchMcpForLaunch();
+    const webSearchLaunch = resolveWebSearchLaunchState();
+    ensureWebSearchMcpForLaunch(webSearchLaunch.config);
     const imageAnalysisMcpReady = ensureImageAnalysisMcpOrThrow();
     syncWebSearchMcpToConfigDir(inheritedClaudeConfigDir);
     syncImageAnalysisMcpToConfigDir(inheritedClaudeConfigDir);
@@ -257,6 +258,7 @@ export class HeadlessExecutor {
 
     let runtimeEnvVars: NodeJS.ProcessEnv = {
       ...stripAnthropicRoutingEnv({ ...globalEnv, ...settingsEnv }, settingsEnv),
+      ...webSearchLaunch.hookEnv,
       ...(inheritedClaudeConfigDir ? { CLAUDE_CONFIG_DIR: inheritedClaudeConfigDir } : {}),
       CCS_PROFILE_TYPE: 'settings',
       CCS_STRIP_INHERITED_ANTHROPIC_ENV: '1',
@@ -380,7 +382,10 @@ export class HeadlessExecutor {
     const imageAnalysisArgs = imageAnalysisMcpReady
       ? appendThirdPartyImageAnalysisToolArgs(args)
       : args;
-    const launchArgs = appendThirdPartyWebSearchToolArgs(imageAnalysisArgs);
+    const launchArgs = appendThirdPartyWebSearchToolArgs(
+      imageAnalysisArgs,
+      webSearchLaunch.enabled
+    );
     const traceEnv = createWebSearchTraceContext({
       launcher: 'delegation.headless-executor',
       args: launchArgs,
@@ -467,7 +472,6 @@ export class HeadlessExecutor {
       const cleanEnv = stripClaudeCodeEnv({
         ...stripAnthropicRoutingEnv(process.env),
         ...getClaudeLaunchEnvOverrides(),
-        ...getWebSearchHookEnv(),
         ...runtimeEnvVars,
         ...imageAnalysisEnv,
         ...traceEnv,
