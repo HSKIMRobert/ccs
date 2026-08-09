@@ -95,3 +95,17 @@ export function formatExport(shell: Shell, key: string, value: string): string {
       return `export ${key}=${posixSingleQuote(value)}`;
   }
 }
+
+/** Format removal of one environment variable for the target shell. */
+export function formatUnset(shell: Shell, key: string): string {
+  switch (shell) {
+    case 'fish':
+      return `set -e ${key};`;
+    case 'pwsh':
+      return `Remove-Item Env:${key} -ErrorAction SilentlyContinue`;
+    case 'cmd':
+      return `set "${key}="`;
+    default:
+      return `unset ${key}`;
+  }
+}

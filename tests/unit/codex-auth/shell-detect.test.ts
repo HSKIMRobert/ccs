@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { detectShell, formatExport } from '../../../src/codex-auth/shell-detect';
+import { detectShell, formatExport, formatUnset } from '../../../src/codex-auth/shell-detect';
 import type { Shell } from '../../../src/codex-auth/shell-detect';
 
 // ── detectShell ───────────────────────────────────────────────────────────────
@@ -143,6 +143,18 @@ describe('formatExport — cmd', () => {
     expect(formatExport('cmd', 'CODEX_HOME', 'C:\\Users\\100% ^ "quoted" !bang!')).toBe(
       'set "CODEX_HOME=C:\\Users\\100%% ^^ ^"quoted^" ^^!bang^^!"'
     );
+  });
+});
+
+describe('formatUnset', () => {
+  it('formats environment removal for every supported shell', () => {
+    expect(formatUnset('bash', 'ANTHROPIC_BASE_URL')).toBe('unset ANTHROPIC_BASE_URL');
+    expect(formatUnset('zsh', 'ANTHROPIC_BASE_URL')).toBe('unset ANTHROPIC_BASE_URL');
+    expect(formatUnset('fish', 'ANTHROPIC_BASE_URL')).toBe('set -e ANTHROPIC_BASE_URL;');
+    expect(formatUnset('pwsh', 'ANTHROPIC_BASE_URL')).toBe(
+      'Remove-Item Env:ANTHROPIC_BASE_URL -ErrorAction SilentlyContinue'
+    );
+    expect(formatUnset('cmd', 'ANTHROPIC_BASE_URL')).toBe('set "ANTHROPIC_BASE_URL="');
   });
 });
 
